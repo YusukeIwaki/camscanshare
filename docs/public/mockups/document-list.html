@@ -31,6 +31,7 @@ import '@material/web/elevation/elevation.js';
     --md-sys-color-on-surface-variant: #5f6368;
     --md-sys-color-outline: #dadce0;
     --md-sys-color-outline-variant: #e8eaed;
+    --md-sys-color-error: #d93025;
     --md-fab-container-color: var(--md-sys-color-primary);
     --md-fab-icon-color: var(--md-sys-color-on-primary);
     --md-fab-container-shape: 16px;
@@ -48,94 +49,148 @@ import '@material/web/elevation/elevation.js';
     flex-direction: column;
   }
 
-  /* Top App Bar */
-  .top-app-bar {
-    background: var(--md-sys-color-surface-container);
-    padding: 12px 16px;
+  /* Selection Mode Action Bar */
+  .selection-bar {
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+    padding: 12px 8px;
     display: flex;
     align-items: center;
-    gap: 12px;
-    height: 64px;
-    position: relative;
-    z-index: 10;
-    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+    gap: 8px;
+    height: 56px;
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    z-index: 30;
+    transform: translateY(-100%);
+    transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1);
   }
 
-  .top-app-bar .menu-icon {
-    font-size: 24px;
-    color: var(--md-sys-color-on-surface);
+  .selection-bar.visible {
+    transform: translateY(0);
+  }
+
+  .selection-bar .close-btn {
+    background: none;
+    border: none;
+    color: inherit;
     cursor: pointer;
     border-radius: 50%;
-    padding: 8px;
-    transition: background 0.2s;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
   }
 
-  .top-app-bar .menu-icon:hover {
-    background: rgba(0,0,0,0.06);
+  .selection-bar .close-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
   }
 
-  .top-app-bar .title {
-    font-size: 20px;
+  .selection-bar .selection-count {
+    font-size: 18px;
     font-weight: 500;
     flex: 1;
-    letter-spacing: 0.01em;
   }
 
-  .top-app-bar .search-icon {
-    font-size: 24px;
-    color: var(--md-sys-color-on-surface-variant);
+  .selection-bar .delete-btn {
+    background: none;
+    border: none;
+    color: inherit;
     cursor: pointer;
     border-radius: 50%;
-    padding: 8px;
-    transition: background 0.2s;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.15s;
   }
 
-  .top-app-bar .search-icon:hover {
-    background: rgba(0,0,0,0.06);
+  .selection-bar .delete-btn:hover {
+    background: rgba(255, 255, 255, 0.12);
   }
 
-  /* Document Grid */
-  .document-grid {
+  /* Home Indicator (gesture bar) */
+  .home-indicator {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 34px;
+    z-index: 40;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    pointer-events: none;
+  }
+
+  .home-indicator-bar {
+    width: 134px;
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.2);
+  }
+
+  /* Document List */
+  .document-list {
     flex: 1;
     overflow-y: auto;
-    padding: 16px;
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 12px;
-    align-content: start;
+    padding: 8px 0;
+    padding-bottom: 34px;
+    transition: padding-top 0.25s cubic-bezier(0.2, 0, 0, 1);
   }
 
-  .document-card {
-    background: var(--md-sys-color-surface-container);
-    border-radius: 12px;
-    overflow: hidden;
+  .document-list.selection-active {
+    padding-top: 56px;
+  }
+
+  .document-item {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    padding: 12px 16px;
     cursor: pointer;
     position: relative;
-    transition: transform 0.2s ease, box-shadow 0.2s ease;
-    animation: card-enter 0.4s ease both;
-    border: 1px solid var(--md-sys-color-outline-variant);
+    transition: background 0.15s;
+    animation: item-enter 0.3s ease both;
+    -webkit-user-select: none;
+    user-select: none;
   }
 
-  .document-card:hover {
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  .document-item:hover {
+    background: rgba(0, 0, 0, 0.04);
   }
 
-  .document-card:active {
-    transform: scale(0.97);
+  .document-item:active {
+    background: rgba(0, 0, 0, 0.08);
   }
 
-  .document-card:nth-child(1) { animation-delay: 0.05s; }
-  .document-card:nth-child(2) { animation-delay: 0.1s; }
-  .document-card:nth-child(3) { animation-delay: 0.15s; }
-  .document-card:nth-child(4) { animation-delay: 0.2s; }
-  .document-card:nth-child(5) { animation-delay: 0.25s; }
-  .document-card:nth-child(6) { animation-delay: 0.3s; }
+  .document-item.selected {
+    background: var(--md-sys-color-primary-container);
+  }
 
-  @keyframes card-enter {
+  .document-item:nth-child(1) { animation-delay: 0.03s; }
+  .document-item:nth-child(2) { animation-delay: 0.06s; }
+  .document-item:nth-child(3) { animation-delay: 0.09s; }
+  .document-item:nth-child(4) { animation-delay: 0.12s; }
+  .document-item:nth-child(5) { animation-delay: 0.15s; }
+  .document-item:nth-child(6) { animation-delay: 0.18s; }
+  .document-item:nth-child(7) { animation-delay: 0.21s; }
+  .document-item:nth-child(8) { animation-delay: 0.24s; }
+  .document-item:nth-child(9) { animation-delay: 0.27s; }
+  .document-item:nth-child(10) { animation-delay: 0.30s; }
+  .document-item:nth-child(11) { animation-delay: 0.33s; }
+  .document-item:nth-child(12) { animation-delay: 0.36s; }
+  .document-item:nth-child(13) { animation-delay: 0.39s; }
+  .document-item:nth-child(14) { animation-delay: 0.42s; }
+
+  @keyframes item-enter {
     from {
       opacity: 0;
-      transform: translateY(20px);
+      transform: translateY(12px);
     }
     to {
       opacity: 1;
@@ -143,75 +198,99 @@ import '@material/web/elevation/elevation.js';
     }
   }
 
-  .card-thumbnail {
-    width: 100%;
-    aspect-ratio: 3/4;
+  /* Thumbnail */
+  .item-thumbnail {
+    width: 48px;
+    height: 48px;
+    border-radius: 8px;
+    background: var(--md-sys-color-surface-container-high);
+    border: 1px solid var(--md-sys-color-outline-variant);
     display: flex;
     align-items: center;
     justify-content: center;
-    position: relative;
+    flex-shrink: 0;
     overflow: hidden;
+    position: relative;
   }
 
-  .card-thumbnail .doc-preview {
+  .item-thumbnail .doc-preview-mini {
     width: 100%;
     height: 100%;
     display: flex;
     flex-direction: column;
-    padding: 12px;
-    gap: 6px;
+    padding: 6px;
+    gap: 3px;
   }
 
-  .doc-line {
-    height: 5px;
-    border-radius: 2px;
+  .mini-line {
+    height: 3px;
+    border-radius: 1px;
     background: #b0b8c1;
   }
 
-  .doc-line.title-line {
-    width: 60%;
-    height: 7px;
-    background: #555;
-    margin-bottom: 4px;
-  }
-
-  .doc-line:nth-child(even) { width: 90%; }
-  .doc-line:nth-child(odd) { width: 75%; }
-  .doc-line:nth-child(3n) { width: 85%; }
-
-  .page-badge {
-    position: absolute;
-    top: 8px;
-    right: 8px;
-    background: var(--md-sys-color-primary);
-    color: var(--md-sys-color-on-primary);
-    font-size: 11px;
-    font-weight: 500;
-    padding: 2px 8px;
-    border-radius: 10px;
-  }
-
-  .card-info {
-    padding: 10px 12px;
-    border-top: 1px solid var(--md-sys-color-outline-variant);
-  }
-
-  .card-info .doc-name {
-    font-size: 13px;
-    font-weight: 500;
+  .mini-line.title-line {
+    width: 55%;
+    height: 4px;
+    background: #666;
     margin-bottom: 2px;
+  }
+
+  /* Selection check overlay on thumbnail */
+  .item-check {
+    position: absolute;
+    inset: 0;
+    background: var(--md-sys-color-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    transition: opacity 0.15s;
+    border-radius: 8px;
+  }
+
+  .item-check .material-symbols-outlined {
+    color: var(--md-sys-color-on-primary);
+    font-size: 24px;
+  }
+
+  .document-item.selected .item-check {
+    opacity: 1;
+  }
+
+  /* Item Info */
+  .item-info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .item-title {
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1.3;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
   }
 
-  .card-info .doc-date {
-    font-size: 11px;
+  .item-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-top: 2px;
+    font-size: 13px;
     color: var(--md-sys-color-on-surface-variant);
   }
 
-  /* Ripple on card tap */
-  .document-card .ripple-overlay {
+  .item-meta .meta-separator {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background: var(--md-sys-color-on-surface-variant);
+    opacity: 0.6;
+  }
+
+  /* Ripple on item tap */
+  .document-item .ripple-overlay {
     position: absolute;
     inset: 0;
     overflow: hidden;
@@ -222,7 +301,7 @@ import '@material/web/elevation/elevation.js';
   .ripple-circle {
     position: absolute;
     border-radius: 50%;
-    background: rgba(26, 115, 232, 0.2);
+    background: rgba(26, 115, 232, 0.15);
     transform: scale(0);
     animation: ripple-expand 0.6s ease-out forwards;
     pointer-events: none;
@@ -238,18 +317,18 @@ import '@material/web/elevation/elevation.js';
   /* FAB */
   .fab-container {
     position: fixed;
-    bottom: 24px;
+    bottom: 58px; /* 24px + 34px home indicator */
     right: 24px;
     z-index: 20;
+    transition: transform 0.25s cubic-bezier(0.2, 0, 0, 1), opacity 0.25s;
   }
 
-  md-fab {
-    --md-fab-container-color: var(--md-sys-color-primary);
-    --md-fab-icon-color: var(--md-sys-color-on-primary);
-    animation: fab-enter 0.5s cubic-bezier(0.4, 0, 0.2, 1) 0.1s both;
+  .fab-container.hidden {
+    transform: scale(0.5);
+    opacity: 0;
+    pointer-events: none;
   }
 
-  /* Fallback FAB for when md-fab hasn't loaded */
   .fab-fallback {
     width: 56px;
     height: 56px;
@@ -334,155 +413,417 @@ import '@material/web/elevation/elevation.js';
     line-height: 1.5;
   }
 
-  /* Selected state */
-  .document-card.selected {
-    outline: 2px solid var(--md-sys-color-primary);
-    outline-offset: -2px;
+  /* Confirm Dialog */
+  .dialog-scrim {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.32);
+    z-index: 60;
+    opacity: 0;
+    pointer-events: none;
+    transition: opacity 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
   }
 
-  .document-card.selected .card-thumbnail::after {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background: rgba(26, 115, 232, 0.08);
+  .dialog-scrim.visible {
+    opacity: 1;
+    pointer-events: auto;
+  }
+
+  .dialog {
+    background: var(--md-sys-color-surface-container);
+    border-radius: 28px;
+    width: calc(100% - 48px);
+    max-width: 312px;
+    padding: 24px;
+    transform: scale(0.9);
+    opacity: 0;
+    transition: transform 0.2s cubic-bezier(0.2, 0, 0, 1), opacity 0.2s;
+  }
+
+  .dialog-scrim.visible .dialog {
+    transform: scale(1);
+    opacity: 1;
+  }
+
+  .dialog-title {
+    font-size: 24px;
+    font-weight: 500;
+    margin-bottom: 16px;
+  }
+
+  .dialog-body {
+    font-size: 14px;
+    color: var(--md-sys-color-on-surface-variant);
+    line-height: 1.5;
+    margin-bottom: 24px;
+  }
+
+  .dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .dialog-btn {
+    background: none;
+    border: none;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 10px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+
+  .dialog-btn:hover {
+    background: rgba(0, 0, 0, 0.06);
+  }
+
+  .dialog-btn.cancel {
+    color: var(--md-sys-color-primary);
+  }
+
+  .dialog-btn.confirm {
+    color: var(--md-sys-color-error);
+  }
+
+  .dialog-btn.confirm:hover {
+    background: rgba(217, 48, 37, 0.08);
   }
 </style>
 </head>
 <body>
 
-<div class="top-app-bar">
-  <span class="material-symbols-outlined menu-icon">menu</span>
-  <span class="title">CamScanShare</span>
-  <span class="material-symbols-outlined search-icon">search</span>
+<!-- Selection Mode Action Bar -->
+<div class="selection-bar" id="selectionBar">
+  <button class="close-btn" onclick="exitSelectionMode()">
+    <span class="material-symbols-outlined">close</span>
+  </button>
+  <span class="selection-count" id="selectionCount">0件選択</span>
+  <button class="delete-btn" onclick="deleteSelected()">
+    <span class="material-symbols-outlined">delete</span>
+  </button>
 </div>
 
-<div class="document-grid" id="docGrid">
-  <div class="document-card" onclick="tapCard(this, event)">
-    <div class="card-thumbnail">
-      <div class="doc-preview" style="background: #fff8f0;">
-        <div class="doc-line title-line"></div>
-        <div class="doc-line" style="width:95%"></div>
-        <div class="doc-line" style="width:80%"></div>
-        <div class="doc-line" style="width:88%"></div>
-        <div class="doc-line" style="width:70%"></div>
-        <div class="doc-line" style="width:92%"></div>
-        <div class="doc-line" style="width:65%"></div>
-        <div class="doc-line" style="width:85%"></div>
-        <div class="doc-line" style="width:78%"></div>
-        <div class="doc-line" style="width:90%"></div>
+<div class="document-list" id="docList">
+  <div class="document-item" data-name="会議議事録_2026Q1">
+    <div class="item-thumbnail">
+      <div class="doc-preview-mini" style="background: #fff8f0;">
+        <div class="mini-line title-line"></div>
+        <div class="mini-line" style="width:90%"></div>
+        <div class="mini-line" style="width:75%"></div>
+        <div class="mini-line" style="width:85%"></div>
+        <div class="mini-line" style="width:65%"></div>
+        <div class="mini-line" style="width:80%"></div>
       </div>
-      <span class="page-badge">3頁</span>
+      <div class="item-check"><span class="material-symbols-outlined">check</span></div>
     </div>
-    <div class="card-info">
-      <div class="doc-name">会議議事録_2026Q1</div>
-      <div class="doc-date">2026/03/25</div>
+    <div class="item-info">
+      <div class="item-title">会議議事録_2026Q1</div>
+      <div class="item-meta">
+        <span>3ページ</span>
+        <span class="meta-separator"></span>
+        <span>2026/03/25</span>
+      </div>
     </div>
     <div class="ripple-overlay"></div>
   </div>
 
-  <div class="document-card" onclick="tapCard(this, event)">
-    <div class="card-thumbnail">
-      <div class="doc-preview" style="background: #f0f8ff;">
-        <div class="doc-line title-line" style="width:45%"></div>
-        <div class="doc-line" style="width:60%"></div>
-        <div class="doc-line" style="width:90%"></div>
-        <div class="doc-line" style="width:55%"></div>
-        <div class="doc-line" style="width:75%"></div>
-        <div class="doc-line" style="width:88%"></div>
+  <div class="document-item" data-name="レシート_ランチ">
+    <div class="item-thumbnail">
+      <div class="doc-preview-mini" style="background: #f0f8ff;">
+        <div class="mini-line title-line" style="width:45%"></div>
+        <div class="mini-line" style="width:80%"></div>
+        <div class="mini-line" style="width:60%"></div>
+        <div class="mini-line" style="width:90%"></div>
       </div>
-      <span class="page-badge">1頁</span>
+      <div class="item-check"><span class="material-symbols-outlined">check</span></div>
     </div>
-    <div class="card-info">
-      <div class="doc-name">レシート_ランチ</div>
-      <div class="doc-date">2026/03/24</div>
+    <div class="item-info">
+      <div class="item-title">レシート_ランチ</div>
+      <div class="item-meta">
+        <span>1ページ</span>
+        <span class="meta-separator"></span>
+        <span>2026/03/24</span>
+      </div>
     </div>
     <div class="ripple-overlay"></div>
   </div>
 
-  <div class="document-card" onclick="tapCard(this, event)">
-    <div class="card-thumbnail">
-      <div class="doc-preview" style="background: #f5f5f5;">
-        <div class="doc-line title-line" style="width:70%"></div>
-        <div class="doc-line" style="width:92%"></div>
-        <div class="doc-line" style="width:85%"></div>
-        <div class="doc-line" style="width:95%"></div>
-        <div class="doc-line" style="width:78%"></div>
-        <div class="doc-line" style="width:88%"></div>
-        <div class="doc-line" style="width:70%"></div>
-        <div class="doc-line" style="width:93%"></div>
-        <div class="doc-line" style="width:82%"></div>
-        <div class="doc-line" style="width:88%"></div>
-        <div class="doc-line" style="width:65%"></div>
-        <div class="doc-line" style="width:90%"></div>
+  <div class="document-item" data-name="契約書_業務委託">
+    <div class="item-thumbnail">
+      <div class="doc-preview-mini" style="background: #f5f5f5;">
+        <div class="mini-line title-line" style="width:65%"></div>
+        <div class="mini-line" style="width:92%"></div>
+        <div class="mini-line" style="width:80%"></div>
+        <div class="mini-line" style="width:88%"></div>
+        <div class="mini-line" style="width:70%"></div>
+        <div class="mini-line" style="width:85%"></div>
       </div>
-      <span class="page-badge">5頁</span>
+      <div class="item-check"><span class="material-symbols-outlined">check</span></div>
     </div>
-    <div class="card-info">
-      <div class="doc-name">契約書_業務委託</div>
-      <div class="doc-date">2026/03/20</div>
+    <div class="item-info">
+      <div class="item-title">契約書_業務委託</div>
+      <div class="item-meta">
+        <span>5ページ</span>
+        <span class="meta-separator"></span>
+        <span>2026/03/20</span>
+      </div>
     </div>
     <div class="ripple-overlay"></div>
   </div>
 
-  <div class="document-card" onclick="tapCard(this, event)">
-    <div class="card-thumbnail">
-      <div class="doc-preview" style="background: #f8fff0;">
-        <div class="doc-line title-line" style="width:55%"></div>
-        <div class="doc-line" style="width:80%"></div>
-        <div class="doc-line" style="width:70%"></div>
-        <div class="doc-line" style="width:90%"></div>
-        <div class="doc-line" style="width:65%"></div>
+  <div class="document-item" data-name="報告書_月次">
+    <div class="item-thumbnail">
+      <div class="doc-preview-mini" style="background: #f8fff0;">
+        <div class="mini-line title-line" style="width:50%"></div>
+        <div class="mini-line" style="width:78%"></div>
+        <div class="mini-line" style="width:65%"></div>
+        <div class="mini-line" style="width:88%"></div>
       </div>
-      <span class="page-badge">2頁</span>
+      <div class="item-check"><span class="material-symbols-outlined">check</span></div>
     </div>
-    <div class="card-info">
-      <div class="doc-name">報告書_月次</div>
-      <div class="doc-date">2026/03/15</div>
+    <div class="item-info">
+      <div class="item-title">報告書_月次</div>
+      <div class="item-meta">
+        <span>2ページ</span>
+        <span class="meta-separator"></span>
+        <span>2026/03/15</span>
+      </div>
     </div>
     <div class="ripple-overlay"></div>
   </div>
 
-  <div class="document-card" onclick="tapCard(this, event)">
-    <div class="card-thumbnail">
-      <div class="doc-preview" style="background: #fff5f5;">
-        <div class="doc-line title-line" style="width:40%"></div>
-        <div class="doc-line" style="width:70%"></div>
-        <div class="doc-line" style="width:85%"></div>
-        <div class="doc-line" style="width:60%"></div>
-        <div class="doc-line" style="width:78%"></div>
-        <div class="doc-line" style="width:90%"></div>
-        <div class="doc-line" style="width:72%"></div>
+  <div class="document-item" data-name="見積書_A社">
+    <div class="item-thumbnail">
+      <div class="doc-preview-mini" style="background: #fff5f5;">
+        <div class="mini-line title-line" style="width:40%"></div>
+        <div class="mini-line" style="width:85%"></div>
+        <div class="mini-line" style="width:70%"></div>
+        <div class="mini-line" style="width:90%"></div>
+        <div class="mini-line" style="width:60%"></div>
       </div>
-      <span class="page-badge">4頁</span>
+      <div class="item-check"><span class="material-symbols-outlined">check</span></div>
     </div>
-    <div class="card-info">
-      <div class="doc-name">見積書_A社</div>
-      <div class="doc-date">2026/03/10</div>
+    <div class="item-info">
+      <div class="item-title">見積書_A社</div>
+      <div class="item-meta">
+        <span>4ページ</span>
+        <span class="meta-separator"></span>
+        <span>2026/03/10</span>
+      </div>
     </div>
     <div class="ripple-overlay"></div>
   </div>
 
-  <div class="document-card" onclick="tapCard(this, event)">
-    <div class="card-thumbnail">
-      <div class="doc-preview" style="background: #f5f0ff;">
-        <div class="doc-line title-line" style="width:65%"></div>
-        <div class="doc-line" style="width:88%"></div>
-        <div class="doc-line" style="width:75%"></div>
-        <div class="doc-line" style="width:92%"></div>
-        <div class="doc-line" style="width:68%"></div>
-        <div class="doc-line" style="width:83%"></div>
+  <div class="document-item" data-name="名刺_田中太郎">
+    <div class="item-thumbnail">
+      <div class="doc-preview-mini" style="background: #f5f0ff;">
+        <div class="mini-line title-line" style="width:60%"></div>
+        <div class="mini-line" style="width:82%"></div>
+        <div class="mini-line" style="width:70%"></div>
+        <div class="mini-line" style="width:90%"></div>
       </div>
-      <span class="page-badge">1頁</span>
+      <div class="item-check"><span class="material-symbols-outlined">check</span></div>
     </div>
-    <div class="card-info">
-      <div class="doc-name">名刺_田中太郎</div>
-      <div class="doc-date">2026/03/08</div>
+    <div class="item-info">
+      <div class="item-title">名刺_田中太郎</div>
+      <div class="item-meta">
+        <span>1ページ</span>
+        <span class="meta-separator"></span>
+        <span>2026/03/08</span>
+      </div>
+    </div>
+    <div class="ripple-overlay"></div>
+  </div>
+
+  <div class="document-item" data-name="領収書_交通費3月">
+    <div class="item-thumbnail">
+      <div class="doc-preview-mini" style="background: #f0fff8;">
+        <div class="mini-line title-line" style="width:50%"></div>
+        <div class="mini-line" style="width:75%"></div>
+        <div class="mini-line" style="width:88%"></div>
+        <div class="mini-line" style="width:60%"></div>
+      </div>
+      <div class="item-check"><span class="material-symbols-outlined">check</span></div>
+    </div>
+    <div class="item-info">
+      <div class="item-title">領収書_交通費3月</div>
+      <div class="item-meta">
+        <span>2ページ</span>
+        <span class="meta-separator"></span>
+        <span>2026/03/05</span>
+      </div>
+    </div>
+    <div class="ripple-overlay"></div>
+  </div>
+
+  <div class="document-item" data-name="プレゼン資料_新製品">
+    <div class="item-thumbnail">
+      <div class="doc-preview-mini" style="background: #fff0f8;">
+        <div class="mini-line title-line" style="width:70%"></div>
+        <div class="mini-line" style="width:85%"></div>
+        <div class="mini-line" style="width:72%"></div>
+        <div class="mini-line" style="width:90%"></div>
+        <div class="mini-line" style="width:68%"></div>
+      </div>
+      <div class="item-check"><span class="material-symbols-outlined">check</span></div>
+    </div>
+    <div class="item-info">
+      <div class="item-title">プレゼン資料_新製品</div>
+      <div class="item-meta">
+        <span>8ページ</span>
+        <span class="meta-separator"></span>
+        <span>2026/03/01</span>
+      </div>
+    </div>
+    <div class="ripple-overlay"></div>
+  </div>
+
+  <div class="document-item" data-name="納品書_B社">
+    <div class="item-thumbnail">
+      <div class="doc-preview-mini" style="background: #f8f5f0;">
+        <div class="mini-line title-line" style="width:40%"></div>
+        <div class="mini-line" style="width:80%"></div>
+        <div class="mini-line" style="width:65%"></div>
+        <div class="mini-line" style="width:92%"></div>
+      </div>
+      <div class="item-check"><span class="material-symbols-outlined">check</span></div>
+    </div>
+    <div class="item-info">
+      <div class="item-title">納品書_B社</div>
+      <div class="item-meta">
+        <span>1ページ</span>
+        <span class="meta-separator"></span>
+        <span>2026/02/28</span>
+      </div>
+    </div>
+    <div class="ripple-overlay"></div>
+  </div>
+
+  <div class="document-item" data-name="会議議事録_2026Q4振返り">
+    <div class="item-thumbnail">
+      <div class="doc-preview-mini" style="background: #f0f0ff;">
+        <div class="mini-line title-line" style="width:60%"></div>
+        <div class="mini-line" style="width:88%"></div>
+        <div class="mini-line" style="width:75%"></div>
+        <div class="mini-line" style="width:82%"></div>
+        <div class="mini-line" style="width:70%"></div>
+      </div>
+      <div class="item-check"><span class="material-symbols-outlined">check</span></div>
+    </div>
+    <div class="item-info">
+      <div class="item-title">会議議事録_2026Q4振返り</div>
+      <div class="item-meta">
+        <span>4ページ</span>
+        <span class="meta-separator"></span>
+        <span>2026/02/20</span>
+      </div>
+    </div>
+    <div class="ripple-overlay"></div>
+  </div>
+
+  <div class="document-item" data-name="保険証コピー">
+    <div class="item-thumbnail">
+      <div class="doc-preview-mini" style="background: #f5fff0;">
+        <div class="mini-line title-line" style="width:55%"></div>
+        <div class="mini-line" style="width:70%"></div>
+        <div class="mini-line" style="width:85%"></div>
+      </div>
+      <div class="item-check"><span class="material-symbols-outlined">check</span></div>
+    </div>
+    <div class="item-info">
+      <div class="item-title">保険証コピー</div>
+      <div class="item-meta">
+        <span>1ページ</span>
+        <span class="meta-separator"></span>
+        <span>2026/02/15</span>
+      </div>
+    </div>
+    <div class="ripple-overlay"></div>
+  </div>
+
+  <div class="document-item" data-name="請求書_C社_2月分">
+    <div class="item-thumbnail">
+      <div class="doc-preview-mini" style="background: #fff8f8;">
+        <div class="mini-line title-line" style="width:48%"></div>
+        <div class="mini-line" style="width:82%"></div>
+        <div class="mini-line" style="width:70%"></div>
+        <div class="mini-line" style="width:90%"></div>
+        <div class="mini-line" style="width:55%"></div>
+      </div>
+      <div class="item-check"><span class="material-symbols-outlined">check</span></div>
+    </div>
+    <div class="item-info">
+      <div class="item-title">請求書_C社_2月分</div>
+      <div class="item-meta">
+        <span>2ページ</span>
+        <span class="meta-separator"></span>
+        <span>2026/02/10</span>
+      </div>
+    </div>
+    <div class="ripple-overlay"></div>
+  </div>
+
+  <div class="document-item" data-name="ホワイトボード_設計MTG">
+    <div class="item-thumbnail">
+      <div class="doc-preview-mini" style="background: #f8f8ff;">
+        <div class="mini-line title-line" style="width:65%"></div>
+        <div class="mini-line" style="width:78%"></div>
+        <div class="mini-line" style="width:60%"></div>
+        <div class="mini-line" style="width:85%"></div>
+      </div>
+      <div class="item-check"><span class="material-symbols-outlined">check</span></div>
+    </div>
+    <div class="item-info">
+      <div class="item-title">ホワイトボード_設計MTG</div>
+      <div class="item-meta">
+        <span>3ページ</span>
+        <span class="meta-separator"></span>
+        <span>2026/02/05</span>
+      </div>
+    </div>
+    <div class="ripple-overlay"></div>
+  </div>
+
+  <div class="document-item" data-name="免許証コピー">
+    <div class="item-thumbnail">
+      <div class="doc-preview-mini" style="background: #fffff0;">
+        <div class="mini-line title-line" style="width:45%"></div>
+        <div class="mini-line" style="width:72%"></div>
+        <div class="mini-line" style="width:88%"></div>
+      </div>
+      <div class="item-check"><span class="material-symbols-outlined">check</span></div>
+    </div>
+    <div class="item-info">
+      <div class="item-title">免許証コピー</div>
+      <div class="item-meta">
+        <span>1ページ</span>
+        <span class="meta-separator"></span>
+        <span>2026/01/30</span>
+      </div>
     </div>
     <div class="ripple-overlay"></div>
   </div>
 </div>
 
-<div class="fab-container">
+<!-- Confirm Delete Dialog -->
+<div class="dialog-scrim" id="dialogScrim">
+  <div class="dialog">
+    <div class="dialog-title">削除の確認</div>
+    <div class="dialog-body" id="dialogBody"></div>
+    <div class="dialog-actions">
+      <button class="dialog-btn cancel" onclick="closeDialog()">キャンセル</button>
+      <button class="dialog-btn confirm" onclick="confirmDelete()">削除</button>
+    </div>
+  </div>
+</div>
+
+<div class="fab-container" id="fabContainer">
   <button class="fab-fallback" onclick="fabTap()" aria-label="新規スキャン">
     <span class="material-symbols-outlined">photo_camera</span>
     <div class="fab-pulse"></div>
@@ -490,12 +831,113 @@ import '@material/web/elevation/elevation.js';
 </div>
 
 <script>
-function tapCard(card, event) {
-  // Ripple effect
-  const overlay = card.querySelector('.ripple-overlay');
+let selectionMode = false;
+let longPressTimer = null;
+let isLongPress = false;
+
+const items = document.querySelectorAll('.document-item');
+
+items.forEach(item => {
+  item.addEventListener('pointerdown', (e) => {
+    isLongPress = false;
+    longPressTimer = setTimeout(() => {
+      isLongPress = true;
+      navigator.vibrate && navigator.vibrate(30);
+      if (!selectionMode) {
+        enterSelectionMode();
+      }
+      toggleSelect(item);
+    }, 500);
+  });
+
+  item.addEventListener('pointerup', (e) => {
+    clearTimeout(longPressTimer);
+    if (!isLongPress) {
+      if (selectionMode) {
+        toggleSelect(item);
+      } else {
+        tapItem(item, e);
+      }
+    }
+  });
+
+  item.addEventListener('pointerleave', () => {
+    clearTimeout(longPressTimer);
+  });
+
+  item.addEventListener('pointermove', (e) => {
+    if (e.pointerType === 'touch' && longPressTimer) {
+      clearTimeout(longPressTimer);
+    }
+  });
+
+  item.addEventListener('contextmenu', (e) => e.preventDefault());
+});
+
+function enterSelectionMode() {
+  selectionMode = true;
+  document.getElementById('selectionBar').classList.add('visible');
+  document.getElementById('docList').classList.add('selection-active');
+  document.getElementById('fabContainer').classList.add('hidden');
+}
+
+function exitSelectionMode() {
+  selectionMode = false;
+  document.getElementById('selectionBar').classList.remove('visible');
+  document.getElementById('docList').classList.remove('selection-active');
+  document.getElementById('fabContainer').classList.remove('hidden');
+  document.querySelectorAll('.document-item').forEach(item => item.classList.remove('selected'));
+  updateSelectionCount();
+}
+
+function toggleSelect(item) {
+  item.classList.toggle('selected');
+  const count = updateSelectionCount();
+  if (selectionMode && count === 0) {
+    exitSelectionMode();
+  }
+}
+
+function updateSelectionCount() {
+  const count = document.querySelectorAll('.document-item.selected').length;
+  document.getElementById('selectionCount').textContent = count + '件選択';
+  return count;
+}
+
+function deleteSelected() {
+  const count = document.querySelectorAll('.document-item.selected').length;
+  document.getElementById('dialogBody').textContent =
+    '選択した' + count + '件の文書を削除しますか？この操作は取り消せません。';
+  document.getElementById('dialogScrim').classList.add('visible');
+}
+
+function closeDialog() {
+  document.getElementById('dialogScrim').classList.remove('visible');
+}
+
+function confirmDelete() {
+  closeDialog();
+  const selected = document.querySelectorAll('.document-item.selected');
+  selected.forEach(item => {
+    item.style.transition = 'opacity 0.3s, transform 0.3s';
+    item.style.opacity = '0';
+    item.style.transform = 'translateX(-100%)';
+    setTimeout(() => {
+      item.style.height = '0';
+      item.style.padding = '0 16px';
+      item.style.overflow = 'hidden';
+      item.style.transition = 'height 0.2s, padding 0.2s';
+      setTimeout(() => item.remove(), 200);
+    }, 300);
+  });
+  setTimeout(() => exitSelectionMode(), 350);
+}
+
+function tapItem(item, event) {
+  const overlay = item.querySelector('.ripple-overlay');
   const circle = document.createElement('div');
   circle.className = 'ripple-circle';
-  const rect = card.getBoundingClientRect();
+  const rect = item.getBoundingClientRect();
   const x = event.clientX - rect.left;
   const y = event.clientY - rect.top;
   const size = Math.max(rect.width, rect.height);
@@ -504,10 +946,6 @@ function tapCard(card, event) {
   circle.style.top = (y - size / 2) + 'px';
   overlay.appendChild(circle);
   setTimeout(() => circle.remove(), 600);
-
-  // Selection toggle
-  document.querySelectorAll('.document-card').forEach(c => c.classList.remove('selected'));
-  card.classList.add('selected');
 }
 
 function fabTap() {
@@ -515,7 +953,6 @@ function fabTap() {
   fab.style.transform = 'scale(0.85)';
   setTimeout(() => {
     fab.style.transform = '';
-    // Flash overlay to simulate navigation
     const flash = document.createElement('div');
     flash.style.cssText = 'position:fixed;inset:0;background:rgba(26,115,232,0.12);z-index:100;animation:flash-out 0.5s ease forwards;';
     document.body.appendChild(flash);
@@ -523,11 +960,14 @@ function fabTap() {
   }, 150);
 }
 
-// Add flash-out animation
 const style = document.createElement('style');
 style.textContent = `@keyframes flash-out { from { opacity: 1; } to { opacity: 0; } }`;
 document.head.appendChild(style);
 </script>
+
+<div class="home-indicator">
+  <div class="home-indicator-bar"></div>
+</div>
 
 </body>
 </html>

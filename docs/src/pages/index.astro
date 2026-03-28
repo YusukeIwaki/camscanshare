@@ -179,16 +179,16 @@ import Layout from '../layouts/Layout.astro';
           <h3>画面要素</h3>
           <ul class="spec-list">
             <li>
-              <span class="spec-element">トップアプリバー</span>
-              <span class="spec-detail">アプリ名「CamScanShare」を表示。ハンバーガーメニューと検索アイコンを配置。</span>
+              <span class="spec-element">文書リスト</span>
+              <span class="spec-detail">ステータスバー直下から画面全体を使う縦スクロールのリストビュー。各行は左にアイコンサムネイル（48×48、1ページ目のプレビュー）、右に文書名・ページ数・作成日を表示。リスト末尾にはホームインジケーター（ジェスチャーバー）領域分のパディングを設け、最終行がジェスチャーバーに重ならないようにする。</span>
             </li>
             <li>
-              <span class="spec-element">文書カードグリッド</span>
-              <span class="spec-detail">2カラムのグリッドレイアウト。各カードにはサムネイル・文書名・日付・ページ数バッジを表示。スクロール可能。</span>
+              <span class="spec-element">選択モードアクションバー</span>
+              <span class="spec-detail">複数選択モード時に画面上部からスライドインで表示。選択件数・✕（閉じる）ボタン・削除ボタンを配置。プライマリカラー背景。表示時はリスト全体をアクションバーの高さ（56px）分下に押し下げ、先頭行が隠れないようにする。</span>
             </li>
             <li>
               <span class="spec-element">FAB（Floating Action Button）</span>
-              <span class="spec-detail">画面右下に固定配置。カメラアイコン付き。パルスアニメーションで初回ユーザーへの視認性を向上。</span>
+              <span class="spec-detail">画面右下にホームインジケーター領域の上に固定配置。カメラアイコン付き。パルスアニメーションで初回ユーザーへの視認性を向上。選択モード中は非表示。</span>
             </li>
           </ul>
         </div>
@@ -197,16 +197,24 @@ import Layout from '../layouts/Layout.astro';
           <h3>インタラクション</h3>
           <ul class="spec-list interaction-list">
             <li>
-              <span class="interaction-trigger">文書カードをタップ</span>
+              <span class="interaction-trigger">文書をタップ</span>
               <span class="interaction-result">リップルエフェクト → ページ一覧画面へ遷移</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">文書を長押し</span>
+              <span class="interaction-result">複数選択モードに入り、長押しした文書が選択状態になる。サムネイルにチェックマークが表示される。アクションバーのスライドインに連動してリストが下に押し下げられ、長押しした行が隠れないようにする。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">選択モード中にタップ</span>
+              <span class="interaction-result">タップした文書の選択/選択解除をトグル。選択数が0件になると自動的に選択モードを終了。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">削除ボタンをタップ</span>
+              <span class="interaction-result">確認ダイアログを表示（「選択したN件の文書を削除しますか？」）。確認後、一括削除しスライドアウトアニメーションで消去。</span>
             </li>
             <li>
               <span class="interaction-trigger">FABをタップ</span>
               <span class="interaction-result">カメラスキャン画面が起動し、新規文書のスキャンを開始</span>
-            </li>
-            <li>
-              <span class="interaction-trigger">カードの出現</span>
-              <span class="interaction-result">下からフェードインするスタガーアニメーションで順次表示</span>
             </li>
           </ul>
         </div>
@@ -216,7 +224,7 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list">
             <li>
               <span class="spec-element">表示情報</span>
-              <span class="spec-detail">文書名、スキャン日時、ページ数、サムネイル画像（1ページ目のプレビュー）</span>
+              <span class="spec-detail">文書名、作成日、ページ数、アイコンサムネイル（1ページ目のプレビュー）</span>
             </li>
             <li>
               <span class="spec-element">ソート順</span>
