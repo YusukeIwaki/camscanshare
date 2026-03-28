@@ -18,6 +18,7 @@
     --md-sys-color-outline: #dadce0;
     --md-sys-color-outline-variant: #e8eaed;
     --md-sys-color-error: #d93025;
+    --md-sys-color-error-container: #fce8e6;
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -30,6 +31,8 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    user-select: none;
+    -webkit-user-select: none;
   }
 
   /* Top App Bar */
@@ -57,27 +60,45 @@
     justify-content: center;
     color: var(--md-sys-color-on-surface);
     transition: background 0.2s;
+    flex-shrink: 0;
   }
 
-  .icon-btn:hover {
-    background: rgba(0,0,0,0.06);
+  .icon-btn:hover { background: rgba(0,0,0,0.06); }
+  .icon-btn:active { background: rgba(0,0,0,0.1); }
+  .icon-btn .material-symbols-outlined { font-size: 24px; }
+
+  .title-btn {
+    flex: 1;
+    min-width: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    text-align: left;
+    padding: 6px 8px;
+    border-radius: 8px;
+    transition: background 0.2s;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: inherit;
   }
 
-  .icon-btn:active {
-    background: rgba(0,0,0,0.1);
-  }
+  .title-btn:hover { background: rgba(0,0,0,0.06); }
+  .title-btn:active { background: rgba(0,0,0,0.1); }
 
-  .icon-btn .material-symbols-outlined {
-    font-size: 24px;
-  }
-
-  .top-app-bar .title {
+  .title-btn .title-text {
     font-size: 18px;
     font-weight: 500;
-    flex: 1;
+    color: var(--md-sys-color-on-surface);
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .title-btn .material-symbols-outlined {
+    font-size: 18px;
+    color: var(--md-sys-color-on-surface-variant);
+    flex-shrink: 0;
   }
 
   .share-btn {
@@ -91,6 +112,7 @@
   /* Page Grid */
   .page-grid {
     flex: 1;
+    min-height: 0;
     overflow-y: auto;
     padding: 16px;
     display: grid;
@@ -103,12 +125,11 @@
   .page-card {
     background: var(--md-sys-color-surface-container);
     border-radius: 12px;
-    overflow: hidden;
     cursor: pointer;
     position: relative;
-    transition: transform 0.2s, box-shadow 0.2s;
+    transition: transform 0.2s, box-shadow 0.2s, opacity 0.2s;
     animation: page-enter 0.4s ease both;
-    border: 2px solid transparent;
+    touch-action: none;
   }
 
   .page-card:hover {
@@ -116,13 +137,8 @@
     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
   }
 
-  .page-card:active {
+  .page-card:active:not(.dragging) {
     transform: scale(0.97);
-  }
-
-  .page-card.selected {
-    border-color: var(--md-sys-color-primary);
-    box-shadow: 0 0 0 1px var(--md-sys-color-primary);
   }
 
   .page-card:nth-child(1) { animation-delay: 0.05s; }
@@ -135,14 +151,36 @@
     to { opacity: 1; transform: translateY(0); }
   }
 
+  /* Dragging states */
+  .page-card.dragging {
+    opacity: 0.9;
+    transform: scale(1.08);
+    box-shadow: 0 12px 32px rgba(0,0,0,0.25);
+    z-index: 100;
+    position: fixed;
+    pointer-events: none;
+    transition: none;
+    border-radius: 16px;
+  }
+
+  .page-card.drag-placeholder {
+    opacity: 0.3;
+    border: 2px dashed var(--md-sys-color-outline);
+    background: var(--md-sys-color-surface);
+  }
+
+  .page-card.drag-over {
+    transform: scale(0.95);
+  }
+
   .page-thumbnail {
     width: 100%;
     aspect-ratio: 210/297;
     position: relative;
     overflow: hidden;
+    border-radius: 12px;
   }
 
-  /* Simulated scanned page - cropped document look */
   .scanned-page {
     width: 100%;
     height: 100%;
@@ -166,102 +204,33 @@
     margin-bottom: 4px;
   }
 
-  /* Page number badge */
-  .page-badge {
-    position: absolute;
-    bottom: 6px;
-    right: 6px;
-    background: rgba(0,0,0,0.6);
-    color: #fff;
-    font-size: 11px;
-    font-weight: 500;
-    padding: 2px 8px;
-    border-radius: 8px;
-  }
-
-  /* Selection checkbox */
-  .select-check {
-    position: absolute;
-    top: 8px;
-    left: 8px;
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    background: var(--md-sys-color-primary);
-    color: #fff;
-    display: none;
-    align-items: center;
-    justify-content: center;
-    animation: check-pop 0.2s ease;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
-  }
-
-  .page-card.selected .select-check {
-    display: flex;
-  }
-
-  .select-check .material-symbols-outlined {
-    font-size: 16px;
-    font-variation-settings: 'wght' 700;
-  }
-
-  @keyframes check-pop {
-    from { transform: scale(0); }
-    to { transform: scale(1); }
-  }
-
-  /* Bottom Action Bar (appears when page selected) */
-  .action-bar {
+  /* Home Indicator (gesture bar) */
+  .home-indicator {
     position: fixed;
     bottom: 0;
     left: 0;
     right: 0;
-    background: var(--md-sys-color-surface-container);
-    border-top: 1px solid var(--md-sys-color-outline-variant);
-    padding: 8px 16px;
+    height: 34px;
+    z-index: 40;
     display: flex;
-    justify-content: space-around;
     align-items: center;
-    z-index: 20;
-    transform: translateY(100%);
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    justify-content: center;
+    pointer-events: none;
   }
 
-  .action-bar.visible {
-    transform: translateY(0);
+  .home-indicator-bar {
+    width: 134px;
+    height: 5px;
+    border-radius: 3px;
+    background: rgba(0, 0, 0, 0.2);
   }
 
-  .action-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 4px;
-    background: none;
-    border: none;
-    cursor: pointer;
-    color: var(--md-sys-color-on-surface-variant);
-    padding: 8px 16px;
-    border-radius: 12px;
-    transition: background 0.2s, color 0.2s;
-    font-family: inherit;
-  }
-
-  .action-item:hover {
-    background: rgba(0,0,0,0.04);
-    color: var(--md-sys-color-on-surface);
-  }
-
-  .action-item:active {
-    background: rgba(0,0,0,0.08);
-  }
-
-  .action-item .material-symbols-outlined {
-    font-size: 24px;
-  }
-
-  .action-item span:last-child {
-    font-size: 11px;
+  .page-label {
+    text-align: center;
+    font-size: 12px;
     font-weight: 500;
+    color: var(--md-sys-color-on-surface-variant);
+    padding: 6px 0;
   }
 
   /* FAB */
@@ -270,11 +239,13 @@
     bottom: 24px;
     right: 24px;
     z-index: 15;
-    transition: bottom 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.3s;
   }
 
-  .fab-container.raised {
-    bottom: 88px;
+  .fab-container.hidden {
+    transform: scale(0);
+    opacity: 0;
+    pointer-events: none;
   }
 
   .fab-btn {
@@ -297,13 +268,162 @@
     transform: scale(1.05);
   }
 
-  .fab-btn:active {
-    transform: scale(0.95);
+  .fab-btn:active { transform: scale(0.95); }
+  .fab-btn .material-symbols-outlined { font-size: 24px; }
+
+  /* Delete Zone */
+  .delete-zone {
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    height: 80px;
+    background: var(--md-sys-color-error-container);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    z-index: 20;
+    transform: translateY(100%);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), background 0.2s;
+    border-top: 1px solid rgba(217, 48, 37, 0.2);
   }
 
-  .fab-btn .material-symbols-outlined {
-    font-size: 24px;
+  .delete-zone.visible {
+    transform: translateY(0);
   }
+
+  .delete-zone.active {
+    background: var(--md-sys-color-error);
+  }
+
+  .delete-zone .material-symbols-outlined {
+    font-size: 28px;
+    color: var(--md-sys-color-error);
+    transition: color 0.2s, transform 0.2s;
+  }
+
+  .delete-zone.active .material-symbols-outlined {
+    color: var(--md-sys-color-on-primary);
+    transform: scale(1.2);
+  }
+
+  .delete-zone-label {
+    font-size: 14px;
+    font-weight: 500;
+    color: var(--md-sys-color-error);
+    transition: color 0.2s;
+  }
+
+  .delete-zone.active .delete-zone-label {
+    color: var(--md-sys-color-on-primary);
+  }
+
+  /* Trash animation overlay */
+  .trash-animation {
+    position: fixed;
+    z-index: 200;
+    pointer-events: none;
+    transition: none;
+  }
+
+  .trash-animation.animating {
+    transition: transform 0.4s cubic-bezier(0.4, 0, 0.2, 1), opacity 0.4s ease;
+  }
+
+  /* Rename dialog */
+  .dialog-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+
+  .dialog-overlay.visible {
+    display: flex;
+  }
+
+  .dialog-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    animation: fade-in 0.2s ease;
+  }
+
+  .dialog-panel {
+    position: relative;
+    background: var(--md-sys-color-surface-container);
+    border-radius: 28px;
+    padding: 24px;
+    width: 100%;
+    max-width: 320px;
+    animation: dialog-enter 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.2);
+  }
+
+  @keyframes dialog-enter {
+    from { opacity: 0; transform: scale(0.9); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  .dialog-panel h3 {
+    font-size: 16px;
+    font-weight: 500;
+    margin-bottom: 16px;
+    color: var(--md-sys-color-on-surface);
+  }
+
+  .dialog-input {
+    width: 100%;
+    padding: 12px 16px;
+    border: 2px solid var(--md-sys-color-outline);
+    border-radius: 12px;
+    font-size: 14px;
+    font-family: inherit;
+    color: var(--md-sys-color-on-surface);
+    background: var(--md-sys-color-surface);
+    outline: none;
+    transition: border-color 0.2s;
+  }
+
+  .dialog-input:focus {
+    border-color: var(--md-sys-color-primary);
+  }
+
+  .dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+    margin-top: 20px;
+  }
+
+  .dialog-btn {
+    padding: 8px 20px;
+    border: none;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    font-family: inherit;
+    transition: background 0.2s;
+  }
+
+  .dialog-btn.cancel {
+    background: none;
+    color: var(--md-sys-color-primary);
+  }
+
+  .dialog-btn.cancel:hover { background: rgba(26,115,232,0.08); }
+
+  .dialog-btn.confirm {
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+  }
+
+  .dialog-btn.confirm:hover { background: #1565c0; }
 
   /* Share sheet overlay */
   .share-sheet {
@@ -374,24 +494,13 @@
     transition: transform 0.15s;
   }
 
-  .share-option:active .icon-circle {
-    transform: scale(0.9);
-  }
-
+  .share-option:active .icon-circle { transform: scale(0.9); }
   .share-option .icon-circle.gdrive { background: #e8f0fe; color: #1a73e8; }
   .share-option .icon-circle.airdrop { background: #e6f4ea; color: #137333; }
   .share-option .icon-circle.other { background: #fce8e6; color: #c5221f; }
+  .share-option .icon-circle .material-symbols-outlined { font-size: 26px; }
+  .share-option span:last-child { font-size: 12px; color: var(--md-sys-color-on-surface-variant); }
 
-  .share-option .icon-circle .material-symbols-outlined {
-    font-size: 26px;
-  }
-
-  .share-option span:last-child {
-    font-size: 12px;
-    color: var(--md-sys-color-on-surface-variant);
-  }
-
-  /* Drag hint */
   .share-panel .drag-handle {
     width: 32px;
     height: 4px;
@@ -407,17 +516,16 @@
   <button class="icon-btn" onclick="goBack()">
     <span class="material-symbols-outlined">arrow_back</span>
   </button>
-  <span class="title">会議議事録_2026Q1</span>
+  <button class="title-btn" onclick="showRenameDialog()">
+    <span class="title-text" id="docTitle">新規ドキュメント_2026-03-28_14-30-00</span>
+  </button>
   <button class="icon-btn share-btn" onclick="showShare()">
     <span class="material-symbols-outlined">share</span>
-  </button>
-  <button class="icon-btn">
-    <span class="material-symbols-outlined">more_vert</span>
   </button>
 </div>
 
 <div class="page-grid" id="pageGrid">
-  <div class="page-card" onclick="selectPage(this)">
+  <div class="page-card" data-page="0">
     <div class="page-thumbnail">
       <div class="scanned-page" style="background:#fefefe;">
         <div class="scan-line heading" style="width:50%"></div>
@@ -433,14 +541,11 @@
         <div class="scan-line" style="width:90%"></div>
         <div class="scan-line" style="width:60%"></div>
       </div>
-      <span class="page-badge">1 / 3</span>
-      <div class="select-check">
-        <span class="material-symbols-outlined">check</span>
-      </div>
     </div>
+    <div class="page-label">1</div>
   </div>
 
-  <div class="page-card" onclick="selectPage(this)">
+  <div class="page-card" data-page="1">
     <div class="page-thumbnail">
       <div class="scanned-page" style="background:#fefefe;">
         <div class="scan-line heading" style="width:40%"></div>
@@ -454,14 +559,11 @@
         <div class="scan-line" style="width:85%"></div>
         <div class="scan-line" style="width:90%"></div>
       </div>
-      <span class="page-badge">2 / 3</span>
-      <div class="select-check">
-        <span class="material-symbols-outlined">check</span>
-      </div>
     </div>
+    <div class="page-label">2</div>
   </div>
 
-  <div class="page-card" onclick="selectPage(this)">
+  <div class="page-card" data-page="2">
     <div class="page-thumbnail">
       <div class="scanned-page" style="background:#fefefe;">
         <div class="scan-line heading" style="width:60%"></div>
@@ -471,12 +573,115 @@
         <div class="scan-line" style="width:80%"></div>
         <div class="scan-line" style="width:70%"></div>
         <div class="scan-line" style="width:88%"></div>
-      </div>
-      <span class="page-badge">3 / 3</span>
-      <div class="select-check">
-        <span class="material-symbols-outlined">check</span>
+        <div class="scan-line" style="width:62%"></div>
+        <div class="scan-line" style="width:90%"></div>
       </div>
     </div>
+    <div class="page-label">3</div>
+  </div>
+
+  <div class="page-card" data-page="3">
+    <div class="page-thumbnail">
+      <div class="scanned-page" style="background:#fefefe;">
+        <div class="scan-line heading" style="width:55%"></div>
+        <div class="scan-line" style="width:90%"></div>
+        <div class="scan-line" style="width:80%"></div>
+        <div class="scan-line" style="width:85%"></div>
+        <div class="scan-line" style="width:70%"></div>
+        <div class="scan-line" style="width:92%"></div>
+        <div class="scan-line" style="width:78%"></div>
+        <div class="scan-line" style="width:88%"></div>
+        <div class="scan-line" style="width:65%"></div>
+        <div class="scan-line" style="width:82%"></div>
+        <div class="scan-line" style="width:90%"></div>
+      </div>
+    </div>
+    <div class="page-label">4</div>
+  </div>
+
+  <div class="page-card" data-page="4">
+    <div class="page-thumbnail">
+      <div class="scanned-page" style="background:#fefefe;">
+        <div class="scan-line heading" style="width:45%"></div>
+        <div class="scan-line" style="width:88%"></div>
+        <div class="scan-line" style="width:76%"></div>
+        <div class="scan-line" style="width:92%"></div>
+        <div class="scan-line" style="width:68%"></div>
+        <div class="scan-line" style="width:85%"></div>
+        <div class="scan-line" style="width:90%"></div>
+        <div class="scan-line" style="width:74%"></div>
+      </div>
+    </div>
+    <div class="page-label">5</div>
+  </div>
+
+  <div class="page-card" data-page="5">
+    <div class="page-thumbnail">
+      <div class="scanned-page" style="background:#fefefe;">
+        <div class="scan-line heading" style="width:52%"></div>
+        <div class="scan-line" style="width:94%"></div>
+        <div class="scan-line" style="width:80%"></div>
+        <div class="scan-line" style="width:86%"></div>
+        <div class="scan-line" style="width:72%"></div>
+        <div class="scan-line" style="width:90%"></div>
+        <div class="scan-line" style="width:82%"></div>
+        <div class="scan-line" style="width:88%"></div>
+        <div class="scan-line" style="width:70%"></div>
+        <div class="scan-line" style="width:92%"></div>
+      </div>
+    </div>
+    <div class="page-label">6</div>
+  </div>
+
+  <div class="page-card" data-page="6">
+    <div class="page-thumbnail">
+      <div class="scanned-page" style="background:#fefefe;">
+        <div class="scan-line heading" style="width:48%"></div>
+        <div class="scan-line" style="width:86%"></div>
+        <div class="scan-line" style="width:78%"></div>
+        <div class="scan-line" style="width:90%"></div>
+        <div class="scan-line" style="width:66%"></div>
+        <div class="scan-line" style="width:84%"></div>
+        <div class="scan-line" style="width:92%"></div>
+        <div class="scan-line" style="width:72%"></div>
+        <div class="scan-line" style="width:88%"></div>
+      </div>
+    </div>
+    <div class="page-label">7</div>
+  </div>
+
+  <div class="page-card" data-page="7">
+    <div class="page-thumbnail">
+      <div class="scanned-page" style="background:#fefefe;">
+        <div class="scan-line heading" style="width:58%"></div>
+        <div class="scan-line" style="width:92%"></div>
+        <div class="scan-line" style="width:74%"></div>
+        <div class="scan-line" style="width:88%"></div>
+        <div class="scan-line" style="width:80%"></div>
+        <div class="scan-line" style="width:68%"></div>
+        <div class="scan-line" style="width:90%"></div>
+        <div class="scan-line" style="width:76%"></div>
+        <div class="scan-line" style="width:86%"></div>
+        <div class="scan-line" style="width:70%"></div>
+      </div>
+    </div>
+    <div class="page-label">8</div>
+  </div>
+
+  <div class="page-card" data-page="8">
+    <div class="page-thumbnail">
+      <div class="scanned-page" style="background:#fefefe;">
+        <div class="scan-line heading" style="width:42%"></div>
+        <div class="scan-line" style="width:90%"></div>
+        <div class="scan-line" style="width:82%"></div>
+        <div class="scan-line" style="width:86%"></div>
+        <div class="scan-line" style="width:74%"></div>
+        <div class="scan-line" style="width:92%"></div>
+        <div class="scan-line" style="width:78%"></div>
+        <div class="scan-line" style="width:84%"></div>
+      </div>
+    </div>
+    <div class="page-label">9</div>
   </div>
 </div>
 
@@ -486,25 +691,25 @@
   </button>
 </div>
 
-<div class="action-bar" id="actionBar">
-  <button class="action-item" onclick="actionTap('rotate')">
-    <span class="material-symbols-outlined">rotate_left</span>
-    <span>左回転</span>
-  </button>
-  <button class="action-item" onclick="actionTap('retake')">
-    <span class="material-symbols-outlined">photo_camera</span>
-    <span>撮り直し</span>
-  </button>
-  <button class="action-item" onclick="actionTap('filter')">
-    <span class="material-symbols-outlined">tune</span>
-    <span>フィルタ</span>
-  </button>
-  <button class="action-item" onclick="actionTap('delete')" style="color:var(--md-sys-color-error);">
-    <span class="material-symbols-outlined">delete</span>
-    <span>削除</span>
-  </button>
+<div class="delete-zone" id="deleteZone">
+  <span class="material-symbols-outlined">delete</span>
+  <span class="delete-zone-label">ここにドロップして削除</span>
 </div>
 
+<!-- Rename Dialog -->
+<div class="dialog-overlay" id="renameDialog">
+  <div class="dialog-backdrop" onclick="hideRenameDialog()"></div>
+  <div class="dialog-panel">
+    <h3>ドキュメント名を変更</h3>
+    <input type="text" class="dialog-input" id="renameInput" value="">
+    <div class="dialog-actions">
+      <button class="dialog-btn cancel" onclick="hideRenameDialog()">キャンセル</button>
+      <button class="dialog-btn confirm" onclick="confirmRename()">変更</button>
+    </div>
+  </div>
+</div>
+
+<!-- Share Sheet -->
 <div class="share-sheet" id="shareSheet">
   <div class="share-backdrop" onclick="hideShare()"></div>
   <div class="share-panel">
@@ -533,82 +738,48 @@
   </div>
 </div>
 
+<div class="home-indicator">
+  <div class="home-indicator-bar"></div>
+</div>
+
 <script>
-let selectedPage = null;
-
-function selectPage(card) {
-  if (selectedPage === card) {
-    card.classList.remove('selected');
-    selectedPage = null;
-    document.getElementById('actionBar').classList.remove('visible');
-    document.getElementById('fabContainer').classList.remove('raised');
-    return;
-  }
-
-  document.querySelectorAll('.page-card').forEach(c => c.classList.remove('selected'));
-  card.classList.add('selected');
-  selectedPage = card;
-  document.getElementById('actionBar').classList.add('visible');
-  document.getElementById('fabContainer').classList.add('raised');
+// --- Rename Dialog ---
+function showRenameDialog() {
+  const dialog = document.getElementById('renameDialog');
+  const input = document.getElementById('renameInput');
+  input.value = document.getElementById('docTitle').textContent;
+  dialog.classList.add('visible');
+  setTimeout(() => { input.focus(); input.select(); }, 100);
 }
 
-function actionTap(action) {
-  if (!selectedPage) return;
-
-  if (action === 'rotate') {
-    const thumb = selectedPage.querySelector('.scanned-page');
-    const current = parseInt(thumb.dataset.rotation || '0');
-    const next = current - 90;
-    thumb.dataset.rotation = next;
-    thumb.style.transition = 'transform 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
-    thumb.style.transform = `rotate(${next}deg)`;
-  } else if (action === 'delete') {
-    selectedPage.style.transition = 'transform 0.3s, opacity 0.3s';
-    selectedPage.style.transform = 'scale(0.8)';
-    selectedPage.style.opacity = '0';
-    setTimeout(() => {
-      selectedPage.remove();
-      selectedPage = null;
-      document.getElementById('actionBar').classList.remove('visible');
-      document.getElementById('fabContainer').classList.remove('raised');
-      updatePageNumbers();
-    }, 300);
-  } else if (action === 'filter') {
-    // Flash the selected page to indicate filter action
-    const thumb = selectedPage.querySelector('.page-thumbnail');
-    thumb.style.transition = 'filter 0.3s';
-    thumb.style.filter = 'contrast(1.5) brightness(1.1)';
-    setTimeout(() => {
-      thumb.style.filter = '';
-    }, 600);
-  } else if (action === 'retake') {
-    const flash = document.createElement('div');
-    flash.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.3);z-index:100;animation:fadeout 0.4s ease forwards;';
-    document.body.appendChild(flash);
-    setTimeout(() => flash.remove(), 400);
-  }
-}
-
-function updatePageNumbers() {
-  const cards = document.querySelectorAll('.page-card');
-  cards.forEach((card, i) => {
-    const badge = card.querySelector('.page-badge');
-    badge.textContent = `${i + 1} / ${cards.length}`;
-  });
-}
-
-function addPage() {
-  const fab = document.querySelector('.fab-btn');
-  fab.style.transform = 'scale(0.85)';
+function hideRenameDialog() {
+  const dialog = document.getElementById('renameDialog');
+  const panel = dialog.querySelector('.dialog-panel');
+  panel.style.animation = 'dialog-exit 0.2s ease forwards';
+  const backdrop = dialog.querySelector('.dialog-backdrop');
+  backdrop.style.animation = 'fade-out 0.2s ease forwards';
   setTimeout(() => {
-    fab.style.transform = '';
-    const flash = document.createElement('div');
-    flash.style.cssText = 'position:fixed;inset:0;background:rgba(26,115,232,0.1);z-index:100;animation:fadeout 0.4s ease forwards;';
-    document.body.appendChild(flash);
-    setTimeout(() => flash.remove(), 400);
-  }, 150);
+    dialog.classList.remove('visible');
+    panel.style.animation = '';
+    backdrop.style.animation = '';
+  }, 200);
 }
 
+function confirmRename() {
+  const input = document.getElementById('renameInput');
+  const name = input.value.trim();
+  if (name) {
+    document.getElementById('docTitle').textContent = name;
+  }
+  hideRenameDialog();
+}
+
+document.getElementById('renameInput').addEventListener('keydown', (e) => {
+  if (e.key === 'Enter') confirmRename();
+  if (e.key === 'Escape') hideRenameDialog();
+});
+
+// --- Share Sheet ---
 function showShare() {
   document.getElementById('shareSheet').classList.add('visible');
 }
@@ -626,7 +797,8 @@ function hideShare() {
 }
 
 function shareTap(target) {
-  const circle = document.querySelector(`.icon-circle.${target === 'gdrive' ? 'gdrive' : target === 'airdrop' ? 'airdrop' : 'other'}`);
+  const cls = target === 'gdrive' ? 'gdrive' : target === 'airdrop' ? 'airdrop' : 'other';
+  const circle = document.querySelector(`.icon-circle.${cls}`);
   circle.style.transform = 'scale(0.85)';
   setTimeout(() => {
     circle.style.transform = '';
@@ -634,6 +806,7 @@ function shareTap(target) {
   }, 200);
 }
 
+// --- Navigation ---
 function goBack() {
   const flash = document.createElement('div');
   flash.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.05);z-index:100;animation:fadeout 0.3s ease forwards;';
@@ -641,11 +814,285 @@ function goBack() {
   setTimeout(() => flash.remove(), 300);
 }
 
+function openPageEdit(card) {
+  card.style.transition = 'transform 0.15s, box-shadow 0.15s';
+  card.style.transform = 'scale(0.95)';
+  card.style.boxShadow = '0 0 0 3px var(--md-sys-color-primary)';
+  setTimeout(() => {
+    card.style.transform = '';
+    card.style.boxShadow = '';
+    const flash = document.createElement('div');
+    flash.style.cssText = 'position:fixed;inset:0;background:rgba(26,115,232,0.08);z-index:100;animation:fadeout 0.3s ease forwards;';
+    document.body.appendChild(flash);
+    setTimeout(() => flash.remove(), 300);
+  }, 150);
+}
+
+function addPage() {
+  const fab = document.querySelector('.fab-btn');
+  fab.style.transform = 'scale(0.85)';
+  setTimeout(() => {
+    fab.style.transform = '';
+    const flash = document.createElement('div');
+    flash.style.cssText = 'position:fixed;inset:0;background:rgba(26,115,232,0.1);z-index:100;animation:fadeout 0.4s ease forwards;';
+    document.body.appendChild(flash);
+    setTimeout(() => flash.remove(), 400);
+  }, 150);
+}
+
+// --- Drag & Drop Reorder with Delete Zone ---
+let dragState = null;
+const LONG_PRESS_DURATION = 500;
+
+function initDrag() {
+  const grid = document.getElementById('pageGrid');
+
+  grid.addEventListener('pointerdown', onPointerDown);
+  document.addEventListener('pointermove', onPointerMove);
+  document.addEventListener('pointerup', onPointerUp);
+  document.addEventListener('pointercancel', onPointerUp);
+}
+
+function getCardFromEvent(e) {
+  return e.target.closest('.page-card');
+}
+
+function onPointerDown(e) {
+  const card = getCardFromEvent(e);
+  if (!card || dragState) return;
+
+  dragState = {
+    card: card,
+    startX: e.clientX,
+    startY: e.clientY,
+    longPressTimer: null,
+    isDragging: false,
+    offsetX: 0,
+    offsetY: 0,
+  };
+
+  dragState.longPressTimer = setTimeout(() => {
+    if (!dragState) return;
+    startDrag(e);
+  }, LONG_PRESS_DURATION);
+}
+
+function onPointerMove(e) {
+  if (!dragState) return;
+
+  // If not yet dragging, check if moved too far (cancel long press, treat as scroll)
+  if (!dragState.isDragging) {
+    const dx = e.clientX - dragState.startX;
+    const dy = e.clientY - dragState.startY;
+    if (Math.abs(dx) > 10 || Math.abs(dy) > 10) {
+      clearTimeout(dragState.longPressTimer);
+      dragState = null;
+    }
+    return;
+  }
+
+  // Move the dragging clone
+  const clone = dragState.clone;
+  const x = e.clientX - dragState.offsetX;
+  const y = e.clientY - dragState.offsetY;
+  clone.style.left = x + 'px';
+  clone.style.top = y + 'px';
+
+  // Check delete zone
+  const deleteZone = document.getElementById('deleteZone');
+  const dzRect = deleteZone.getBoundingClientRect();
+  const isOverDelete = e.clientY > dzRect.top;
+  deleteZone.classList.toggle('active', isOverDelete);
+
+  if (isOverDelete) return;
+
+  // Check which card we're over for reorder
+  const cards = [...document.querySelectorAll('.page-card:not(.dragging):not(.drag-placeholder)')];
+  let targetCard = null;
+  for (const c of cards) {
+    const rect = c.getBoundingClientRect();
+    const cx = rect.left + rect.width / 2;
+    const cy = rect.top + rect.height / 2;
+    if (e.clientX >= rect.left && e.clientX <= rect.right && e.clientY >= rect.top && e.clientY <= rect.bottom) {
+      targetCard = c;
+      break;
+    }
+  }
+
+  // Remove all drag-over styling
+  cards.forEach(c => c.classList.remove('drag-over'));
+
+  if (targetCard && targetCard !== dragState.placeholder) {
+    targetCard.classList.add('drag-over');
+    const grid = document.getElementById('pageGrid');
+    const allCards = [...grid.children];
+    const placeholderIdx = allCards.indexOf(dragState.placeholder);
+    const targetIdx = allCards.indexOf(targetCard);
+
+    if (placeholderIdx !== targetIdx) {
+      if (placeholderIdx < targetIdx) {
+        grid.insertBefore(dragState.placeholder, targetCard.nextSibling);
+      } else {
+        grid.insertBefore(dragState.placeholder, targetCard);
+      }
+    }
+  }
+}
+
+function onPointerUp(e) {
+  if (!dragState) return;
+
+  clearTimeout(dragState.longPressTimer);
+
+  if (!dragState.isDragging) {
+    // Was a simple tap
+    const card = dragState.card;
+    dragState = null;
+    openPageEdit(card);
+    return;
+  }
+
+  // Check if dropped on delete zone
+  const deleteZone = document.getElementById('deleteZone');
+  const dzRect = deleteZone.getBoundingClientRect();
+  const isOverDelete = e.clientY > dzRect.top;
+
+  if (isOverDelete) {
+    animateTrashDelete(dragState.clone, dzRect, () => {
+      dragState.card.remove();
+      dragState.placeholder.remove();
+      updatePageNumbers();
+      endDragMode();
+    });
+  } else {
+    // Drop into place
+    const placeholder = dragState.placeholder;
+    const placeholderRect = placeholder.getBoundingClientRect();
+    const clone = dragState.clone;
+
+    // Animate clone to placeholder position
+    clone.classList.add('animating');
+    clone.style.transition = 'left 0.25s cubic-bezier(0.4,0,0.2,1), top 0.25s cubic-bezier(0.4,0,0.2,1), transform 0.25s cubic-bezier(0.4,0,0.2,1)';
+    clone.style.left = placeholderRect.left + 'px';
+    clone.style.top = placeholderRect.top + 'px';
+    clone.style.transform = 'scale(1)';
+    clone.style.boxShadow = '';
+
+    setTimeout(() => {
+      // Replace placeholder with actual card
+      const card = dragState.card;
+      card.style.display = '';
+      card.style.opacity = '1';
+      card.style.transform = '';
+      placeholder.replaceWith(card);
+      clone.remove();
+      updatePageNumbers();
+      endDragMode();
+    }, 250);
+  }
+
+  // Clear drag-over from all cards
+  document.querySelectorAll('.page-card').forEach(c => c.classList.remove('drag-over'));
+}
+
+function startDrag(e) {
+  if (!dragState) return;
+  dragState.isDragging = true;
+
+  const card = dragState.card;
+  const rect = card.getBoundingClientRect();
+
+  // Create clone for dragging
+  const clone = card.cloneNode(true);
+  clone.classList.add('dragging');
+  clone.style.width = rect.width + 'px';
+  clone.style.height = rect.height + 'px';
+  clone.style.left = rect.left + 'px';
+  clone.style.top = rect.top + 'px';
+  document.body.appendChild(clone);
+
+  dragState.clone = clone;
+  dragState.offsetX = e.clientX - rect.left;
+  dragState.offsetY = e.clientY - rect.top;
+
+  // Create placeholder in grid
+  const placeholder = document.createElement('div');
+  placeholder.className = 'page-card drag-placeholder';
+  placeholder.style.height = rect.height + 'px';
+  card.parentNode.insertBefore(placeholder, card);
+  dragState.placeholder = placeholder;
+
+  // Hide original
+  card.style.display = 'none';
+
+  // Haptic feedback simulation: brief vibration visual
+  document.body.style.transition = 'transform 0.05s';
+  document.body.style.transform = 'translateX(1px)';
+  setTimeout(() => {
+    document.body.style.transform = 'translateX(-1px)';
+    setTimeout(() => { document.body.style.transform = ''; }, 50);
+  }, 50);
+
+  // Show delete zone, hide FAB
+  document.getElementById('deleteZone').classList.add('visible');
+  document.getElementById('fabContainer').classList.add('hidden');
+}
+
+function animateTrashDelete(clone, dzRect, onComplete) {
+  // Animate: shrink and move toward trash icon center, rotate slightly
+  const trashCenterX = dzRect.left + dzRect.width / 2;
+  const trashCenterY = dzRect.top + dzRect.height / 2;
+
+  const cloneRect = clone.getBoundingClientRect();
+  const cloneCenterX = cloneRect.left + cloneRect.width / 2;
+  const cloneCenterY = cloneRect.top + cloneRect.height / 2;
+
+  // Animate to trash center with shrink and rotation
+  clone.style.transition = 'all 0.4s cubic-bezier(0.4, 0, 0.2, 1)';
+  clone.style.left = (trashCenterX - cloneRect.width / 2) + 'px';
+  clone.style.top = (trashCenterY - cloneRect.height / 2) + 'px';
+  clone.style.transform = 'scale(0.1) rotate(15deg)';
+  clone.style.opacity = '0';
+  clone.style.borderRadius = '50%';
+
+  // Flash delete zone
+  const deleteZone = document.getElementById('deleteZone');
+  deleteZone.style.transition = 'background 0.15s';
+  setTimeout(() => {
+    deleteZone.style.background = '';
+  }, 200);
+
+  setTimeout(() => {
+    clone.remove();
+    onComplete();
+  }, 400);
+}
+
+function endDragMode() {
+  document.getElementById('deleteZone').classList.remove('visible', 'active');
+  document.getElementById('fabContainer').classList.remove('hidden');
+  dragState = null;
+}
+
+function updatePageNumbers() {
+  const cards = document.querySelectorAll('.page-card:not(.drag-placeholder)');
+  cards.forEach((card, i) => {
+    const label = card.querySelector('.page-label');
+    if (label) label.textContent = i + 1;
+    card.dataset.page = i;
+  });
+}
+
+// --- Init ---
+initDrag();
+
+// Dynamic keyframe styles
 const style = document.createElement('style');
 style.textContent = `
   @keyframes fadeout { from { opacity: 1; } to { opacity: 0; } }
   @keyframes slide-down { from { transform: translateY(0); } to { transform: translateY(100%); } }
   @keyframes fade-out { from { opacity: 1; } to { opacity: 0; } }
+  @keyframes dialog-exit { from { opacity: 1; transform: scale(1); } to { opacity: 0; transform: scale(0.9); } }
 `;
 document.head.appendChild(style);
 </script>

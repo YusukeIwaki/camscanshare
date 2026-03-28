@@ -328,7 +328,7 @@ import Layout from '../layouts/Layout.astro';
     <div class="section-header">
       <div class="screen-number">画面 3</div>
       <h2>ページ一覧</h2>
-      <p class="section-description">スキャン済みの各ページをクロップ済み画像で表示。ページの調整・共有・追加が可能です。</p>
+      <p class="section-description">スキャン済みの各ページをクロップ済み画像で表示。ドラッグ&ドロップで並べ替え、共有・追加が可能です。</p>
     </div>
 
     <div class="screen-layout">
@@ -337,7 +337,7 @@ import Layout from '../layouts/Layout.astro';
           <div class="phone-notch"></div>
           <iframe src="/mockups/page-list.html" title="ページ一覧画面"></iframe>
         </div>
-        <p class="mockup-hint">ページをタップすると編集アクションバーが表示されます</p>
+        <p class="mockup-hint">ページを長押しするとドラッグ&ドロップで並べ替え。下部にドロップで削除。</p>
       </div>
 
       <div class="screen-spec">
@@ -346,19 +346,23 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list">
             <li>
               <span class="spec-element">トップアプリバー</span>
-              <span class="spec-detail">戻るボタン（文書一覧へ）、文書名表示、共有ボタン（Share）、メニューボタン。</span>
+              <span class="spec-detail">戻るボタン（文書一覧へ）、文書名（タップで名前変更ダイアログ）、共有ボタン。</span>
+            </li>
+            <li>
+              <span class="spec-element">文書名</span>
+              <span class="spec-detail">初期値は「新規ドキュメント_YYYY-MM-DD_hh-mm-ss」形式。タップするとダイアログで名前変更が可能。</span>
             </li>
             <li>
               <span class="spec-element">ページグリッド</span>
-              <span class="spec-detail">2カラムのグリッドでクロップ済みのページ画像を表示。各ページにページ番号バッジ。</span>
+              <span class="spec-detail">2カラムのグリッドでクロップ済みのページ画像を表示。各サムネイルの下にページ番号を表示。</span>
             </li>
             <li>
               <span class="spec-element">ページ追加FAB</span>
-              <span class="spec-detail">右下にカメラ＋追加アイコンのFAB。タップするとカメラが起動し、既存文書にページを追加。</span>
+              <span class="spec-detail">右下にカメラ＋追加アイコンのFAB。タップするとカメラが起動し、既存文書にページを追加。ドラッグ中は非表示。</span>
             </li>
             <li>
-              <span class="spec-element">アクションバー（選択時）</span>
-              <span class="spec-detail">ページ選択時に画面下部からスライドインする操作バー。回転・撮り直し・フィルタ・削除のアクション。</span>
+              <span class="spec-element">削除ゾーン（ドラッグ中）</span>
+              <span class="spec-detail">ドラッグ中に画面下部に表示される削除エリア。ページをドロップすると確認なしで削除。ゴミ箱に吸い込まれるアニメーション付き。</span>
             </li>
           </ul>
         </div>
@@ -367,28 +371,36 @@ import Layout from '../layouts/Layout.astro';
           <h3>インタラクション</h3>
           <ul class="spec-list interaction-list">
             <li>
+              <span class="interaction-trigger">文書名をタップ</span>
+              <span class="interaction-result">名前変更ダイアログが表示される。新しい名前を入力して「変更」で確定。</span>
+            </li>
+            <li>
               <span class="interaction-trigger">ページカードをタップ</span>
-              <span class="interaction-result">ページが選択状態に（チェックマーク表示・青枠）。下部にアクションバーがスライドイン。再タップで選択解除。</span>
+              <span class="interaction-result">ページ編集画面へ遷移。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">ページカードを長押し</span>
+              <span class="interaction-result">ドラッグモードに移行。カードが浮き上がり、FABが非表示になり、画面下部に削除ゾーンが出現。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">ドラッグ中に他のカード上へ移動</span>
+              <span class="interaction-result">ページの並び順がリアルタイムに入れ替わる。ドロップで確定。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">ドラッグ中に削除ゾーンへドロップ</span>
+              <span class="interaction-result">ゴミ箱に吸い込まれるアニメーションでページが削除される。確認ダイアログなし。</span>
             </li>
             <li>
               <span class="interaction-trigger">共有ボタンをタップ</span>
               <span class="interaction-result">全ページをPDFに変換 → 共有シート（ボトムシート）が表示。Google Drive / AirDrop / その他の共有先を選択。</span>
             </li>
             <li>
-              <span class="interaction-trigger">回転（アクションバー）</span>
-              <span class="interaction-result">選択ページを左90度回転。サムネイルに回転が即時反映。</span>
-            </li>
-            <li>
-              <span class="interaction-trigger">撮り直し（アクションバー）</span>
-              <span class="interaction-result">カメラスキャン画面に遷移し、選択ページを撮り直す。</span>
-            </li>
-            <li>
-              <span class="interaction-trigger">フィルタ（アクションバー）</span>
-              <span class="interaction-result">ページ編集画面のフィルタ選択UIへ遷移。</span>
-            </li>
-            <li>
               <span class="interaction-trigger">ページ追加FABをタップ</span>
               <span class="interaction-result">カメラが起動し、初回スキャンと同じ操作感でページを追加。追加完了後、このページ一覧に戻る。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">戻るボタンをタップ</span>
+              <span class="interaction-result">文書一覧画面へ戻る。</span>
             </li>
           </ul>
         </div>
