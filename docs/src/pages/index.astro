@@ -1,0 +1,1160 @@
+---
+import Layout from '../layouts/Layout.astro';
+---
+
+<Layout title="CamScanShare - 画面設計ドキュメント">
+
+<!-- Header -->
+<header class="doc-header">
+  <div class="header-inner">
+    <div class="header-logo">
+      <div class="logo-icon">
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none">
+          <rect x="3" y="3" width="18" height="18" rx="3" stroke="currentColor" stroke-width="2"/>
+          <circle cx="12" cy="11" r="3" stroke="currentColor" stroke-width="2"/>
+          <path d="M6 18l2-3h8l2 3" stroke="currentColor" stroke-width="2" stroke-linejoin="round"/>
+        </svg>
+      </div>
+      <div>
+        <h1 class="header-title">CamScanShare</h1>
+        <p class="header-subtitle">画面設計ドキュメント</p>
+      </div>
+    </div>
+    <div class="header-meta">
+      <span class="badge badge-info">v0.1 Draft</span>
+      <span class="meta-date">最終更新: 2026-03-28</span>
+    </div>
+  </div>
+</header>
+
+<!-- Navigation -->
+<nav class="doc-nav" id="docNav">
+  <div class="nav-inner">
+    <a href="#overview" class="nav-link active">概要</a>
+    <a href="#flow" class="nav-link">画面遷移</a>
+    <a href="#screen-document-list" class="nav-link">文書一覧</a>
+    <a href="#screen-camera-scan" class="nav-link">カメラスキャン</a>
+    <a href="#screen-page-list" class="nav-link">ページ一覧</a>
+    <a href="#screen-page-edit" class="nav-link">ページ編集</a>
+  </div>
+</nav>
+
+<main class="doc-main">
+
+  <!-- Overview Section -->
+  <section class="doc-section" id="overview">
+    <div class="section-header">
+      <h2>アプリ概要</h2>
+      <p class="section-description">CamScanShareは、紙の文書をスキャンしてPDF化し、共有することに特化したモバイルアプリです。</p>
+    </div>
+
+    <div class="card-grid">
+      <div class="info-card">
+        <div class="info-card-icon" style="background: var(--ds-background-information);">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--ds-text-brand)" stroke-width="2">
+            <rect x="4" y="4" width="16" height="16" rx="2"/>
+            <circle cx="12" cy="11" r="2.5"/>
+            <path d="M7 17l2-2.5h6l2 2.5"/>
+          </svg>
+        </div>
+        <h3>スキャン</h3>
+        <p>カメラで紙の文書を撮影。自動で紙の領域を検出し、台形補正・クロップを行います。</p>
+      </div>
+
+      <div class="info-card">
+        <div class="info-card-icon" style="background: #F3E8FD;">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#8270DB" stroke-width="2">
+            <path d="M12 3v18M3 12h18"/>
+            <rect x="5" y="5" width="14" height="14" rx="2"/>
+          </svg>
+        </div>
+        <h3>調整</h3>
+        <p>撮影した画像を回転、フィルタ適用して読みやすく調整。文書に最適化されたプリセットを用意。</p>
+      </div>
+
+      <div class="info-card">
+        <div class="info-card-icon" style="background: var(--ds-background-success);">
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="var(--ds-text-success)" stroke-width="2">
+            <path d="M4 12l4 4L20 6"/>
+            <rect x="2" y="14" width="20" height="6" rx="2"/>
+          </svg>
+        </div>
+        <h3>共有</h3>
+        <p>PDFに変換し、Google DriveやAirDropなどOS標準の共有機能で即座にシェア。</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- Screen Flow Section -->
+  <section class="doc-section" id="flow">
+    <div class="section-header">
+      <h2>画面遷移フロー</h2>
+      <p class="section-description">アプリ内の主要な画面遷移を示します。</p>
+    </div>
+
+    <div class="flow-diagram">
+      <div class="flow-node flow-node-start">
+        <div class="flow-node-content">
+          <span class="flow-icon">🏠</span>
+          <span class="flow-label">文書一覧</span>
+        </div>
+      </div>
+
+      <div class="flow-arrow-group">
+        <div class="flow-arrow flow-arrow-down">
+          <div class="flow-arrow-line"></div>
+          <div class="flow-arrow-label">FABタップ<br><small>(新規スキャン)</small></div>
+          <div class="flow-arrow-head">▼</div>
+        </div>
+        <div class="flow-arrow flow-arrow-down-right">
+          <div class="flow-arrow-line-curved"></div>
+          <div class="flow-arrow-label-side">文書タップ<br><small>(既存文書)</small></div>
+        </div>
+      </div>
+
+      <div class="flow-row">
+        <div class="flow-node flow-node-camera">
+          <div class="flow-node-content">
+            <span class="flow-icon">📷</span>
+            <span class="flow-label">カメラスキャン</span>
+          </div>
+        </div>
+        <div class="flow-connector">
+          <span class="flow-connector-label">完了 →</span>
+        </div>
+        <div class="flow-node flow-node-pages">
+          <div class="flow-node-content">
+            <span class="flow-icon">📄</span>
+            <span class="flow-label">ページ一覧</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="flow-arrow-group">
+        <div class="flow-arrow flow-arrow-down-center">
+          <div class="flow-arrow-line"></div>
+          <div class="flow-arrow-label">ページ選択</div>
+          <div class="flow-arrow-head">▼</div>
+        </div>
+        <div class="flow-branch-labels">
+          <span class="flow-branch-left">← ページ追加（カメラ起動）</span>
+          <span class="flow-branch-right">共有 → PDF出力 →</span>
+        </div>
+      </div>
+
+      <div class="flow-node flow-node-edit">
+        <div class="flow-node-content">
+          <span class="flow-icon">✏️</span>
+          <span class="flow-label">ページ編集</span>
+        </div>
+        <div class="flow-node-sub">回転 / 撮り直し / フィルタ</div>
+      </div>
+
+      <div class="flow-return">
+        <div class="flow-return-line"></div>
+        <span class="flow-return-label">← 戻る（文書一覧へ）</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- Screen 1: Document List -->
+  <section class="doc-section screen-section" id="screen-document-list">
+    <div class="section-header">
+      <div class="screen-number">画面 1</div>
+      <h2>文書一覧</h2>
+      <p class="section-description">アプリ起動時のホーム画面。過去にスキャンした文書が一覧表示されます。</p>
+    </div>
+
+    <div class="screen-layout">
+      <div class="screen-mockup">
+        <div class="phone-frame">
+          <div class="phone-notch"></div>
+          <iframe src="/mockups/document-list.html" title="文書一覧画面"></iframe>
+        </div>
+        <p class="mockup-hint">インタラクティブモック - クリックして操作できます</p>
+      </div>
+
+      <div class="screen-spec">
+        <div class="spec-group">
+          <h3>画面要素</h3>
+          <ul class="spec-list">
+            <li>
+              <span class="spec-element">トップアプリバー</span>
+              <span class="spec-detail">アプリ名「CamScanShare」を表示。ハンバーガーメニューと検索アイコンを配置。</span>
+            </li>
+            <li>
+              <span class="spec-element">文書カードグリッド</span>
+              <span class="spec-detail">2カラムのグリッドレイアウト。各カードにはサムネイル・文書名・日付・ページ数バッジを表示。スクロール可能。</span>
+            </li>
+            <li>
+              <span class="spec-element">FAB（Floating Action Button）</span>
+              <span class="spec-detail">画面右下に固定配置。カメラアイコン付き。パルスアニメーションで初回ユーザーへの視認性を向上。</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="spec-group">
+          <h3>インタラクション</h3>
+          <ul class="spec-list interaction-list">
+            <li>
+              <span class="interaction-trigger">文書カードをタップ</span>
+              <span class="interaction-result">リップルエフェクト → ページ一覧画面へ遷移</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">FABをタップ</span>
+              <span class="interaction-result">カメラスキャン画面が起動し、新規文書のスキャンを開始</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">カードの出現</span>
+              <span class="interaction-result">下からフェードインするスタガーアニメーションで順次表示</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="spec-group">
+          <h3>データ</h3>
+          <ul class="spec-list">
+            <li>
+              <span class="spec-element">表示情報</span>
+              <span class="spec-detail">文書名、スキャン日時、ページ数、サムネイル画像（1ページ目のプレビュー）</span>
+            </li>
+            <li>
+              <span class="spec-element">ソート順</span>
+              <span class="spec-detail">最終更新日時の降順（新しいものが上）</span>
+            </li>
+            <li>
+              <span class="spec-element">空状態</span>
+              <span class="spec-detail">文書がない場合は空状態メッセージとFABへの誘導を表示</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Screen 2: Camera Scan -->
+  <section class="doc-section screen-section" id="screen-camera-scan">
+    <div class="section-header">
+      <div class="screen-number">画面 2</div>
+      <h2>カメラスキャン</h2>
+      <p class="section-description">カメラを使って紙の文書を撮影する画面。紙の自動検出とガイド表示で撮影を補助します。</p>
+    </div>
+
+    <div class="screen-layout">
+      <div class="screen-mockup">
+        <div class="phone-frame phone-frame-dark">
+          <div class="phone-notch"></div>
+          <iframe src="/mockups/camera-scan.html" title="カメラスキャン画面"></iframe>
+        </div>
+        <p class="mockup-hint">撮影ボタンをクリックするとアニメーションが再生されます</p>
+      </div>
+
+      <div class="screen-spec">
+        <div class="spec-group">
+          <h3>画面要素</h3>
+          <ul class="spec-list">
+            <li>
+              <span class="spec-element">カメラビューファインダー</span>
+              <span class="spec-detail">デバイスカメラのリアルタイムプレビューを全画面表示。</span>
+            </li>
+            <li>
+              <span class="spec-element">紙検出ガイド（矩形オーバーレイ）</span>
+              <span class="spec-detail">紙を検出すると、四角形の枠ガイドが紙の輪郭に沿って表示される。コーナーマーカーと半透明フィルで視認性を確保。検出中は微かにトラッキングアニメーション。</span>
+            </li>
+            <li>
+              <span class="spec-element">撮影ボタン</span>
+              <span class="spec-detail">画面下部中央に大型の円形ボタン。物理シャッターボタンを模した2重円デザイン。</span>
+            </li>
+            <li>
+              <span class="spec-element">サムネイルスタック</span>
+              <span class="spec-detail">撮影済みページのスタック表示。撮影枚数に応じてサムネイルが重なっていく。</span>
+            </li>
+            <li>
+              <span class="spec-element">スキャン済み枚数カウンター</span>
+              <span class="spec-detail">「N枚スキャン済み」とリアルタイム表示。撮影時にバウンスアニメーション。</span>
+            </li>
+            <li>
+              <span class="spec-element">完了ボタン</span>
+              <span class="spec-detail">右上に配置。撮影完了時にタップしてページ一覧へ遷移。</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="spec-group">
+          <h3>インタラクション</h3>
+          <ul class="spec-list interaction-list">
+            <li>
+              <span class="interaction-trigger">撮影ボタンをタップ</span>
+              <span class="interaction-result">フラッシュエフェクト → 撮影画像が縮小しながらサムネイルスタックへ飛んでいくアニメーション（アルバムに入る演出） → カウンターがインクリメント（バウンス）</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">完了ボタンをタップ</span>
+              <span class="interaction-result">スキャンを終了し、ページ一覧画面へ遷移。クロップ処理が実行される。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">紙の検出</span>
+              <span class="interaction-result">検出矩形がリアルタイムでトラッキング。検出成功時に「文書を検出しました」ラベル表示。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">フラッシュ切替</span>
+              <span class="interaction-result">フラッシュON/OFFのトグルボタン。アイコン変化で状態を明示。</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="spec-group">
+          <h3>技術的な考慮点</h3>
+          <ul class="spec-list">
+            <li>
+              <span class="spec-element">紙検出アルゴリズム</span>
+              <span class="spec-detail">エッジ検出（Canny等）→ 輪郭検出 → 最大矩形抽出。OpenCV等のライブラリ使用を想定。</span>
+            </li>
+            <li>
+              <span class="spec-element">台形補正</span>
+              <span class="spec-detail">検出した四角形の4点を用いた射影変換で正面からの撮影に補正。</span>
+            </li>
+            <li>
+              <span class="spec-element">連続撮影</span>
+              <span class="spec-detail">撮影後もカメラは起動したまま。ユーザーが完了を押すまで連続して撮影可能。</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Screen 3: Page List -->
+  <section class="doc-section screen-section" id="screen-page-list">
+    <div class="section-header">
+      <div class="screen-number">画面 3</div>
+      <h2>ページ一覧</h2>
+      <p class="section-description">スキャン済みの各ページをクロップ済み画像で表示。ページの調整・共有・追加が可能です。</p>
+    </div>
+
+    <div class="screen-layout">
+      <div class="screen-mockup">
+        <div class="phone-frame">
+          <div class="phone-notch"></div>
+          <iframe src="/mockups/page-list.html" title="ページ一覧画面"></iframe>
+        </div>
+        <p class="mockup-hint">ページをタップすると編集アクションバーが表示されます</p>
+      </div>
+
+      <div class="screen-spec">
+        <div class="spec-group">
+          <h3>画面要素</h3>
+          <ul class="spec-list">
+            <li>
+              <span class="spec-element">トップアプリバー</span>
+              <span class="spec-detail">戻るボタン（文書一覧へ）、文書名表示、共有ボタン（Share）、メニューボタン。</span>
+            </li>
+            <li>
+              <span class="spec-element">ページグリッド</span>
+              <span class="spec-detail">2カラムのグリッドでクロップ済みのページ画像を表示。各ページにページ番号バッジ。</span>
+            </li>
+            <li>
+              <span class="spec-element">ページ追加FAB</span>
+              <span class="spec-detail">右下にカメラ＋追加アイコンのFAB。タップするとカメラが起動し、既存文書にページを追加。</span>
+            </li>
+            <li>
+              <span class="spec-element">アクションバー（選択時）</span>
+              <span class="spec-detail">ページ選択時に画面下部からスライドインする操作バー。回転・撮り直し・フィルタ・削除のアクション。</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="spec-group">
+          <h3>インタラクション</h3>
+          <ul class="spec-list interaction-list">
+            <li>
+              <span class="interaction-trigger">ページカードをタップ</span>
+              <span class="interaction-result">ページが選択状態に（チェックマーク表示・青枠）。下部にアクションバーがスライドイン。再タップで選択解除。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">共有ボタンをタップ</span>
+              <span class="interaction-result">全ページをPDFに変換 → 共有シート（ボトムシート）が表示。Google Drive / AirDrop / その他の共有先を選択。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">回転（アクションバー）</span>
+              <span class="interaction-result">選択ページを左90度回転。サムネイルに回転が即時反映。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">撮り直し（アクションバー）</span>
+              <span class="interaction-result">カメラスキャン画面に遷移し、選択ページを撮り直す。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">フィルタ（アクションバー）</span>
+              <span class="interaction-result">ページ編集画面のフィルタ選択UIへ遷移。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">ページ追加FABをタップ</span>
+              <span class="interaction-result">カメラが起動し、初回スキャンと同じ操作感でページを追加。追加完了後、このページ一覧に戻る。</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="spec-group">
+          <h3>共有フロー</h3>
+          <ul class="spec-list">
+            <li>
+              <span class="spec-element">PDF変換</span>
+              <span class="spec-detail">全ページを順番にPDFドキュメントへ統合。A4サイズにフィットさせる。</span>
+            </li>
+            <li>
+              <span class="spec-element">共有シート</span>
+              <span class="spec-detail">OS標準の共有APIを呼び出し。Google Drive、AirDrop等、デバイスで利用可能な共有先を表示。</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Screen 4: Page Edit -->
+  <section class="doc-section screen-section" id="screen-page-edit">
+    <div class="section-header">
+      <div class="screen-number">画面 4</div>
+      <h2>ページ編集</h2>
+      <p class="section-description">個々のページに対して回転・フィルタ適用・撮り直しなどの調整を行う画面です。</p>
+    </div>
+
+    <div class="screen-layout">
+      <div class="screen-mockup">
+        <div class="phone-frame">
+          <div class="phone-notch"></div>
+          <iframe src="/mockups/page-edit.html" title="ページ編集画面"></iframe>
+        </div>
+        <p class="mockup-hint">回転ボタンやフィルタ選択を操作できます</p>
+      </div>
+
+      <div class="screen-spec">
+        <div class="spec-group">
+          <h3>画面要素</h3>
+          <ul class="spec-list">
+            <li>
+              <span class="spec-element">ページプレビュー</span>
+              <span class="spec-detail">選択したページの大きなプレビュー表示。回転やフィルタの適用結果がリアルタイムで反映される。</span>
+            </li>
+            <li>
+              <span class="spec-element">アクションツールバー</span>
+              <span class="spec-detail">左90度回転・撮り直し・フィルタの3つのアクションボタンを横並び表示。</span>
+            </li>
+            <li>
+              <span class="spec-element">フィルタパネル</span>
+              <span class="spec-detail">フィルタボタンをタップすると下部からスライドイン。横スクロールでプリセットフィルタを選択。各フィルタのプレビューサムネイル付き。</span>
+            </li>
+            <li>
+              <span class="spec-element">適用ボタン</span>
+              <span class="spec-detail">右上に配置。編集結果を確定してページ一覧に戻る。</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="spec-group">
+          <h3>インタラクション</h3>
+          <ul class="spec-list interaction-list">
+            <li>
+              <span class="interaction-trigger">左90度回転ボタン</span>
+              <span class="interaction-result">プレビュー画像が左方向に90度、スムーズにアニメーション回転。連続タップ可。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">撮り直しボタン</span>
+              <span class="interaction-result">カメラを起動し、このページのみ再撮影。撮り直し後、編集画面に戻る。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">フィルタボタン</span>
+              <span class="interaction-result">フィルタパネルの開閉をトグル。パネルはスムーズなスライドアニメーションで表示。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">フィルタを選択</span>
+              <span class="interaction-result">プレビュー画像にフィルタがリアルタイム適用。選択中フィルタは青枠でハイライト。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">適用ボタン</span>
+              <span class="interaction-result">編集結果を保存し、ページ一覧画面へ戻る。</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="spec-group">
+          <h3>フィルタプリセット</h3>
+          <div class="filter-table">
+            <div class="filter-row filter-header">
+              <span>フィルタ名</span>
+              <span>効果</span>
+              <span>用途</span>
+            </div>
+            <div class="filter-row">
+              <span class="filter-name-cell">オリジナル</span>
+              <span>加工なし</span>
+              <span>写真としてそのまま保存</span>
+            </div>
+            <div class="filter-row">
+              <span class="filter-name-cell">くっきり</span>
+              <span>コントラスト強調 + 明るさ微調整</span>
+              <span>一般的な文書の読みやすさ向上</span>
+            </div>
+            <div class="filter-row">
+              <span class="filter-name-cell">白黒</span>
+              <span>グレースケール化 + コントラスト強調</span>
+              <span>白黒文書、コピー用</span>
+            </div>
+            <div class="filter-row">
+              <span class="filter-name-cell">ホワイトボード</span>
+              <span>高明度 + 高コントラスト + 彩度除去</span>
+              <span>ホワイトボードの撮影</span>
+            </div>
+            <div class="filter-row">
+              <span class="filter-name-cell">鮮やか</span>
+              <span>彩度強調 + コントラスト微調整</span>
+              <span>カラー文書、図表の鮮明化</span>
+            </div>
+            <div class="filter-row">
+              <span class="filter-name-cell">スタンプ</span>
+              <span>超高コントラスト + 二値化近似</span>
+              <span>スタンプ・はんこ・署名の抽出</span>
+            </div>
+          </div>
+          <p class="spec-note">※ フィルタは今後の要件に応じて追加可能な拡張設計とする。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- Footer -->
+<footer class="doc-footer">
+  <div class="footer-inner">
+    <p>CamScanShare - 画面設計ドキュメント</p>
+    <p class="footer-note">デザインシステム: <a href="https://atlassian.design/components" target="_blank" rel="noopener">Atlassian Design System</a> (ドキュメント) / <a href="https://github.com/material-components/material-web" target="_blank" rel="noopener">Material Web</a> (アプリモック)</p>
+  </div>
+</footer>
+
+</Layout>
+
+<style>
+  /* ==========================================
+     Document Header
+     ========================================== */
+  .doc-header {
+    background: var(--ds-surface);
+    border-bottom: 1px solid var(--ds-border);
+    padding: var(--ds-space-300) var(--ds-space-400);
+  }
+
+  .header-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--ds-space-200);
+    flex-wrap: wrap;
+  }
+
+  .header-logo {
+    display: flex;
+    align-items: center;
+    gap: var(--ds-space-150);
+  }
+
+  .logo-icon {
+    width: 44px;
+    height: 44px;
+    background: var(--ds-background-brand-bold);
+    color: var(--ds-text-inverse);
+    border-radius: var(--ds-radius-200);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .header-title {
+    font-size: var(--ds-font-size-400);
+    font-weight: var(--ds-font-weight-bold);
+    line-height: var(--ds-font-lineHeight-400);
+    color: var(--ds-text);
+  }
+
+  .header-subtitle {
+    font-size: var(--ds-font-size-100);
+    color: var(--ds-text-subtlest);
+    line-height: var(--ds-font-lineHeight-200);
+  }
+
+  .header-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--ds-space-150);
+  }
+
+  .badge {
+    display: inline-block;
+    padding: var(--ds-space-025) var(--ds-space-100);
+    border-radius: var(--ds-radius-100);
+    font-size: var(--ds-font-size-050);
+    font-weight: var(--ds-font-weight-semibold);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+  }
+
+  .badge-info {
+    background: var(--ds-background-information);
+    color: var(--ds-text-brand);
+  }
+
+  .meta-date {
+    font-size: var(--ds-font-size-075);
+    color: var(--ds-text-subtlest);
+  }
+
+  /* ==========================================
+     Navigation
+     ========================================== */
+  .doc-nav {
+    background: var(--ds-surface);
+    border-bottom: 1px solid var(--ds-border);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .nav-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: flex;
+    gap: 0;
+    padding: 0 var(--ds-space-400);
+    overflow-x: auto;
+  }
+
+  .nav-inner::-webkit-scrollbar { display: none; }
+
+  .nav-link {
+    display: inline-flex;
+    align-items: center;
+    padding: var(--ds-space-150) var(--ds-space-200);
+    font-size: var(--ds-font-size-100);
+    font-weight: var(--ds-font-weight-medium);
+    color: var(--ds-text-subtle);
+    text-decoration: none;
+    white-space: nowrap;
+    border-bottom: 2px solid transparent;
+    transition: color 0.15s, border-color 0.15s;
+  }
+
+  .nav-link:hover {
+    color: var(--ds-text);
+  }
+
+  .nav-link.active {
+    color: var(--ds-text-brand);
+    border-bottom-color: var(--ds-border-brand);
+  }
+
+  /* ==========================================
+     Main Content
+     ========================================== */
+  .doc-main {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: var(--ds-space-400);
+  }
+
+  .doc-section {
+    margin-bottom: var(--ds-space-600);
+    scroll-margin-top: 56px;
+  }
+
+  .section-header {
+    margin-bottom: var(--ds-space-300);
+  }
+
+  .section-header h2 {
+    font-size: var(--ds-font-size-500);
+    font-weight: var(--ds-font-weight-semibold);
+    line-height: var(--ds-font-lineHeight-500);
+    color: var(--ds-text);
+    margin-bottom: var(--ds-space-100);
+  }
+
+  .section-description {
+    font-size: var(--ds-font-size-200);
+    color: var(--ds-text-subtle);
+    line-height: var(--ds-font-lineHeight-300);
+    max-width: 640px;
+  }
+
+  .screen-number {
+    display: inline-block;
+    padding: var(--ds-space-025) var(--ds-space-100);
+    background: var(--ds-background-brand-bold);
+    color: var(--ds-text-inverse);
+    border-radius: var(--ds-radius-100);
+    font-size: var(--ds-font-size-075);
+    font-weight: var(--ds-font-weight-semibold);
+    margin-bottom: var(--ds-space-100);
+  }
+
+  /* ==========================================
+     Info Cards (Overview)
+     ========================================== */
+  .card-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: var(--ds-space-200);
+  }
+
+  .info-card {
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-border);
+    border-radius: var(--ds-radius-200);
+    padding: var(--ds-space-300);
+    transition: box-shadow 0.2s;
+  }
+
+  .info-card:hover {
+    box-shadow: var(--ds-shadow-raised);
+  }
+
+  .info-card-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: var(--ds-radius-200);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: var(--ds-space-200);
+  }
+
+  .info-card h3 {
+    font-size: var(--ds-font-size-200);
+    font-weight: var(--ds-font-weight-semibold);
+    margin-bottom: var(--ds-space-100);
+  }
+
+  .info-card p {
+    font-size: var(--ds-font-size-100);
+    color: var(--ds-text-subtle);
+    line-height: var(--ds-font-lineHeight-200);
+  }
+
+  /* ==========================================
+     Flow Diagram
+     ========================================== */
+  .flow-diagram {
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-border);
+    border-radius: var(--ds-radius-200);
+    padding: var(--ds-space-400);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--ds-space-200);
+    overflow-x: auto;
+  }
+
+  .flow-node {
+    background: var(--ds-surface);
+    border: 2px solid var(--ds-border-bold);
+    border-radius: var(--ds-radius-200);
+    padding: var(--ds-space-150) var(--ds-space-300);
+    text-align: center;
+    min-width: 140px;
+    transition: box-shadow 0.2s;
+  }
+
+  .flow-node:hover {
+    box-shadow: var(--ds-shadow-raised);
+  }
+
+  .flow-node-content {
+    display: flex;
+    align-items: center;
+    gap: var(--ds-space-100);
+    justify-content: center;
+  }
+
+  .flow-icon {
+    font-size: 20px;
+  }
+
+  .flow-label {
+    font-size: var(--ds-font-size-100);
+    font-weight: var(--ds-font-weight-semibold);
+  }
+
+  .flow-node-start { border-color: var(--ds-border-brand); background: var(--ds-background-information); }
+  .flow-node-camera { border-color: #5243AA; background: #EAE6FF; }
+  .flow-node-pages { border-color: #00875A; background: #E3FCEF; }
+  .flow-node-edit { border-color: #FF8B00; background: #FFF7E6; }
+
+  .flow-node-sub {
+    font-size: var(--ds-font-size-075);
+    color: var(--ds-text-subtlest);
+    margin-top: var(--ds-space-050);
+  }
+
+  .flow-arrow-group {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--ds-space-050);
+    position: relative;
+    width: 100%;
+  }
+
+  .flow-arrow {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+  }
+
+  .flow-arrow-line {
+    width: 2px;
+    height: 20px;
+    background: var(--ds-border-bold);
+  }
+
+  .flow-arrow-head {
+    color: var(--ds-border-bold);
+    font-size: 10px;
+    line-height: 1;
+  }
+
+  .flow-arrow-label,
+  .flow-arrow-label-side,
+  .flow-connector-label {
+    font-size: var(--ds-font-size-075);
+    color: var(--ds-text-subtlest);
+    text-align: center;
+  }
+
+  .flow-arrow-label small,
+  .flow-arrow-label-side small {
+    font-size: var(--ds-font-size-050);
+  }
+
+  .flow-row {
+    display: flex;
+    align-items: center;
+    gap: var(--ds-space-200);
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+
+  .flow-connector {
+    display: flex;
+    align-items: center;
+    gap: var(--ds-space-050);
+  }
+
+  .flow-connector::before,
+  .flow-connector::after {
+    content: '';
+    width: 20px;
+    height: 2px;
+    background: var(--ds-border-bold);
+  }
+
+  .flow-branch-labels {
+    display: flex;
+    justify-content: space-between;
+    width: 100%;
+    max-width: 500px;
+    padding: 0 var(--ds-space-200);
+  }
+
+  .flow-branch-left,
+  .flow-branch-right {
+    font-size: var(--ds-font-size-075);
+    color: var(--ds-text-subtlest);
+    font-style: italic;
+  }
+
+  .flow-return {
+    display: flex;
+    align-items: center;
+    gap: var(--ds-space-100);
+    margin-top: var(--ds-space-100);
+  }
+
+  .flow-return-line {
+    width: 24px;
+    height: 2px;
+    background: var(--ds-border-bold);
+  }
+
+  .flow-return-label {
+    font-size: var(--ds-font-size-075);
+    color: var(--ds-text-subtlest);
+  }
+
+  /* Hide some flow detail on narrow */
+  .flow-arrow-down-right,
+  .flow-arrow-line-curved { display: none; }
+
+  /* ==========================================
+     Screen Section Layout
+     ========================================== */
+  .screen-layout {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--ds-space-400);
+    align-items: start;
+  }
+
+  @media (max-width: 900px) {
+    .screen-layout {
+      grid-template-columns: 1fr;
+    }
+    .screen-mockup {
+      justify-self: center;
+    }
+  }
+
+  /* ==========================================
+     Phone Frame
+     ========================================== */
+  .screen-mockup {
+    position: sticky;
+    top: 72px;
+  }
+
+  .phone-frame {
+    width: 300px;
+    height: 620px;
+    background: #1a1a1a;
+    border-radius: 36px;
+    padding: 12px;
+    position: relative;
+    box-shadow: var(--ds-shadow-overlay), inset 0 0 0 2px #333;
+  }
+
+  .phone-frame-dark {
+    background: #000;
+    box-shadow: var(--ds-shadow-overlay), inset 0 0 0 2px #222;
+  }
+
+  .phone-notch {
+    position: absolute;
+    top: 10px;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 80px;
+    height: 22px;
+    background: #1a1a1a;
+    border-radius: 0 0 12px 12px;
+    z-index: 10;
+  }
+
+  .phone-frame-dark .phone-notch {
+    background: #000;
+  }
+
+  .phone-frame iframe {
+    width: 100%;
+    height: 100%;
+    border: none;
+    border-radius: 24px;
+    background: #fff;
+  }
+
+  .mockup-hint {
+    text-align: center;
+    font-size: var(--ds-font-size-075);
+    color: var(--ds-text-subtlest);
+    margin-top: var(--ds-space-100);
+    font-style: italic;
+  }
+
+  /* ==========================================
+     Spec (right column)
+     ========================================== */
+  .screen-spec {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ds-space-300);
+  }
+
+  .spec-group {
+    background: var(--ds-surface);
+    border: 1px solid var(--ds-border);
+    border-radius: var(--ds-radius-200);
+    padding: var(--ds-space-300);
+  }
+
+  .spec-group h3 {
+    font-size: var(--ds-font-size-200);
+    font-weight: var(--ds-font-weight-semibold);
+    margin-bottom: var(--ds-space-200);
+    padding-bottom: var(--ds-space-100);
+    border-bottom: 1px solid var(--ds-border);
+  }
+
+  .spec-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: var(--ds-space-150);
+  }
+
+  .spec-list > li {
+    display: flex;
+    flex-direction: column;
+    gap: var(--ds-space-050);
+    padding: var(--ds-space-100);
+    border-radius: var(--ds-radius-100);
+    transition: background 0.15s;
+  }
+
+  .spec-list > li:hover {
+    background: var(--ds-background-neutral);
+  }
+
+  .spec-element {
+    font-size: var(--ds-font-size-100);
+    font-weight: var(--ds-font-weight-semibold);
+    color: var(--ds-text);
+  }
+
+  .spec-detail {
+    font-size: var(--ds-font-size-100);
+    color: var(--ds-text-subtle);
+    line-height: var(--ds-font-lineHeight-200);
+  }
+
+  /* Interaction list */
+  .interaction-list > li {
+    border-left: 3px solid var(--ds-border-brand);
+    padding-left: var(--ds-space-150);
+  }
+
+  .interaction-trigger {
+    font-size: var(--ds-font-size-100);
+    font-weight: var(--ds-font-weight-semibold);
+    color: var(--ds-text-brand);
+  }
+
+  .interaction-result {
+    font-size: var(--ds-font-size-100);
+    color: var(--ds-text-subtle);
+    line-height: var(--ds-font-lineHeight-200);
+  }
+
+  /* ==========================================
+     Filter Table
+     ========================================== */
+  .filter-table {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    background: var(--ds-border);
+    border: 1px solid var(--ds-border);
+    border-radius: var(--ds-radius-100);
+    overflow: hidden;
+    margin-top: var(--ds-space-100);
+  }
+
+  .filter-row {
+    display: grid;
+    grid-template-columns: 120px 1fr 1fr;
+    gap: 0;
+    background: var(--ds-surface);
+  }
+
+  .filter-row > span {
+    padding: var(--ds-space-100) var(--ds-space-150);
+    font-size: var(--ds-font-size-100);
+    color: var(--ds-text-subtle);
+    line-height: var(--ds-font-lineHeight-200);
+    border-right: 1px solid var(--ds-border);
+  }
+
+  .filter-row > span:last-child {
+    border-right: none;
+  }
+
+  .filter-header {
+    background: var(--ds-surface-sunken);
+  }
+
+  .filter-header > span {
+    font-weight: var(--ds-font-weight-semibold);
+    color: var(--ds-text);
+    font-size: var(--ds-font-size-075);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+
+  .filter-name-cell {
+    font-weight: var(--ds-font-weight-medium) !important;
+    color: var(--ds-text) !important;
+  }
+
+  .spec-note {
+    font-size: var(--ds-font-size-075);
+    color: var(--ds-text-subtlest);
+    margin-top: var(--ds-space-150);
+    font-style: italic;
+  }
+
+  /* ==========================================
+     Footer
+     ========================================== */
+  .doc-footer {
+    background: var(--ds-surface);
+    border-top: 1px solid var(--ds-border);
+    padding: var(--ds-space-300) var(--ds-space-400);
+    margin-top: var(--ds-space-400);
+  }
+
+  .footer-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    text-align: center;
+  }
+
+  .footer-inner p {
+    font-size: var(--ds-font-size-075);
+    color: var(--ds-text-subtlest);
+    line-height: var(--ds-font-lineHeight-200);
+  }
+
+  .footer-note {
+    margin-top: var(--ds-space-050);
+  }
+
+  .footer-note a {
+    color: var(--ds-text-brand);
+    text-decoration: none;
+  }
+
+  .footer-note a:hover {
+    text-decoration: underline;
+  }
+</style>
+
+<script>
+  // Scroll spy for navigation
+  const sections = document.querySelectorAll('.doc-section');
+  const navLinks = document.querySelectorAll('.nav-link');
+
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(entry => {
+      if (entry.isIntersecting) {
+        navLinks.forEach(link => link.classList.remove('active'));
+        const id = entry.target.id;
+        const activeLink = document.querySelector(`.nav-link[href="#${id}"]`);
+        if (activeLink) activeLink.classList.add('active');
+      }
+    });
+  }, {
+    rootMargin: '-20% 0px -75% 0px',
+    threshold: 0
+  });
+
+  sections.forEach(section => observer.observe(section));
+</script>

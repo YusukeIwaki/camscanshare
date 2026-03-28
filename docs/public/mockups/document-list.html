@@ -1,0 +1,533 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>文書一覧</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<script type="importmap">
+{
+  "imports": {
+    "@material/web/": "https://esm.run/@material/web/"
+  }
+}
+</script>
+<script type="module">
+import '@material/web/fab/fab.js';
+import '@material/web/icon/icon.js';
+import '@material/web/ripple/ripple.js';
+import '@material/web/elevation/elevation.js';
+</script>
+<style>
+  :root {
+    --md-sys-color-primary: #1a73e8;
+    --md-sys-color-on-primary: #ffffff;
+    --md-sys-color-primary-container: #d3e3fd;
+    --md-sys-color-surface: #f8f9fa;
+    --md-sys-color-surface-container: #ffffff;
+    --md-sys-color-surface-container-high: #f1f3f4;
+    --md-sys-color-on-surface: #1f1f1f;
+    --md-sys-color-on-surface-variant: #5f6368;
+    --md-sys-color-outline: #dadce0;
+    --md-sys-color-outline-variant: #e8eaed;
+    --md-fab-container-color: var(--md-sys-color-primary);
+    --md-fab-icon-color: var(--md-sys-color-on-primary);
+    --md-fab-container-shape: 16px;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Noto Sans JP', 'Roboto', sans-serif;
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Top App Bar */
+  .top-app-bar {
+    background: var(--md-sys-color-surface-container);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    height: 64px;
+    position: relative;
+    z-index: 10;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  }
+
+  .top-app-bar .menu-icon {
+    font-size: 24px;
+    color: var(--md-sys-color-on-surface);
+    cursor: pointer;
+    border-radius: 50%;
+    padding: 8px;
+    transition: background 0.2s;
+  }
+
+  .top-app-bar .menu-icon:hover {
+    background: rgba(0,0,0,0.06);
+  }
+
+  .top-app-bar .title {
+    font-size: 20px;
+    font-weight: 500;
+    flex: 1;
+    letter-spacing: 0.01em;
+  }
+
+  .top-app-bar .search-icon {
+    font-size: 24px;
+    color: var(--md-sys-color-on-surface-variant);
+    cursor: pointer;
+    border-radius: 50%;
+    padding: 8px;
+    transition: background 0.2s;
+  }
+
+  .top-app-bar .search-icon:hover {
+    background: rgba(0,0,0,0.06);
+  }
+
+  /* Document Grid */
+  .document-grid {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px;
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 12px;
+    align-content: start;
+  }
+
+  .document-card {
+    background: var(--md-sys-color-surface-container);
+    border-radius: 12px;
+    overflow: hidden;
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+    animation: card-enter 0.4s ease both;
+    border: 1px solid var(--md-sys-color-outline-variant);
+  }
+
+  .document-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.12);
+  }
+
+  .document-card:active {
+    transform: scale(0.97);
+  }
+
+  .document-card:nth-child(1) { animation-delay: 0.05s; }
+  .document-card:nth-child(2) { animation-delay: 0.1s; }
+  .document-card:nth-child(3) { animation-delay: 0.15s; }
+  .document-card:nth-child(4) { animation-delay: 0.2s; }
+  .document-card:nth-child(5) { animation-delay: 0.25s; }
+  .document-card:nth-child(6) { animation-delay: 0.3s; }
+
+  @keyframes card-enter {
+    from {
+      opacity: 0;
+      transform: translateY(20px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+
+  .card-thumbnail {
+    width: 100%;
+    aspect-ratio: 3/4;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  .card-thumbnail .doc-preview {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    padding: 12px;
+    gap: 6px;
+  }
+
+  .doc-line {
+    height: 5px;
+    border-radius: 2px;
+    background: #b0b8c1;
+  }
+
+  .doc-line.title-line {
+    width: 60%;
+    height: 7px;
+    background: #555;
+    margin-bottom: 4px;
+  }
+
+  .doc-line:nth-child(even) { width: 90%; }
+  .doc-line:nth-child(odd) { width: 75%; }
+  .doc-line:nth-child(3n) { width: 85%; }
+
+  .page-badge {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+    font-size: 11px;
+    font-weight: 500;
+    padding: 2px 8px;
+    border-radius: 10px;
+  }
+
+  .card-info {
+    padding: 10px 12px;
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+  }
+
+  .card-info .doc-name {
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 2px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .card-info .doc-date {
+    font-size: 11px;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+
+  /* Ripple on card tap */
+  .document-card .ripple-overlay {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+    pointer-events: none;
+    z-index: 5;
+  }
+
+  .ripple-circle {
+    position: absolute;
+    border-radius: 50%;
+    background: rgba(26, 115, 232, 0.2);
+    transform: scale(0);
+    animation: ripple-expand 0.6s ease-out forwards;
+    pointer-events: none;
+  }
+
+  @keyframes ripple-expand {
+    to {
+      transform: scale(4);
+      opacity: 0;
+    }
+  }
+
+  /* FAB */
+  .fab-container {
+    position: fixed;
+    bottom: 24px;
+    right: 24px;
+    z-index: 20;
+  }
+
+  md-fab {
+    --md-fab-container-color: var(--md-sys-color-primary);
+    --md-fab-icon-color: var(--md-sys-color-on-primary);
+    animation: fab-enter 0.5s cubic-bezier(0.4, 0, 0.2, 1) 0.1s both;
+  }
+
+  /* Fallback FAB for when md-fab hasn't loaded */
+  .fab-fallback {
+    width: 56px;
+    height: 56px;
+    border-radius: 16px;
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 3px 5px -1px rgba(0,0,0,0.2), 0 6px 10px 0 rgba(0,0,0,0.14), 0 1px 18px 0 rgba(0,0,0,0.12);
+    transition: box-shadow 0.2s, transform 0.2s;
+    animation: fab-enter 0.5s cubic-bezier(0.4, 0, 0.2, 1) 0.1s both;
+    position: relative;
+  }
+
+  .fab-fallback:hover {
+    box-shadow: 0 5px 8px -2px rgba(0,0,0,0.25), 0 8px 16px 0 rgba(0,0,0,0.18), 0 2px 24px 0 rgba(0,0,0,0.15);
+    transform: scale(1.05);
+  }
+
+  .fab-fallback:active {
+    transform: scale(0.95);
+  }
+
+  .fab-fallback .material-symbols-outlined {
+    font-size: 24px;
+  }
+
+  .fab-pulse {
+    position: absolute;
+    inset: -4px;
+    border-radius: 20px;
+    border: 2px solid var(--md-sys-color-primary);
+    animation: fab-pulse-ring 2s ease-out infinite;
+    pointer-events: none;
+  }
+
+  @keyframes fab-enter {
+    from {
+      opacity: 0;
+      transform: scale(0.5) rotate(-45deg);
+    }
+    to {
+      opacity: 1;
+      transform: scale(1) rotate(0deg);
+    }
+  }
+
+  @keyframes fab-pulse-ring {
+    0% {
+      opacity: 0.6;
+      transform: scale(1);
+    }
+    100% {
+      opacity: 0;
+      transform: scale(1.4);
+    }
+  }
+
+  /* Empty state */
+  .empty-state {
+    display: none;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    flex: 1;
+    color: var(--md-sys-color-on-surface-variant);
+    gap: 12px;
+    padding: 40px;
+    text-align: center;
+  }
+
+  .empty-state .material-symbols-outlined {
+    font-size: 64px;
+    opacity: 0.4;
+  }
+
+  .empty-state p {
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  /* Selected state */
+  .document-card.selected {
+    outline: 2px solid var(--md-sys-color-primary);
+    outline-offset: -2px;
+  }
+
+  .document-card.selected .card-thumbnail::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: rgba(26, 115, 232, 0.08);
+  }
+</style>
+</head>
+<body>
+
+<div class="top-app-bar">
+  <span class="material-symbols-outlined menu-icon">menu</span>
+  <span class="title">CamScanShare</span>
+  <span class="material-symbols-outlined search-icon">search</span>
+</div>
+
+<div class="document-grid" id="docGrid">
+  <div class="document-card" onclick="tapCard(this, event)">
+    <div class="card-thumbnail">
+      <div class="doc-preview" style="background: #fff8f0;">
+        <div class="doc-line title-line"></div>
+        <div class="doc-line" style="width:95%"></div>
+        <div class="doc-line" style="width:80%"></div>
+        <div class="doc-line" style="width:88%"></div>
+        <div class="doc-line" style="width:70%"></div>
+        <div class="doc-line" style="width:92%"></div>
+        <div class="doc-line" style="width:65%"></div>
+        <div class="doc-line" style="width:85%"></div>
+        <div class="doc-line" style="width:78%"></div>
+        <div class="doc-line" style="width:90%"></div>
+      </div>
+      <span class="page-badge">3頁</span>
+    </div>
+    <div class="card-info">
+      <div class="doc-name">会議議事録_2026Q1</div>
+      <div class="doc-date">2026/03/25</div>
+    </div>
+    <div class="ripple-overlay"></div>
+  </div>
+
+  <div class="document-card" onclick="tapCard(this, event)">
+    <div class="card-thumbnail">
+      <div class="doc-preview" style="background: #f0f8ff;">
+        <div class="doc-line title-line" style="width:45%"></div>
+        <div class="doc-line" style="width:60%"></div>
+        <div class="doc-line" style="width:90%"></div>
+        <div class="doc-line" style="width:55%"></div>
+        <div class="doc-line" style="width:75%"></div>
+        <div class="doc-line" style="width:88%"></div>
+      </div>
+      <span class="page-badge">1頁</span>
+    </div>
+    <div class="card-info">
+      <div class="doc-name">レシート_ランチ</div>
+      <div class="doc-date">2026/03/24</div>
+    </div>
+    <div class="ripple-overlay"></div>
+  </div>
+
+  <div class="document-card" onclick="tapCard(this, event)">
+    <div class="card-thumbnail">
+      <div class="doc-preview" style="background: #f5f5f5;">
+        <div class="doc-line title-line" style="width:70%"></div>
+        <div class="doc-line" style="width:92%"></div>
+        <div class="doc-line" style="width:85%"></div>
+        <div class="doc-line" style="width:95%"></div>
+        <div class="doc-line" style="width:78%"></div>
+        <div class="doc-line" style="width:88%"></div>
+        <div class="doc-line" style="width:70%"></div>
+        <div class="doc-line" style="width:93%"></div>
+        <div class="doc-line" style="width:82%"></div>
+        <div class="doc-line" style="width:88%"></div>
+        <div class="doc-line" style="width:65%"></div>
+        <div class="doc-line" style="width:90%"></div>
+      </div>
+      <span class="page-badge">5頁</span>
+    </div>
+    <div class="card-info">
+      <div class="doc-name">契約書_業務委託</div>
+      <div class="doc-date">2026/03/20</div>
+    </div>
+    <div class="ripple-overlay"></div>
+  </div>
+
+  <div class="document-card" onclick="tapCard(this, event)">
+    <div class="card-thumbnail">
+      <div class="doc-preview" style="background: #f8fff0;">
+        <div class="doc-line title-line" style="width:55%"></div>
+        <div class="doc-line" style="width:80%"></div>
+        <div class="doc-line" style="width:70%"></div>
+        <div class="doc-line" style="width:90%"></div>
+        <div class="doc-line" style="width:65%"></div>
+      </div>
+      <span class="page-badge">2頁</span>
+    </div>
+    <div class="card-info">
+      <div class="doc-name">報告書_月次</div>
+      <div class="doc-date">2026/03/15</div>
+    </div>
+    <div class="ripple-overlay"></div>
+  </div>
+
+  <div class="document-card" onclick="tapCard(this, event)">
+    <div class="card-thumbnail">
+      <div class="doc-preview" style="background: #fff5f5;">
+        <div class="doc-line title-line" style="width:40%"></div>
+        <div class="doc-line" style="width:70%"></div>
+        <div class="doc-line" style="width:85%"></div>
+        <div class="doc-line" style="width:60%"></div>
+        <div class="doc-line" style="width:78%"></div>
+        <div class="doc-line" style="width:90%"></div>
+        <div class="doc-line" style="width:72%"></div>
+      </div>
+      <span class="page-badge">4頁</span>
+    </div>
+    <div class="card-info">
+      <div class="doc-name">見積書_A社</div>
+      <div class="doc-date">2026/03/10</div>
+    </div>
+    <div class="ripple-overlay"></div>
+  </div>
+
+  <div class="document-card" onclick="tapCard(this, event)">
+    <div class="card-thumbnail">
+      <div class="doc-preview" style="background: #f5f0ff;">
+        <div class="doc-line title-line" style="width:65%"></div>
+        <div class="doc-line" style="width:88%"></div>
+        <div class="doc-line" style="width:75%"></div>
+        <div class="doc-line" style="width:92%"></div>
+        <div class="doc-line" style="width:68%"></div>
+        <div class="doc-line" style="width:83%"></div>
+      </div>
+      <span class="page-badge">1頁</span>
+    </div>
+    <div class="card-info">
+      <div class="doc-name">名刺_田中太郎</div>
+      <div class="doc-date">2026/03/08</div>
+    </div>
+    <div class="ripple-overlay"></div>
+  </div>
+</div>
+
+<div class="fab-container">
+  <button class="fab-fallback" onclick="fabTap()" aria-label="新規スキャン">
+    <span class="material-symbols-outlined">photo_camera</span>
+    <div class="fab-pulse"></div>
+  </button>
+</div>
+
+<script>
+function tapCard(card, event) {
+  // Ripple effect
+  const overlay = card.querySelector('.ripple-overlay');
+  const circle = document.createElement('div');
+  circle.className = 'ripple-circle';
+  const rect = card.getBoundingClientRect();
+  const x = event.clientX - rect.left;
+  const y = event.clientY - rect.top;
+  const size = Math.max(rect.width, rect.height);
+  circle.style.width = circle.style.height = size + 'px';
+  circle.style.left = (x - size / 2) + 'px';
+  circle.style.top = (y - size / 2) + 'px';
+  overlay.appendChild(circle);
+  setTimeout(() => circle.remove(), 600);
+
+  // Selection toggle
+  document.querySelectorAll('.document-card').forEach(c => c.classList.remove('selected'));
+  card.classList.add('selected');
+}
+
+function fabTap() {
+  const fab = document.querySelector('.fab-fallback');
+  fab.style.transform = 'scale(0.85)';
+  setTimeout(() => {
+    fab.style.transform = '';
+    // Flash overlay to simulate navigation
+    const flash = document.createElement('div');
+    flash.style.cssText = 'position:fixed;inset:0;background:rgba(26,115,232,0.12);z-index:100;animation:flash-out 0.5s ease forwards;';
+    document.body.appendChild(flash);
+    setTimeout(() => flash.remove(), 500);
+  }, 150);
+}
+
+// Add flash-out animation
+const style = document.createElement('style');
+style.textContent = `@keyframes flash-out { from { opacity: 1; } to { opacity: 0; } }`;
+document.head.appendChild(style);
+</script>
+
+</body>
+</html>

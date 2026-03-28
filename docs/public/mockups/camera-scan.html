@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>カメラスキャン</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+  :root {
+    --md-sys-color-primary: #1a73e8;
+    --md-sys-color-on-primary: #ffffff;
+    --md-sys-color-surface: #1a1a1a;
+    --md-sys-color-on-surface: #ffffff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Noto Sans JP', 'Roboto', sans-serif;
+    background: #000;
+    color: #fff;
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* Top Bar */
+  .top-bar {
+    background: rgba(0,0,0,0.7);
+    backdrop-filter: blur(8px);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    height: 56px;
+    z-index: 10;
+  }
+
+  .top-bar .back-btn {
+    background: none;
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    padding: 4px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    transition: background 0.2s;
+  }
+
+  .top-bar .back-btn:hover {
+    background: rgba(255,255,255,0.1);
+  }
+
+  .top-bar .title {
+    flex: 1;
+    text-align: center;
+    font-size: 18px;
+    font-weight: 500;
+  }
+
+  .top-bar .done-btn {
+    background: var(--md-sys-color-primary);
+    color: #fff;
+    border: none;
+    padding: 6px 16px;
+    border-radius: 20px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.2s, transform 0.1s;
+    font-family: inherit;
+  }
+
+  .top-bar .done-btn:hover {
+    background: #1567d3;
+  }
+
+  .top-bar .done-btn:active {
+    transform: scale(0.95);
+  }
+
+  /* Camera Viewfinder */
+  .viewfinder {
+    flex: 1;
+    position: relative;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+  }
+
+  /* Simulated camera feed */
+  .camera-feed {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 30%, #222 60%, #1e1e1e 100%);
+    overflow: hidden;
+  }
+
+  .camera-feed::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse at 50% 40%, rgba(80,80,80,0.15) 0%, transparent 60%),
+      repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.01) 2px, rgba(255,255,255,0.01) 4px);
+  }
+
+  /* Simulated document on desk */
+  .sim-document {
+    position: absolute;
+    width: 65%;
+    aspect-ratio: 210/297;
+    background: #f5f5f0;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%) perspective(600px) rotateX(3deg) rotateY(-1deg);
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    z-index: 1;
+  }
+
+  .sim-document .sim-line {
+    height: 3px;
+    background: #ccc;
+    margin: 8px 12px;
+    border-radius: 1px;
+  }
+
+  .sim-document .sim-line:first-child {
+    width: 50%;
+    height: 5px;
+    background: #999;
+    margin-top: 16px;
+  }
+
+  .sim-document .sim-line:nth-child(2) { width: 85%; }
+  .sim-document .sim-line:nth-child(3) { width: 70%; }
+  .sim-document .sim-line:nth-child(4) { width: 90%; }
+  .sim-document .sim-line:nth-child(5) { width: 65%; }
+  .sim-document .sim-line:nth-child(6) { width: 80%; }
+  .sim-document .sim-line:nth-child(7) { width: 75%; }
+  .sim-document .sim-line:nth-child(8) { width: 88%; }
+
+  /* Paper Detection Guide */
+  .detection-guide {
+    position: absolute;
+    z-index: 5;
+    pointer-events: none;
+  }
+
+  .detection-rect {
+    width: 68%;
+    aspect-ratio: 210/297;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    animation: guide-track 3s ease-in-out infinite;
+  }
+
+  .detection-rect .corner {
+    position: absolute;
+    width: 24px;
+    height: 24px;
+    border-color: var(--md-sys-color-primary);
+    border-style: solid;
+    border-width: 0;
+  }
+
+  .corner.tl { top: 0; left: 0; border-top-width: 3px; border-left-width: 3px; border-top-left-radius: 4px; }
+  .corner.tr { top: 0; right: 0; border-top-width: 3px; border-right-width: 3px; border-top-right-radius: 4px; }
+  .corner.bl { bottom: 0; left: 0; border-bottom-width: 3px; border-left-width: 3px; border-bottom-left-radius: 4px; }
+  .corner.br { bottom: 0; right: 0; border-bottom-width: 3px; border-right-width: 3px; border-bottom-right-radius: 4px; }
+
+  .detection-rect .edge {
+    position: absolute;
+    background: var(--md-sys-color-primary);
+    opacity: 0.4;
+  }
+
+  .edge.top { top: 0; left: 24px; right: 24px; height: 2px; }
+  .edge.bottom { bottom: 0; left: 24px; right: 24px; height: 2px; }
+  .edge.left { top: 24px; bottom: 24px; left: 0; width: 2px; }
+  .edge.right { top: 24px; bottom: 24px; right: 0; width: 2px; }
+
+  /* Detection rectangle fill overlay */
+  .detection-rect .fill {
+    position: absolute;
+    inset: 0;
+    background: rgba(26, 115, 232, 0.06);
+    border-radius: 2px;
+    animation: fill-pulse 2s ease-in-out infinite;
+  }
+
+  @keyframes guide-track {
+    0%, 100% { transform: translate(-50%, -50%) scale(1); }
+    25% { transform: translate(-50.5%, -50.3%) scale(1.005); }
+    50% { transform: translate(-49.8%, -49.7%) scale(0.998); }
+    75% { transform: translate(-50.2%, -50.5%) scale(1.003); }
+  }
+
+  @keyframes fill-pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.5; }
+  }
+
+  /* Detected label */
+  .detection-label {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    z-index: 6;
+    pointer-events: none;
+  }
+
+  .detection-label span {
+    background: rgba(26, 115, 232, 0.85);
+    color: #fff;
+    padding: 4px 12px;
+    border-radius: 12px;
+    font-size: 12px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    animation: label-appear 0.3s ease;
+  }
+
+  .detection-label .material-symbols-outlined {
+    font-size: 16px;
+  }
+
+  /* Bottom Controls */
+  .bottom-controls {
+    background: rgba(0,0,0,0.85);
+    backdrop-filter: blur(12px);
+    padding: 16px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+    z-index: 10;
+  }
+
+  .page-counter {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 13px;
+    color: rgba(255,255,255,0.8);
+  }
+
+  .page-counter .material-symbols-outlined {
+    font-size: 18px;
+    color: var(--md-sys-color-primary);
+  }
+
+  .page-counter .count {
+    font-weight: 700;
+    color: #fff;
+    min-width: 16px;
+    text-align: center;
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+  }
+
+  .page-counter .count.bump {
+    animation: count-bump 0.3s ease;
+  }
+
+  @keyframes count-bump {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.5); color: var(--md-sys-color-primary); }
+    100% { transform: scale(1); }
+  }
+
+  .capture-row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 40px;
+    width: 100%;
+  }
+
+  /* Thumbnail stack */
+  .thumb-stack {
+    width: 44px;
+    height: 44px;
+    position: relative;
+    border-radius: 8px;
+    overflow: visible;
+  }
+
+  .thumb-item {
+    position: absolute;
+    width: 44px;
+    height: 44px;
+    border-radius: 8px;
+    background: #f5f5f0;
+    border: 2px solid rgba(255,255,255,0.8);
+    box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .thumb-item .material-symbols-outlined {
+    font-size: 20px;
+    color: #999;
+  }
+
+  .thumb-item:nth-child(1) { transform: rotate(-5deg) translate(0, 2px); }
+  .thumb-item:nth-child(2) { transform: rotate(2deg) translate(2px, -1px); z-index: 1; }
+
+  /* Capture button */
+  .capture-btn {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    background: transparent;
+    border: 4px solid #fff;
+    cursor: pointer;
+    position: relative;
+    transition: transform 0.1s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .capture-btn:active {
+    transform: scale(0.92);
+  }
+
+  .capture-btn-inner {
+    width: 58px;
+    height: 58px;
+    border-radius: 50%;
+    background: #fff;
+    transition: background 0.15s, transform 0.15s;
+  }
+
+  .capture-btn:hover .capture-btn-inner {
+    background: #e0e0e0;
+  }
+
+  .capture-btn:active .capture-btn-inner {
+    transform: scale(0.9);
+    background: #ccc;
+  }
+
+  /* Flash effect */
+  .flash-overlay {
+    position: fixed;
+    inset: 0;
+    background: #fff;
+    z-index: 100;
+    opacity: 0;
+    pointer-events: none;
+  }
+
+  .flash-overlay.active {
+    animation: flash-effect 0.4s ease-out;
+  }
+
+  @keyframes flash-effect {
+    0% { opacity: 0.9; }
+    100% { opacity: 0; }
+  }
+
+  /* Captured page flying to stack animation */
+  .flying-page {
+    position: fixed;
+    width: 60%;
+    aspect-ratio: 210/297;
+    background: #f5f5f0;
+    border: 2px solid #fff;
+    border-radius: 8px;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    z-index: 90;
+    pointer-events: none;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    animation: fly-to-stack 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+  }
+
+  .flying-page .fly-lines {
+    padding: 8px;
+  }
+
+  .flying-page .fly-line {
+    height: 2px;
+    background: #ccc;
+    margin: 4px 0;
+    border-radius: 1px;
+  }
+
+  @keyframes fly-to-stack {
+    0% {
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%) scale(1);
+      opacity: 0.9;
+    }
+    100% {
+      top: calc(100% - 70px);
+      left: 30px;
+      transform: translate(0, 0) scale(0.12) rotate(-5deg);
+      opacity: 0;
+    }
+  }
+
+  /* Toggle flash mode, etc */
+  .mode-toggle {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.1);
+    border: none;
+    color: #fff;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: background 0.2s;
+  }
+
+  .mode-toggle:hover {
+    background: rgba(255,255,255,0.2);
+  }
+
+  .mode-toggle .material-symbols-outlined {
+    font-size: 22px;
+  }
+</style>
+</head>
+<body>
+
+<div class="top-bar">
+  <button class="back-btn">
+    <span class="material-symbols-outlined">arrow_back</span>
+  </button>
+  <span class="title">スキャン</span>
+  <button class="done-btn" onclick="doneTap()">完了</button>
+</div>
+
+<div class="viewfinder">
+  <div class="camera-feed"></div>
+
+  <!-- Simulated document -->
+  <div class="sim-document">
+    <div class="sim-line"></div>
+    <div class="sim-line"></div>
+    <div class="sim-line"></div>
+    <div class="sim-line"></div>
+    <div class="sim-line"></div>
+    <div class="sim-line"></div>
+    <div class="sim-line"></div>
+    <div class="sim-line"></div>
+  </div>
+
+  <!-- Detection Guide Overlay -->
+  <div class="detection-guide">
+    <div class="detection-rect">
+      <div class="fill"></div>
+      <div class="corner tl"></div>
+      <div class="corner tr"></div>
+      <div class="corner bl"></div>
+      <div class="corner br"></div>
+      <div class="edge top"></div>
+      <div class="edge bottom"></div>
+      <div class="edge left"></div>
+      <div class="edge right"></div>
+    </div>
+  </div>
+
+  <div class="detection-label">
+    <span>
+      <span class="material-symbols-outlined">check_circle</span>
+      文書を検出しました
+    </span>
+  </div>
+</div>
+
+<div class="bottom-controls">
+  <div class="page-counter">
+    <span class="material-symbols-outlined">description</span>
+    <span class="count" id="pageCount">0</span>
+    <span>枚スキャン済み</span>
+  </div>
+
+  <div class="capture-row">
+    <div class="thumb-stack" id="thumbStack">
+      <!-- Thumbnails appear here after capture -->
+    </div>
+
+    <button class="capture-btn" onclick="capture()">
+      <div class="capture-btn-inner"></div>
+    </button>
+
+    <button class="mode-toggle" onclick="toggleFlash(this)">
+      <span class="material-symbols-outlined">flash_off</span>
+    </button>
+  </div>
+</div>
+
+<div class="flash-overlay" id="flashOverlay"></div>
+
+<script>
+let pageCount = 0;
+
+function capture() {
+  // Flash effect
+  const flash = document.getElementById('flashOverlay');
+  flash.classList.add('active');
+  setTimeout(() => flash.classList.remove('active'), 400);
+
+  // Increment counter
+  pageCount++;
+  const countEl = document.getElementById('pageCount');
+  countEl.textContent = pageCount;
+  countEl.classList.add('bump');
+  setTimeout(() => countEl.classList.remove('bump'), 300);
+
+  // Flying page animation
+  const flyPage = document.createElement('div');
+  flyPage.className = 'flying-page';
+  flyPage.innerHTML = `<div class="fly-lines">
+    <div class="fly-line" style="width:50%;height:3px;background:#999"></div>
+    <div class="fly-line" style="width:85%"></div>
+    <div class="fly-line" style="width:70%"></div>
+    <div class="fly-line" style="width:90%"></div>
+    <div class="fly-line" style="width:60%"></div>
+  </div>`;
+  document.body.appendChild(flyPage);
+  setTimeout(() => flyPage.remove(), 700);
+
+  // Add thumbnail to stack
+  const stack = document.getElementById('thumbStack');
+  const thumb = document.createElement('div');
+  thumb.className = 'thumb-item';
+  thumb.innerHTML = '<span class="material-symbols-outlined">description</span>';
+  const rotation = (Math.random() - 0.5) * 10;
+  thumb.style.transform = `rotate(${rotation}deg)`;
+  thumb.style.zIndex = pageCount;
+  stack.appendChild(thumb);
+
+  // Keep only last 3 thumbnails visible
+  const thumbs = stack.querySelectorAll('.thumb-item');
+  if (thumbs.length > 3) {
+    thumbs[0].remove();
+  }
+}
+
+function doneTap() {
+  const btn = document.querySelector('.done-btn');
+  btn.style.transform = 'scale(0.9)';
+  setTimeout(() => {
+    btn.style.transform = '';
+    const overlay = document.createElement('div');
+    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(255,255,255,0.15);z-index:100;animation:fadeout 0.4s ease forwards;';
+    document.body.appendChild(overlay);
+    setTimeout(() => overlay.remove(), 400);
+  }, 100);
+}
+
+function toggleFlash(btn) {
+  const icon = btn.querySelector('.material-symbols-outlined');
+  if (icon.textContent === 'flash_off') {
+    icon.textContent = 'flash_on';
+    btn.style.background = 'rgba(255,200,0,0.2)';
+  } else {
+    icon.textContent = 'flash_off';
+    btn.style.background = 'rgba(255,255,255,0.1)';
+  }
+}
+
+const style = document.createElement('style');
+style.textContent = '@keyframes fadeout { from { opacity: 1; } to { opacity: 0; } }';
+document.head.appendChild(style);
+</script>
+
+</body>
+</html>

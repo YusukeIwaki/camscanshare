@@ -1,0 +1,97 @@
+# CLAUDE.md - CamScanShare AI Agent Instructions
+
+## プロジェクト概要
+
+CamScanShareは、紙の文書をカメラでスキャンしてPDF化・共有するモバイルアプリです。CamScannerの簡易版として、スキャンとPDF共有に機能を絞っています。
+
+## ドキュメントの構造と読み方
+
+### 画面設計ドキュメント (`docs/`)
+
+Astroベースの静的サイトで、画面設計を記述しています。
+
+- `docs/src/pages/index.astro` - メインドキュメント。全画面の仕様を記載
+- `docs/src/layouts/Layout.astro` - 共通レイアウト。Atlassian Design Systemのトークンを定義
+- `docs/public/mockups/*.html` - 各画面のインタラクティブモック（iframe埋め込み用）
+
+ドキュメントの各画面セクションは以下の構造です:
+1. 左カラム: Phone frameに埋め込んだiframeモック（インタラクティブ）
+2. 右カラム: 画面要素・インタラクション・技術的考慮点の仕様
+
+### ドキュメントの起動
+
+```bash
+cd docs && npm run dev
+```
+
+### モックファイルの編集ルール
+
+- モックは `docs/public/mockups/` に配置する独立したHTMLファイル
+- アプリのUIコンポーネントには [Material Web](https://github.com/material-components/material-web) を使用
+- アイコンは Material Symbols (Google Fonts CDN) を使用
+- フォントは `Noto Sans JP` + `Roboto`
+- カラートークンは CSS custom propertiesで `--md-sys-color-*` を使用（Material Design 3準拠）
+- Phone frame内（iframe）で表示するため、`height: 100vh` ベースのレイアウトにする
+- インタラクションはCSS animationとvanilla JSで実装（フレームワーク不要）
+
+### ドキュメントサイトの編集ルール
+
+- ドキュメントのスタイリングは [Atlassian Design System](https://atlassian.design/components) に準拠
+- CSSトークンは `--ds-*` プレフィックスで Layout.astro に定義済み
+- 新しい画面セクションを追加する場合は、既存セクションの構造（`screen-section`）に倣う
+
+## 画面一覧
+
+| 画面名 | モックファイル | 概要 |
+|--------|---------------|------|
+| 文書一覧 | `document-list.html` | ホーム画面。文書カードのグリッド + 新規スキャンFAB |
+| カメラスキャン | `camera-scan.html` | カメラ撮影。紙検出ガイド + 撮影アニメーション |
+| ページ一覧 | `page-list.html` | クロップ済みページのグリッド + 共有・編集アクション |
+| ページ編集 | `page-edit.html` | ページプレビュー + 回転/フィルタ/撮り直し |
+
+## 画面遷移
+
+```
+文書一覧 --[FABタップ]--> カメラスキャン --[完了]--> ページ一覧
+文書一覧 --[文書タップ]--> ページ一覧
+ページ一覧 --[ページ選択]--> ページ編集
+ページ一覧 --[ページ追加FAB]--> カメラスキャン --> ページ一覧
+ページ一覧 --[共有ボタン]--> PDF変換 --> OS共有シート
+ページ一覧 --[戻る]--> 文書一覧
+```
+
+## フィルタプリセット
+
+アプリに搭載する画像フィルタ:
+
+| フィルタ名 | 効果 | 用途 |
+|-----------|------|------|
+| オリジナル | 加工なし | そのまま保存 |
+| くっきり | コントラスト強調 + 明るさ微調整 | 一般的な文書 |
+| 白黒 | グレースケール + コントラスト強調 | 白黒文書、コピー用 |
+| ホワイトボード | 高明度 + 高コントラスト + 彩度除去 | ホワイトボード撮影 |
+| 鮮やか | 彩度強調 + コントラスト微調整 | カラー文書、図表 |
+| スタンプ | 超高コントラスト + 二値化近似 | はんこ・署名の抽出 |
+
+フィルタは今後追加可能な拡張設計とする。
+
+## 技術的な注意事項
+
+- 紙検出: エッジ検出 → 輪郭検出 → 最大矩形抽出（OpenCV等）
+- 台形補正: 検出した4点を用いた射影変換
+- PDF変換: 全ページをA4サイズにフィットさせて統合
+- 共有: OS標準の共有API（Android: Intent.ACTION_SEND, iOS: UIActivityViewController）
+- 連続撮影: 撮影後もカメラは起動したまま、完了ボタンで終了
+
+## コマンドリファレンス
+
+```bash
+# ドキュメントの開発サーバー起動
+cd docs && npm run dev
+
+# ドキュメントのビルド
+cd docs && npx astro build
+
+# ビルド成果物のプレビュー
+cd docs && npx astro preview
+```

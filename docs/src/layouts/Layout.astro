@@ -1,0 +1,130 @@
+---
+interface Props {
+  title: string;
+}
+
+const { title } = Astro.props;
+---
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+  <meta name="viewport" content="width=device-width" />
+  <meta name="generator" content={Astro.generator} />
+  <title>{title}</title>
+
+  <!-- Atlassian Design System Tokens -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Noto+Sans+JP:wght@400;500;600;700&display=swap" rel="stylesheet" />
+
+  <style is:global>
+    /* Atlassian Design Tokens */
+    :root {
+      /* Colors - Atlassian Neutral */
+      --ds-text: #172B4D;
+      --ds-text-subtle: #44546F;
+      --ds-text-subtlest: #626F86;
+      --ds-text-inverse: #FFFFFF;
+      --ds-text-brand: #0C66E4;
+      --ds-text-success: #216E4E;
+      --ds-text-danger: #AE2E24;
+
+      --ds-surface: #FFFFFF;
+      --ds-surface-raised: #FFFFFF;
+      --ds-surface-sunken: #F7F8F9;
+      --ds-surface-overlay: #FFFFFF;
+
+      --ds-background-neutral: #091E420F;
+      --ds-background-neutral-hovered: #091E4224;
+      --ds-background-brand-bold: #0C66E4;
+      --ds-background-brand-bold-hovered: #0055CC;
+      --ds-background-success: #DCFFF1;
+      --ds-background-information: #E9F2FF;
+
+      --ds-border: #091E4224;
+      --ds-border-bold: #758195;
+      --ds-border-brand: #0C66E4;
+      --ds-border-focused: #388BFF;
+
+      /* Spacing - 8px grid */
+      --ds-space-025: 2px;
+      --ds-space-050: 4px;
+      --ds-space-075: 6px;
+      --ds-space-100: 8px;
+      --ds-space-150: 12px;
+      --ds-space-200: 16px;
+      --ds-space-300: 24px;
+      --ds-space-400: 32px;
+      --ds-space-500: 40px;
+      --ds-space-600: 48px;
+      --ds-space-800: 64px;
+
+      /* Typography */
+      --ds-font-family: 'Inter', 'Noto Sans JP', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      --ds-font-size-050: 11px;
+      --ds-font-size-075: 12px;
+      --ds-font-size-100: 14px;
+      --ds-font-size-200: 16px;
+      --ds-font-size-300: 20px;
+      --ds-font-size-400: 24px;
+      --ds-font-size-500: 29px;
+      --ds-font-size-600: 35px;
+
+      --ds-font-weight-regular: 400;
+      --ds-font-weight-medium: 500;
+      --ds-font-weight-semibold: 600;
+      --ds-font-weight-bold: 700;
+
+      --ds-font-lineHeight-100: 16px;
+      --ds-font-lineHeight-200: 20px;
+      --ds-font-lineHeight-300: 24px;
+      --ds-font-lineHeight-400: 28px;
+      --ds-font-lineHeight-500: 32px;
+      --ds-font-lineHeight-600: 40px;
+
+      /* Shadows (Elevation) */
+      --ds-shadow-raised: 0px 1px 1px #091E4240, 0px 0px 1px #091E424F;
+      --ds-shadow-overlay: 0px 8px 12px #091E4226, 0px 0px 1px #091E424F;
+      --ds-shadow-overflow: 0px 0px 12px #091E4226, 0px 0px 1px #091E424F;
+
+      /* Border Radius */
+      --ds-radius-100: 4px;
+      --ds-radius-200: 8px;
+      --ds-radius-300: 12px;
+      --ds-radius-round: 50%;
+    }
+
+    /* Reset & Base */
+    *, *::before, *::after {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      scroll-behavior: smooth;
+    }
+
+    body {
+      font-family: var(--ds-font-family);
+      font-size: var(--ds-font-size-100);
+      line-height: var(--ds-font-lineHeight-300);
+      color: var(--ds-text);
+      background: var(--ds-surface-sunken);
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* Scrollbar */
+    ::-webkit-scrollbar { width: 8px; }
+    ::-webkit-scrollbar-track { background: transparent; }
+    ::-webkit-scrollbar-thumb { background: var(--ds-border); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--ds-border-bold); }
+  </style>
+</head>
+<body>
+  <slot />
+</body>
+</html>
