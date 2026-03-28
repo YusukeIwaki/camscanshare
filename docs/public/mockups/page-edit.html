@@ -18,6 +18,7 @@
     --md-sys-color-on-surface-variant: #5f6368;
     --md-sys-color-outline: #dadce0;
     --md-sys-color-outline-variant: #e8eaed;
+    --md-sys-color-error: #d93025;
   }
 
   * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -30,6 +31,8 @@
     overflow: hidden;
     display: flex;
     flex-direction: column;
+    user-select: none;
+    -webkit-user-select: none;
   }
 
   /* Top App Bar */
@@ -84,16 +87,37 @@
   .done-text-btn:hover { background: rgba(26,115,232,0.08); }
   .done-text-btn:active { background: rgba(26,115,232,0.15); }
 
-  /* Page Preview */
+  /* Preview Area with Swipe */
   .preview-area {
     flex: 1;
     display: flex;
     align-items: center;
     justify-content: center;
-    padding: 24px;
     background: var(--md-sys-color-surface-container-high);
     overflow: hidden;
     position: relative;
+    touch-action: pan-y;
+  }
+
+  .swipe-track {
+    display: flex;
+    align-items: center;
+    transition: transform 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+    will-change: transform;
+    height: 100%;
+  }
+
+  .swipe-track.dragging {
+    transition: none;
+  }
+
+  .swipe-page {
+    flex: 0 0 100%;
+    width: 100vw;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
   }
 
   .preview-container {
@@ -143,6 +167,7 @@
     border-radius: 12px;
     font-size: 12px;
     font-weight: 500;
+    z-index: 5;
   }
 
   /* Action Toolbar */
@@ -191,31 +216,32 @@
     font-weight: 500;
   }
 
-  /* Rotate animation on icon */
-  .toolbar-action.rotating .material-symbols-outlined {
-    transform: rotate(-90deg);
-  }
-
   /* Filter Panel */
   .filter-panel {
     background: var(--md-sys-color-surface-container);
-    padding: 0 0 16px;
+    padding: 0 0 0;
     overflow: hidden;
     max-height: 0;
     transition: max-height 0.3s cubic-bezier(0.4, 0, 0.2, 1), padding 0.3s;
   }
 
   .filter-panel.open {
-    max-height: 160px;
+    max-height: 180px;
     padding: 12px 0 16px;
+  }
+
+  .filter-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    margin-bottom: 12px;
   }
 
   .filter-label {
     font-size: 13px;
     font-weight: 500;
     color: var(--md-sys-color-on-surface-variant);
-    padding: 0 16px;
-    margin-bottom: 12px;
   }
 
   .filter-scroll {
@@ -298,7 +324,89 @@
   .filter-preview.bw { filter: grayscale(1) contrast(1.3); }
   .filter-preview.whiteboard { filter: brightness(1.3) contrast(1.6) saturate(0); }
   .filter-preview.color-limit { filter: saturate(2) contrast(1.2); }
-  .filter-preview.stamp { filter: contrast(3) brightness(1.5) saturate(0); }
+  .filter-preview.magic { filter: brightness(1.4) contrast(2) saturate(0.3); }
+
+  /* Confirm Dialog Overlay */
+  .dialog-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.4);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.2s ease;
+  }
+
+  .dialog-overlay.hiding {
+    animation: fadeOut 0.2s ease forwards;
+  }
+
+  .dialog-box {
+    background: var(--md-sys-color-surface-container);
+    border-radius: 28px;
+    padding: 24px;
+    width: 280px;
+    animation: scaleIn 0.2s ease;
+  }
+
+  .dialog-overlay.hiding .dialog-box {
+    animation: scaleOut 0.15s ease forwards;
+  }
+
+  .dialog-title {
+    font-size: 16px;
+    font-weight: 500;
+    margin-bottom: 12px;
+  }
+
+  .dialog-body {
+    font-size: 14px;
+    color: var(--md-sys-color-on-surface-variant);
+    line-height: 1.5;
+    margin-bottom: 20px;
+  }
+
+  .dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .dialog-btn {
+    background: none;
+    border: none;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 500;
+    padding: 8px 16px;
+    border-radius: 20px;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .dialog-btn-cancel {
+    color: var(--md-sys-color-on-surface-variant);
+  }
+
+  .dialog-btn-cancel:hover { background: rgba(0,0,0,0.06); }
+
+  .dialog-btn-discard {
+    color: var(--md-sys-color-error);
+  }
+
+  .dialog-btn-discard:hover { background: rgba(217,48,37,0.08); }
+
+  .dialog-btn-confirm {
+    color: var(--md-sys-color-primary);
+  }
+
+  .dialog-btn-confirm:hover { background: rgba(26,115,232,0.08); }
+
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
+  @keyframes scaleIn { from { transform: scale(0.85); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+  @keyframes scaleOut { from { transform: scale(1); opacity: 1; } to { transform: scale(0.85); opacity: 0; } }
 </style>
 </head>
 <body>
@@ -311,27 +419,76 @@
   <button class="done-text-btn" onclick="applyDone()">適用</button>
 </div>
 
-<div class="preview-area">
-  <div class="preview-container" id="previewContainer">
-    <div class="preview-page">
-      <div class="preview-line heading" style="width:50%"></div>
-      <div class="preview-line" style="width:92%"></div>
-      <div class="preview-line" style="width:78%"></div>
-      <div class="preview-line" style="width:88%"></div>
-      <div class="preview-line" style="width:65%"></div>
-      <div class="preview-line" style="width:85%"></div>
-      <div class="preview-line" style="width:92%"></div>
-      <div class="preview-line" style="width:70%"></div>
-      <div class="preview-line" style="width:88%"></div>
-      <div class="preview-line" style="width:75%"></div>
-      <div class="preview-line" style="width:90%"></div>
-      <div class="preview-line" style="width:60%"></div>
-      <div class="preview-line" style="width:82%"></div>
-      <div class="preview-line" style="width:88%"></div>
-      <div class="preview-line" style="width:72%"></div>
+<div class="preview-area" id="previewArea">
+  <div class="swipe-track" id="swipeTrack">
+    <!-- Page 1 -->
+    <div class="swipe-page">
+      <div class="preview-container" id="preview-0">
+        <div class="preview-page">
+          <div class="preview-line heading" style="width:50%"></div>
+          <div class="preview-line" style="width:92%"></div>
+          <div class="preview-line" style="width:78%"></div>
+          <div class="preview-line" style="width:88%"></div>
+          <div class="preview-line" style="width:65%"></div>
+          <div class="preview-line" style="width:85%"></div>
+          <div class="preview-line" style="width:92%"></div>
+          <div class="preview-line" style="width:70%"></div>
+          <div class="preview-line" style="width:88%"></div>
+          <div class="preview-line" style="width:75%"></div>
+          <div class="preview-line" style="width:90%"></div>
+          <div class="preview-line" style="width:60%"></div>
+          <div class="preview-line" style="width:82%"></div>
+          <div class="preview-line" style="width:88%"></div>
+          <div class="preview-line" style="width:72%"></div>
+        </div>
+      </div>
+    </div>
+    <!-- Page 2 -->
+    <div class="swipe-page">
+      <div class="preview-container" id="preview-1">
+        <div class="preview-page">
+          <div class="preview-line heading" style="width:60%"></div>
+          <div class="preview-line" style="width:85%"></div>
+          <div class="preview-line" style="width:90%"></div>
+          <div class="preview-line" style="width:72%"></div>
+          <div class="preview-line" style="width:88%"></div>
+          <div class="preview-line" style="width:55%"></div>
+          <div class="preview-line" style="width:92%"></div>
+          <div class="preview-line" style="width:80%"></div>
+          <div class="preview-line" style="width:68%"></div>
+          <div class="preview-line" style="width:90%"></div>
+          <div class="preview-line" style="width:76%"></div>
+          <div class="preview-line" style="width:84%"></div>
+          <div class="preview-line" style="width:60%"></div>
+          <div class="preview-line" style="width:92%"></div>
+          <div class="preview-line" style="width:78%"></div>
+        </div>
+      </div>
+    </div>
+    <!-- Page 3 -->
+    <div class="swipe-page">
+      <div class="preview-container" id="preview-2">
+        <div class="preview-page">
+          <div class="preview-line heading" style="width:45%"></div>
+          <div class="preview-line" style="width:88%"></div>
+          <div class="preview-line" style="width:74%"></div>
+          <div class="preview-line" style="width:92%"></div>
+          <div class="preview-line" style="width:60%"></div>
+          <div class="preview-line" style="width:82%"></div>
+          <div class="preview-line" style="width:90%"></div>
+          <div class="preview-line" style="width:66%"></div>
+          <div class="preview-line" style="width:78%"></div>
+          <div class="preview-line" style="width:88%"></div>
+          <div class="preview-line" style="width:52%"></div>
+          <div class="preview-line" style="width:86%"></div>
+          <div class="preview-line" style="width:70%"></div>
+          <div class="preview-line" style="width:80%"></div>
+          <div class="preview-line" style="width:90%"></div>
+        </div>
+      </div>
     </div>
   </div>
-  <div class="page-indicator">1 / 3</div>
+  <div class="page-indicator" id="pageIndicator">1 / 3</div>
 </div>
 
 <div class="action-toolbar">
@@ -350,9 +507,12 @@
 </div>
 
 <div class="filter-panel" id="filterPanel">
-  <div class="filter-label">フィルタを選択</div>
+  <div class="filter-header-row">
+    <span class="filter-label">フィルタを選択</span>
+    <span class="filter-label" style="font-size:11px; font-weight:400;">長押しで全ページに適用</span>
+  </div>
   <div class="filter-scroll">
-    <button class="filter-item active" onclick="applyFilter(this, 'original', '')">
+    <button class="filter-item" data-filter="original" data-css="" >
       <div class="filter-preview original">
         <div class="fline" style="width:50%"></div>
         <div class="fline" style="width:85%"></div>
@@ -364,7 +524,7 @@
       <span class="filter-name">オリジナル</span>
     </button>
 
-    <button class="filter-item" onclick="applyFilter(this, 'sharpen', 'contrast(1.4) brightness(1.05)')">
+    <button class="filter-item" data-filter="sharpen" data-css="contrast(1.4) brightness(1.05)" >
       <div class="filter-preview sharpen">
         <div class="fline" style="width:50%"></div>
         <div class="fline" style="width:85%"></div>
@@ -376,7 +536,7 @@
       <span class="filter-name">くっきり</span>
     </button>
 
-    <button class="filter-item" onclick="applyFilter(this, 'bw', 'grayscale(1) contrast(1.3)')">
+    <button class="filter-item" data-filter="bw" data-css="grayscale(1) contrast(1.3)" >
       <div class="filter-preview bw">
         <div class="fline" style="width:50%"></div>
         <div class="fline" style="width:85%"></div>
@@ -388,7 +548,19 @@
       <span class="filter-name">白黒</span>
     </button>
 
-    <button class="filter-item" onclick="applyFilter(this, 'whiteboard', 'brightness(1.3) contrast(1.6) saturate(0)')">
+    <button class="filter-item active" data-filter="magic" data-css="brightness(1.4) contrast(2) saturate(0.3)" >
+      <div class="filter-preview magic">
+        <div class="fline" style="width:50%"></div>
+        <div class="fline" style="width:85%"></div>
+        <div class="fline" style="width:70%"></div>
+        <div class="fline" style="width:90%"></div>
+        <div class="fline" style="width:65%"></div>
+        <div class="fline" style="width:80%"></div>
+      </div>
+      <span class="filter-name">マジック</span>
+    </button>
+
+    <button class="filter-item" data-filter="whiteboard" data-css="brightness(1.3) contrast(1.6) saturate(0)" >
       <div class="filter-preview whiteboard">
         <div class="fline" style="width:50%"></div>
         <div class="fline" style="width:85%"></div>
@@ -400,7 +572,7 @@
       <span class="filter-name">ホワイトボード</span>
     </button>
 
-    <button class="filter-item" onclick="applyFilter(this, 'color-limit', 'saturate(2) contrast(1.2)')">
+    <button class="filter-item" data-filter="color-limit" data-css="saturate(2) contrast(1.2)" >
       <div class="filter-preview color-limit">
         <div class="fline" style="width:50%"></div>
         <div class="fline" style="width:85%"></div>
@@ -412,39 +584,165 @@
       <span class="filter-name">鮮やか</span>
     </button>
 
-    <button class="filter-item" onclick="applyFilter(this, 'stamp', 'contrast(3) brightness(1.5) saturate(0)')">
-      <div class="filter-preview stamp">
-        <div class="fline" style="width:50%"></div>
-        <div class="fline" style="width:85%"></div>
-        <div class="fline" style="width:70%"></div>
-        <div class="fline" style="width:90%"></div>
-        <div class="fline" style="width:65%"></div>
-        <div class="fline" style="width:80%"></div>
-      </div>
-      <span class="filter-name">スタンプ</span>
-    </button>
   </div>
 </div>
 
 <script>
-let rotation = 0;
+// ============================================
+// Edit State (View Model)
+// ============================================
+const TOTAL_PAGES = 3;
+let currentPage = 0;
 let filterOpen = false;
 
-function rotatePage() {
-  const preview = document.getElementById('previewContainer');
-  rotation -= 90;
-  preview.style.transform = `rotate(${rotation}deg)`;
+// Default filter
+const DEFAULT_FILTER = 'magic';
+const DEFAULT_FILTER_CSS = 'brightness(1.4) contrast(2) saturate(0.3)';
 
-  const btn = document.getElementById('rotateBtn');
-  const icon = btn.querySelector('.material-symbols-outlined');
-  icon.style.transform = `rotate(${rotation}deg)`;
-  setTimeout(() => {
-    icon.style.transform = '';
-  }, 500);
+// Per-page edit state: tracks pending (unsaved) changes
+const editState = Array.from({ length: TOTAL_PAGES }, () => ({
+  filter: DEFAULT_FILTER,
+  filterCSS: DEFAULT_FILTER_CSS,
+  rotation: 0,
+}));
+
+// Saved state: what was persisted (used to detect dirty)
+const savedState = Array.from({ length: TOTAL_PAGES }, () => ({
+  filter: DEFAULT_FILTER,
+  filterCSS: DEFAULT_FILTER_CSS,
+  rotation: 0,
+}));
+
+function isDirty() {
+  return editState.some((es, i) =>
+    es.filter !== savedState[i].filter || es.rotation !== savedState[i].rotation
+  );
+}
+
+// ============================================
+// Rendering
+// ============================================
+function renderPage(index) {
+  const el = document.getElementById(`preview-${index}`);
+  if (!el) return;
+  const state = editState[index];
+  el.style.transform = `rotate(${state.rotation}deg)`;
+  el.style.filter = state.filterCSS;
+}
+
+function renderAllPages() {
+  for (let i = 0; i < TOTAL_PAGES; i++) renderPage(i);
+}
+
+function updateIndicator() {
+  document.getElementById('pageIndicator').textContent = `${currentPage + 1} / ${TOTAL_PAGES}`;
+}
+
+function syncFilterSelection() {
+  const state = editState[currentPage];
+  document.querySelectorAll('.filter-item').forEach(fi => {
+    fi.classList.toggle('active', fi.dataset.filter === state.filter);
+  });
+}
+
+// ============================================
+// Swipe Navigation
+// ============================================
+const track = document.getElementById('swipeTrack');
+const area = document.getElementById('previewArea');
+let startX = 0, currentX = 0, dragging = false;
+
+function getTrackOffset() {
+  return -currentPage * area.offsetWidth;
+}
+
+function setTrackPosition(offset, animate) {
+  track.classList.toggle('dragging', !animate);
+  track.style.transform = `translateX(${offset}px)`;
+}
+
+function goToPage(index) {
+  currentPage = Math.max(0, Math.min(TOTAL_PAGES - 1, index));
+  setTrackPosition(getTrackOffset(), true);
+  updateIndicator();
+  syncFilterSelection();
+}
+
+area.addEventListener('touchstart', (e) => {
+  startX = e.touches[0].clientX;
+  dragging = true;
+}, { passive: true });
+
+area.addEventListener('touchmove', (e) => {
+  if (!dragging) return;
+  currentX = e.touches[0].clientX;
+  const diff = currentX - startX;
+  setTrackPosition(getTrackOffset() + diff, false);
+}, { passive: true });
+
+area.addEventListener('touchend', () => {
+  if (!dragging) return;
+  dragging = false;
+  const diff = currentX - startX;
+  const threshold = area.offsetWidth * 0.2;
+  if (diff < -threshold && currentPage < TOTAL_PAGES - 1) {
+    goToPage(currentPage + 1);
+  } else if (diff > threshold && currentPage > 0) {
+    goToPage(currentPage - 1);
+  } else {
+    setTrackPosition(getTrackOffset(), true);
+  }
+  currentX = 0;
+});
+
+// Mouse drag for desktop preview
+let mouseDown = false, mouseStartX = 0, mouseCurrentX = 0;
+area.addEventListener('mousedown', (e) => {
+  mouseStartX = e.clientX;
+  mouseDown = true;
+  e.preventDefault();
+});
+area.addEventListener('mousemove', (e) => {
+  if (!mouseDown) return;
+  mouseCurrentX = e.clientX;
+  const diff = mouseCurrentX - mouseStartX;
+  setTrackPosition(getTrackOffset() + diff, false);
+});
+area.addEventListener('mouseup', () => {
+  if (!mouseDown) return;
+  mouseDown = false;
+  const diff = mouseCurrentX - mouseStartX;
+  const threshold = area.offsetWidth * 0.2;
+  if (diff < -threshold && currentPage < TOTAL_PAGES - 1) {
+    goToPage(currentPage + 1);
+  } else if (diff > threshold && currentPage > 0) {
+    goToPage(currentPage - 1);
+  } else {
+    setTrackPosition(getTrackOffset(), true);
+  }
+  mouseCurrentX = 0;
+});
+area.addEventListener('mouseleave', () => {
+  if (mouseDown) {
+    mouseDown = false;
+    setTrackPosition(getTrackOffset(), true);
+  }
+});
+
+// ============================================
+// Actions
+// ============================================
+function rotatePage() {
+  editState[currentPage].rotation -= 90;
+  renderPage(currentPage);
+
+  // Animate icon
+  const icon = document.querySelector('#rotateBtn .material-symbols-outlined');
+  icon.style.transform = `rotate(${editState[currentPage].rotation}deg)`;
+  setTimeout(() => { icon.style.transform = ''; }, 500);
 }
 
 function retakePage() {
-  // Simulate camera flash
   const flash = document.createElement('div');
   flash.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.4);z-index:100;display:flex;align-items:center;justify-content:center;animation:fadeIn 0.2s ease;';
   flash.innerHTML = '<div style="background:#fff;border-radius:16px;padding:24px;text-align:center;animation:scaleIn 0.2s ease;"><span class="material-symbols-outlined" style="font-size:48px;color:#1a73e8;">photo_camera</span><p style="margin-top:8px;font-size:14px;color:#5f6368;font-family:Noto Sans JP,sans-serif;">カメラを起動中...</p></div>';
@@ -455,28 +753,169 @@ function retakePage() {
   }, 1200);
 }
 
+function scrollToActiveFilter() {
+  const scroll = document.querySelector('.filter-scroll');
+  const active = scroll.querySelector('.filter-item.active');
+  if (!active || !scroll) return;
+  const scrollLeft = active.offsetLeft - scroll.offsetWidth / 2 + active.offsetWidth / 2;
+  scroll.scrollTo({ left: scrollLeft, behavior: 'instant' });
+}
+
 function toggleFilter() {
   const panel = document.getElementById('filterPanel');
   filterOpen = !filterOpen;
   panel.classList.toggle('open', filterOpen);
 
   const btn = document.getElementById('filterToggle');
+  btn.style.color = filterOpen ? 'var(--md-sys-color-primary)' : '';
+
   if (filterOpen) {
-    btn.style.color = 'var(--md-sys-color-primary)';
-  } else {
-    btn.style.color = '';
+    // Wait for panel open transition to finish so layout is computed
+    requestAnimationFrame(() => scrollToActiveFilter());
   }
 }
 
-function applyFilter(item, name, filterCSS) {
+function applyFilterToCurrentPage(item) {
+  const filterName = item.dataset.filter;
+  const filterCSS = item.dataset.css;
+
   document.querySelectorAll('.filter-item').forEach(fi => fi.classList.remove('active'));
   item.classList.add('active');
 
-  const preview = document.getElementById('previewContainer');
-  preview.style.filter = filterCSS;
+  editState[currentPage].filter = filterName;
+  editState[currentPage].filterCSS = filterCSS;
+  renderPage(currentPage);
 }
 
+function applyFilterToAllPages(item) {
+  const filterName = item.dataset.filter;
+  const filterCSS = item.dataset.css;
+
+  document.querySelectorAll('.filter-item').forEach(fi => fi.classList.remove('active'));
+  item.classList.add('active');
+
+  for (let i = 0; i < TOTAL_PAGES; i++) {
+    editState[i].filter = filterName;
+    editState[i].filterCSS = filterCSS;
+  }
+  renderAllPages();
+}
+
+function showAllPagesDialog(item) {
+  const filterLabel = item.querySelector('.filter-name').textContent;
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.innerHTML = `
+    <div class="dialog-box">
+      <div class="dialog-title">全ページに適用</div>
+      <div class="dialog-body">「${filterLabel}」フィルタを全ページに適用しますか？</div>
+      <div class="dialog-actions">
+        <button class="dialog-btn dialog-btn-cancel" onclick="dismissDialog(this)">キャンセル</button>
+        <button class="dialog-btn dialog-btn-confirm" id="confirmAllPages">適用</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  document.getElementById('confirmAllPages').addEventListener('click', function() {
+    applyFilterToAllPages(item);
+    dismissDialog(this);
+  });
+}
+
+// Long-press detection on filter items
+const LONG_PRESS_MS = 500;
+
+document.querySelectorAll('.filter-item').forEach(item => {
+  let pressTimer = null;
+  let longPressed = false;
+
+  function startPress() {
+    longPressed = false;
+    pressTimer = setTimeout(() => {
+      longPressed = true;
+      showAllPagesDialog(item);
+    }, LONG_PRESS_MS);
+  }
+
+  function endPress(e) {
+    clearTimeout(pressTimer);
+    if (!longPressed) {
+      applyFilterToCurrentPage(item);
+    }
+    // Prevent click after long press
+    if (longPressed && e.type === 'click') {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+  }
+
+  function cancelPress() {
+    clearTimeout(pressTimer);
+  }
+
+  // Touch events
+  item.addEventListener('touchstart', (e) => { startPress(); }, { passive: true });
+  item.addEventListener('touchend', (e) => { endPress(e); });
+  item.addEventListener('touchmove', cancelPress, { passive: true });
+  item.addEventListener('touchcancel', cancelPress);
+
+  // Mouse events (desktop)
+  item.addEventListener('mousedown', (e) => { startPress(); });
+  item.addEventListener('mouseup', (e) => { endPress(e); });
+  item.addEventListener('mouseleave', cancelPress);
+  item.addEventListener('click', (e) => {
+    if (longPressed) { e.preventDefault(); e.stopPropagation(); }
+  });
+});
+
+// ============================================
+// Back / Apply
+// ============================================
 function goBack() {
+  if (isDirty()) {
+    showDiscardDialog();
+  } else {
+    animateBack();
+  }
+}
+
+function showDiscardDialog() {
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.innerHTML = `
+    <div class="dialog-box">
+      <div class="dialog-title">編集内容を破棄しますか？</div>
+      <div class="dialog-body">変更した回転やフィルタの設定は保存されません。</div>
+      <div class="dialog-actions">
+        <button class="dialog-btn dialog-btn-cancel" onclick="dismissDialog(this)">キャンセル</button>
+        <button class="dialog-btn dialog-btn-discard" onclick="confirmDiscard(this)">破棄</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+function dismissDialog(btn) {
+  const overlay = btn.closest('.dialog-overlay');
+  overlay.classList.add('hiding');
+  setTimeout(() => overlay.remove(), 200);
+}
+
+function confirmDiscard(btn) {
+  const overlay = btn.closest('.dialog-overlay');
+  overlay.classList.add('hiding');
+  setTimeout(() => {
+    overlay.remove();
+    // Revert to saved state
+    for (let i = 0; i < TOTAL_PAGES; i++) {
+      Object.assign(editState[i], savedState[i]);
+    }
+    renderAllPages();
+    animateBack();
+  }, 200);
+}
+
+function animateBack() {
   const flash = document.createElement('div');
   flash.style.cssText = 'position:fixed;inset:0;background:rgba(0,0,0,0.05);z-index:100;animation:fadeOut 0.3s ease forwards;';
   document.body.appendChild(flash);
@@ -484,6 +923,11 @@ function goBack() {
 }
 
 function applyDone() {
+  // Persist: copy editState to savedState
+  for (let i = 0; i < TOTAL_PAGES; i++) {
+    Object.assign(savedState[i], editState[i]);
+  }
+
   const btn = document.querySelector('.done-text-btn');
   btn.textContent = '✓ 適用済み';
   btn.style.color = '#137333';
@@ -493,15 +937,13 @@ function applyDone() {
   }, 1500);
 }
 
-const style = document.createElement('style');
-style.textContent = `
-  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
-  @keyframes fadeOut { from { opacity: 1; } to { opacity: 0; } }
-  @keyframes scaleIn { from { transform: scale(0.8); opacity: 0; } to { transform: scale(1); opacity: 1; } }
-`;
-document.head.appendChild(style);
+// ============================================
+// Init
+// ============================================
+goToPage(0);
+renderAllPages();
 
-// Auto-open filter panel after a short delay
+// Auto-open filter panel
 setTimeout(() => toggleFilter(), 800);
 </script>
 

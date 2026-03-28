@@ -427,7 +427,7 @@ import Layout from '../layouts/Layout.astro';
     <div class="section-header">
       <div class="screen-number">画面 4</div>
       <h2>ページ編集</h2>
-      <p class="section-description">個々のページに対して回転・フィルタ適用・撮り直しなどの調整を行う画面です。</p>
+      <p class="section-description">文書内の全ページに対して回転・フィルタ適用・撮り直しなどの調整を行う画面です。左右スワイプで編集対象ページを切り替えられます。</p>
     </div>
 
     <div class="screen-layout">
@@ -436,7 +436,7 @@ import Layout from '../layouts/Layout.astro';
           <div class="phone-notch"></div>
           <iframe src="/mockups/page-edit.html" title="ページ編集画面"></iframe>
         </div>
-        <p class="mockup-hint">回転ボタンやフィルタ選択を操作できます</p>
+        <p class="mockup-hint">左右スワイプでページ切替、回転・フィルタを操作できます</p>
       </div>
 
       <div class="screen-spec">
@@ -444,20 +444,20 @@ import Layout from '../layouts/Layout.astro';
           <h3>画面要素</h3>
           <ul class="spec-list">
             <li>
-              <span class="spec-element">ページプレビュー</span>
-              <span class="spec-detail">選択したページの大きなプレビュー表示。回転やフィルタの適用結果がリアルタイムで反映される。</span>
+              <span class="spec-element">ページプレビュー（スワイプ式）</span>
+              <span class="spec-detail">左右スワイプで文書内の全ページを切り替え可能。回転やフィルタの適用結果がページごとにリアルタイムで反映される。下部にページインジケータ（例: 1 / 3）を表示。</span>
             </li>
             <li>
               <span class="spec-element">アクションツールバー</span>
-              <span class="spec-detail">左90度回転・撮り直し・フィルタの3つのアクションボタンを横並び表示。</span>
+              <span class="spec-detail">左90度回転・撮り直し・フィルタの3つのアクションボタンを横並び表示。操作は現在表示中のページに対して行われる。</span>
             </li>
             <li>
               <span class="spec-element">フィルタパネル</span>
-              <span class="spec-detail">フィルタボタンをタップすると下部からスライドイン。横スクロールでプリセットフィルタを選択。各フィルタのプレビューサムネイル付き。</span>
+              <span class="spec-detail">フィルタボタンをタップすると下部からスライドイン。横スクロールでプリセットフィルタを選択。タップで現在ページのみ、長押しで全ページ一括適用の確認ダイアログを表示。</span>
             </li>
             <li>
               <span class="spec-element">適用ボタン</span>
-              <span class="spec-detail">右上に配置。編集結果を確定してページ一覧に戻る。</span>
+              <span class="spec-detail">右上に配置。編集内容（フィルタ・回転）を永続化する。永続化されるのは編集前の画像と編集パラメータであり、編集後の画像自体ではない。</span>
             </li>
           </ul>
         </div>
@@ -466,12 +466,16 @@ import Layout from '../layouts/Layout.astro';
           <h3>インタラクション</h3>
           <ul class="spec-list interaction-list">
             <li>
+              <span class="interaction-trigger">左右スワイプ</span>
+              <span class="interaction-result">編集対象ページを前後に切り替え。ページごとにフィルタ・回転の編集状態が独立して保持される。</span>
+            </li>
+            <li>
               <span class="interaction-trigger">左90度回転ボタン</span>
-              <span class="interaction-result">プレビュー画像が左方向に90度、スムーズにアニメーション回転。連続タップ可。</span>
+              <span class="interaction-result">現在表示中のページのプレビューが左方向に90度、スムーズにアニメーション回転。連続タップ可。</span>
             </li>
             <li>
               <span class="interaction-trigger">撮り直しボタン</span>
-              <span class="interaction-result">カメラを起動し、このページのみ再撮影。撮り直し後、編集画面に戻る。</span>
+              <span class="interaction-result">カメラを起動し、現在表示中のページのみ再撮影。撮り直し後、編集画面に戻る。</span>
             </li>
             <li>
               <span class="interaction-trigger">フィルタボタン</span>
@@ -479,11 +483,33 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="interaction-trigger">フィルタを選択</span>
-              <span class="interaction-result">プレビュー画像にフィルタがリアルタイム適用。選択中フィルタは青枠でハイライト。</span>
+              <span class="interaction-result">タップで現在ページにフィルタをリアルタイム適用。選択中フィルタは青枠でハイライト。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">フィルタを長押し</span>
+              <span class="interaction-result">「全ページに適用しますか？」確認ダイアログを表示。適用を選ぶと全ページに同じフィルタを一括適用。</span>
             </li>
             <li>
               <span class="interaction-trigger">適用ボタン</span>
-              <span class="interaction-result">編集結果を保存し、ページ一覧画面へ戻る。</span>
+              <span class="interaction-result">全ページの編集内容（フィルタ・回転）を永続化し、ページ一覧画面へ戻る。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">戻るボタン</span>
+              <span class="interaction-result">未保存の編集がなければそのまま戻る。編集がある場合は「編集内容を破棄しますか？」確認ダイアログを表示し、破棄を選ぶと変更を捨てて戻る。</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="spec-group">
+          <h3>データモデル</h3>
+          <ul class="spec-list">
+            <li>
+              <span class="spec-element">編集状態の保持</span>
+              <span class="spec-detail">ページごとに「適用フィルタ名」「回転角度」を編集データとしてビューモデルで保持。適用ボタン押下まで永続化されない。</span>
+            </li>
+            <li>
+              <span class="spec-element">永続化の対象</span>
+              <span class="spec-detail">編集後の画像ではなく、編集前の原画像＋編集パラメータ（フィルタ・回転）を保存。プレビュー画像はキャッシュのみで永続化しない。</span>
             </li>
           </ul>
         </div>
@@ -512,6 +538,11 @@ import Layout from '../layouts/Layout.astro';
               <span>白黒文書、コピー用</span>
             </div>
             <div class="filter-row">
+              <span class="filter-name-cell">マジック ★既定</span>
+              <span>Flat-field補正（ガウシアンぼかし除算）+ コントラスト強調</span>
+              <span>照明ムラ・影の除去、CamScanner風の自動補正</span>
+            </div>
+            <div class="filter-row">
               <span class="filter-name-cell">ホワイトボード</span>
               <span>高明度 + 高コントラスト + 彩度除去</span>
               <span>ホワイトボードの撮影</span>
@@ -520,11 +551,6 @@ import Layout from '../layouts/Layout.astro';
               <span class="filter-name-cell">鮮やか</span>
               <span>彩度強調 + コントラスト微調整</span>
               <span>カラー文書、図表の鮮明化</span>
-            </div>
-            <div class="filter-row">
-              <span class="filter-name-cell">スタンプ</span>
-              <span>超高コントラスト + 二値化近似</span>
-              <span>スタンプ・はんこ・署名の抽出</span>
             </div>
           </div>
           <p class="spec-note">※ フィルタは今後の要件に応じて追加可能な拡張設計とする。</p>
