@@ -34,6 +34,7 @@ import Layout from '../layouts/Layout.astro';
     <a href="#flow" class="nav-link">画面遷移</a>
     <a href="#screen-document-list" class="nav-link">文書一覧</a>
     <a href="#screen-camera-scan" class="nav-link">カメラスキャン</a>
+    <a href="#screen-camera-retake" class="nav-link">撮り直し</a>
     <a href="#screen-page-list" class="nav-link">ページ一覧</a>
     <a href="#screen-page-edit" class="nav-link">ページ編集</a>
   </div>
@@ -148,6 +149,7 @@ import Layout from '../layouts/Layout.astro';
           <span class="flow-label">ページ編集</span>
         </div>
         <div class="flow-node-sub">回転 / 撮り直し / フィルタ</div>
+        <div class="flow-node-sub" style="font-size:11px; color:var(--ds-text-subtlest,#626f86); margin-top:4px;">撮り直し → カメラ（単発撮影）→ 自動で戻る</div>
       </div>
 
       <div class="flow-return">
@@ -316,6 +318,77 @@ import Layout from '../layouts/Layout.astro';
             <li>
               <span class="spec-element">連続撮影</span>
               <span class="spec-detail">撮影後もカメラは起動したまま。閉じるボタンまたはサムネイルスタックをタップするまで連続して撮影可能。</span>
+            </li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Screen 2b: Camera Retake -->
+  <section class="doc-section screen-section" id="screen-camera-retake">
+    <div class="section-header">
+      <div class="screen-number">画面 2b</div>
+      <h2>撮り直し（カメラスキャン）</h2>
+      <p class="section-description">ページ編集画面の「撮り直し」ボタンから遷移する、単発撮影モードのカメラ画面。1枚撮影すると自動で元の画面に戻り、該当ページの画像を差し替えます。</p>
+    </div>
+
+    <div class="screen-layout">
+      <div class="screen-mockup">
+        <div class="phone-frame phone-frame-dark">
+          <div class="phone-notch"></div>
+          <iframe src="/mockups/camera-retake.html" title="撮り直し画面"></iframe>
+        </div>
+        <p class="mockup-hint">撮影ボタンをクリックすると1枚だけ撮影し、完了アニメーションが再生されます</p>
+      </div>
+
+      <div class="screen-spec">
+        <div class="spec-group">
+          <h3>通常撮影との違い</h3>
+          <ul class="spec-list">
+            <li>
+              <span class="spec-element">左下は常に閉じるボタン（✕）</span>
+              <span class="spec-detail">通常撮影では撮影後にサムネイルスタックに切り替わるが、撮り直しモードでは常に閉じるボタンを表示。タップすると撮り直しをキャンセルしてページ編集画面に戻る。</span>
+            </li>
+            <li>
+              <span class="spec-element">サムネイルスタック・枚数バッジなし</span>
+              <span class="spec-detail">撮り直しは単発撮影のため、サムネイルスタックと枚数バッジは表示しない。</span>
+            </li>
+            <li>
+              <span class="spec-element">紙検出ガイド</span>
+              <span class="spec-detail">通常撮影と同じ。紙を検出するとガイド枠が表示され、撮影時に台形補正が適用される。</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="spec-group">
+          <h3>インタラクション</h3>
+          <ul class="spec-list interaction-list">
+            <li>
+              <span class="interaction-trigger">撮影ボタンをタップ</span>
+              <span class="interaction-result">フラッシュエフェクト → 「撮り直し完了」オーバーレイ（✓アイコン + テキスト）を短時間表示 → 自動的にページ編集画面に戻る。元のページの画像が新しい撮影画像に差し替えられる。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">閉じるボタン（✕）をタップ</span>
+              <span class="interaction-result">撮り直しをキャンセルし、ページ編集画面に戻る。元のページ画像は変更されない。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">2回目以降の撮影ボタンタップ</span>
+              <span class="interaction-result">1枚撮影後は撮影ボタンが無効化されるため、連続撮影は不可。</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="spec-group">
+          <h3>技術的な考慮点</h3>
+          <ul class="spec-list">
+            <li>
+              <span class="spec-element">画像差し替え</span>
+              <span class="spec-detail">撮影した画像はDB上で該当ページの imagePath を更新し、旧画像ファイルを削除する。フィルタ設定と回転設定は維持される。</span>
+            </li>
+            <li>
+              <span class="spec-element">編集中の状態保持</span>
+              <span class="spec-detail">撮り直しで画像が差し替わっても、ユーザーが編集中のフィルタ・回転の設定は破棄せず保持する。画像パスのみ更新し、未保存の編集内容はそのまま残る。</span>
             </li>
           </ul>
         </div>

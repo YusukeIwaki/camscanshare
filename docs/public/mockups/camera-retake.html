@@ -1,0 +1,346 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>撮り直し（カメラスキャン）</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+  :root {
+    --md-sys-color-primary: #1a73e8;
+    --md-sys-color-on-primary: #ffffff;
+    --md-sys-color-surface: #1a1a1a;
+    --md-sys-color-on-surface: #ffffff;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Noto Sans JP', 'Roboto', sans-serif;
+    background: #000;
+    color: #fff;
+    height: 100vh;
+    overflow: hidden;
+  }
+
+  /* Full-screen viewfinder */
+  .viewfinder {
+    position: absolute;
+    inset: 0;
+    overflow: hidden;
+  }
+
+  .camera-feed {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 30%, #222 60%, #1e1e1e 100%);
+  }
+
+  .camera-feed::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(ellipse at 50% 40%, rgba(80,80,80,0.15) 0%, transparent 60%),
+      repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.01) 2px, rgba(255,255,255,0.01) 4px);
+  }
+
+  /* Simulated papers */
+  .sim-paper {
+    position: absolute;
+    top: 0; left: 0;
+    background: #f5f5f0;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.5);
+    will-change: transform, opacity;
+  }
+  .sim-paper .sim-line {
+    height: 3px; background: #ccc; margin: 6% 8%; border-radius: 1px;
+  }
+  .sim-paper .sim-line:first-child {
+    width: 50%; height: 5px; background: #999; margin-top: 10%;
+  }
+  #paperContainer { position: absolute; inset: 0; z-index: 1; }
+
+  /* Paper Detection Guide */
+  .detection-guide { position: absolute; inset: 0; z-index: 5; pointer-events: none; }
+  .detection-rect {
+    position: absolute; top: 50%; left: 50%;
+    width: 68%; aspect-ratio: 210/297;
+    transform: translate(-50%, -50%);
+    transition: top 0.5s ease, left 0.5s ease, width 0.5s ease, transform 0.5s ease;
+  }
+  .detection-rect .corner {
+    position: absolute; width: 24px; height: 24px;
+    border-color: var(--md-sys-color-primary); border-style: solid; border-width: 0;
+  }
+  .corner.tl { top: 0; left: 0; border-top-width: 3px; border-left-width: 3px; border-top-left-radius: 4px; }
+  .corner.tr { top: 0; right: 0; border-top-width: 3px; border-right-width: 3px; border-top-right-radius: 4px; }
+  .corner.bl { bottom: 0; left: 0; border-bottom-width: 3px; border-left-width: 3px; border-bottom-left-radius: 4px; }
+  .corner.br { bottom: 0; right: 0; border-bottom-width: 3px; border-right-width: 3px; border-bottom-right-radius: 4px; }
+  .detection-rect .edge { position: absolute; background: var(--md-sys-color-primary); opacity: 0.4; }
+  .edge.top { top: 0; left: 24px; right: 24px; height: 2px; }
+  .edge.bottom { bottom: 0; left: 24px; right: 24px; height: 2px; }
+  .edge.left { top: 24px; bottom: 24px; left: 0; width: 2px; }
+  .edge.right { top: 24px; bottom: 24px; right: 0; width: 2px; }
+  .detection-rect .fill {
+    position: absolute; inset: 0;
+    background: rgba(26, 115, 232, 0.06); border-radius: 2px;
+    animation: fill-pulse 2s ease-in-out infinite;
+  }
+  @keyframes fill-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.5; } }
+  .detection-guide.hidden .detection-rect { opacity: 0; }
+  .detection-guide.visible .detection-rect { opacity: 1; }
+  .detection-guide .detection-rect .corner,
+  .detection-guide .detection-rect .edge,
+  .detection-guide .detection-rect .fill { transition: opacity 0.3s ease; }
+
+  /* Bottom Controls */
+  .bottom-controls {
+    position: absolute; bottom: 0; left: 0; right: 0;
+    padding: 20px 24px;
+    padding-bottom: max(20px, env(safe-area-inset-bottom, 20px));
+    display: flex; align-items: center; justify-content: center;
+    z-index: 10;
+    background: linear-gradient(transparent, rgba(0,0,0,0.6));
+  }
+  .capture-row {
+    display: flex; align-items: center; justify-content: center;
+    width: 100%; position: relative;
+  }
+
+  /* Left: always close (cancel retake) */
+  .left-action {
+    position: absolute; left: 0;
+    width: 52px; height: 52px; cursor: pointer;
+  }
+  .back-circle {
+    width: 52px; height: 52px; border-radius: 12px;
+    background: rgba(255,255,255,0.15);
+    backdrop-filter: blur(8px);
+    border: 1.5px solid rgba(255,255,255,0.25);
+    display: flex; align-items: center; justify-content: center;
+    cursor: pointer; transition: background 0.2s;
+  }
+  .back-circle:hover { background: rgba(255,255,255,0.25); }
+  .back-circle .material-symbols-outlined { font-size: 24px; color: #fff; }
+
+  /* Capture button */
+  .capture-btn {
+    width: 72px; height: 72px; border-radius: 50%;
+    background: transparent; border: 4px solid #fff;
+    cursor: pointer; transition: transform 0.1s;
+    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+  }
+  .capture-btn:active { transform: scale(0.92); }
+  .capture-btn-inner {
+    width: 58px; height: 58px; border-radius: 50%;
+    background: #fff; transition: background 0.15s, transform 0.15s;
+  }
+  .capture-btn:hover .capture-btn-inner { background: #e0e0e0; }
+  .capture-btn:active .capture-btn-inner { transform: scale(0.9); background: #ccc; }
+
+  /* Flash */
+  .flash-overlay {
+    position: fixed; inset: 0; background: #fff; z-index: 100;
+    opacity: 0; pointer-events: none;
+  }
+  .flash-overlay.active { animation: flash-effect 0.4s ease-out; }
+  @keyframes flash-effect { 0% { opacity: 0.9; } 100% { opacity: 0; } }
+
+  /* Retake success overlay */
+  .retake-success {
+    position: fixed; inset: 0; z-index: 80;
+    display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    background: rgba(0,0,0,0.6);
+    opacity: 0; pointer-events: none;
+    transition: opacity 0.3s ease;
+  }
+  .retake-success.visible { opacity: 1; }
+  .retake-success .material-symbols-outlined {
+    font-size: 64px; color: #4caf50;
+    animation: check-pop 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+  }
+  .retake-success p {
+    margin-top: 12px; font-size: 15px; font-weight: 500; color: #fff;
+  }
+  @keyframes check-pop {
+    0% { transform: scale(0); opacity: 0; }
+    100% { transform: scale(1); opacity: 1; }
+  }
+</style>
+</head>
+<body>
+
+<div class="viewfinder">
+  <div class="camera-feed"></div>
+  <div id="paperContainer"></div>
+
+  <div class="detection-guide hidden" id="detectionGuide">
+    <div class="detection-rect" id="detectionRect">
+      <div class="fill"></div>
+      <div class="corner tl"></div>
+      <div class="corner tr"></div>
+      <div class="corner bl"></div>
+      <div class="corner br"></div>
+      <div class="edge top"></div>
+      <div class="edge bottom"></div>
+      <div class="edge left"></div>
+      <div class="edge right"></div>
+    </div>
+  </div>
+</div>
+
+<div class="bottom-controls">
+  <div class="capture-row">
+    <div class="left-action" onclick="cancelRetake()">
+      <div class="back-circle">
+        <span class="material-symbols-outlined">close</span>
+      </div>
+    </div>
+
+    <button class="capture-btn" onclick="capture()">
+      <div class="capture-btn-inner"></div>
+    </button>
+
+    <div style="position:absolute;right:0;width:52px;height:52px;"></div>
+  </div>
+</div>
+
+<div class="flash-overlay" id="flashOverlay"></div>
+
+<div class="retake-success" id="retakeSuccess">
+  <span class="material-symbols-outlined">check_circle</span>
+  <p>撮り直し完了</p>
+</div>
+
+<script>
+const papers = [];
+const container = document.getElementById('paperContainer');
+const detectionGuide = document.getElementById('detectionGuide');
+const detectionRect = document.getElementById('detectionRect');
+
+function cancelRetake() {
+  console.log('→ 撮り直しをキャンセルしてページ編集画面に戻る');
+}
+
+// ---- Paper Spawning (same as normal camera) ----
+const docTypes = [
+  { lines: [50, 85, 70, 90, 65, 80, 75, 88], titleWeight: true, color: '#f5f5f0' },
+  { lines: [40, 60, 90, 55, 80, 70], titleWeight: true, color: '#f8f6ee' },
+  { lines: [90, 90, 90, 90, 90, 90, 90], titleWeight: false, color: '#eef2f7' },
+  { lines: [45, 75, 30, 85, 60], titleWeight: true, color: '#fff8f0' },
+];
+
+function createPaperEl(docType) {
+  const el = document.createElement('div');
+  el.className = 'sim-paper';
+  el.style.background = docType.color;
+  docType.lines.forEach((w, i) => {
+    const line = document.createElement('div');
+    line.className = 'sim-line';
+    line.style.width = w + '%';
+    if (i === 0 && docType.titleWeight) { line.style.height = '5px'; line.style.background = '#999'; line.style.width = '50%'; }
+    el.appendChild(line);
+  });
+  return el;
+}
+
+function spawnPaper() {
+  const viewfinder = document.querySelector('.viewfinder');
+  const vw = viewfinder.offsetWidth;
+  const vh = viewfinder.offsetHeight;
+  const docType = docTypes[Math.floor(Math.random() * docTypes.length)];
+  const el = createPaperEl(docType);
+  const paperW = vw * (0.50 + Math.random() * 0.20);
+  const paperH = paperW * (297 / 210);
+  el.style.width = paperW + 'px'; el.style.height = paperH + 'px';
+
+  const scenario = Math.floor(Math.random() * 5);
+  let startX, startY, endX, endY, startRot, endRot, duration;
+  switch (scenario) {
+    case 0: startX = -paperW; startY = vh * (0.3 + Math.random() * 0.3); endX = vw + paperW; endY = startY + (Math.random() - 0.5) * vh * 0.3; break;
+    case 1: startX = vw * (0.2 + Math.random() * 0.5); startY = -paperH; endX = startX + (Math.random() - 0.5) * vw * 0.4; endY = vh + paperH; break;
+    case 2: startX = vw * 0.35; startY = vh * 0.3; endX = startX + (Math.random() > 0.5 ? 1 : -1) * (vw * 0.5 + paperW); endY = startY + (Math.random() - 0.5) * vh * 0.5; break;
+    case 3: startX = vw + paperW; startY = vh * (0.2 + Math.random() * 0.4); endX = -paperW; endY = startY + (Math.random() - 0.5) * vh * 0.3; break;
+    case 4: startX = vw * (0.1 + Math.random() * 0.5); startY = vh + paperH; endX = startX + (Math.random() - 0.5) * vw * 0.3; endY = -paperH; break;
+  }
+  startRot = -10 + Math.random() * 20; endRot = startRot + (Math.random() - 0.5) * 20;
+  duration = 5000 + Math.random() * 3000;
+  const tiltX = 2 + Math.random() * 6, tiltY = -3 + Math.random() * 6;
+  el.style.opacity = '0';
+  container.appendChild(el);
+  papers.push({ el, startX, startY, endX, endY, startRot, endRot, tiltX, tiltY, duration, startTime: performance.now(), paperW, paperH });
+}
+
+function easeInOutCubic(t) { return t < 0.5 ? 4*t*t*t : 1 - Math.pow(-2*t+2,3)/2; }
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function updatePapers(now) {
+  const viewfinder = document.querySelector('.viewfinder');
+  const vw = viewfinder.offsetWidth, vh = viewfinder.offsetHeight;
+  const cx = vw / 2, cy = vh / 2;
+  let bestPaper = null, bestDist = Infinity;
+
+  for (let i = papers.length - 1; i >= 0; i--) {
+    const p = papers[i];
+    const t = Math.min((now - p.startTime) / p.duration, 1);
+    const et = easeInOutCubic(t);
+    const x = lerp(p.startX, p.endX, et), y = lerp(p.startY, p.endY, et);
+    const rot = lerp(p.startRot, p.endRot, et);
+    let opacity = 1;
+    if (t < 0.08) opacity = t / 0.08; else if (t > 0.92) opacity = (1 - t) / 0.08;
+    p.el.style.transform = `translate(${x}px,${y}px) perspective(600px) rotateX(${p.tiltX}deg) rotateY(${p.tiltY}deg) rotate(${rot}deg)`;
+    p.el.style.opacity = opacity;
+    p.cx = x + p.paperW / 2; p.cy = y + p.paperH / 2;
+    const dist = Math.hypot(p.cx - cx, p.cy - cy);
+    const inBounds = x > -p.paperW*0.3 && x < vw-p.paperW*0.3 && y > -p.paperH*0.3 && y < vh-p.paperH*0.3;
+    if (inBounds && dist < bestDist && opacity > 0.5) { bestDist = dist; bestPaper = p; }
+    if (t >= 1) { p.el.remove(); papers.splice(i, 1); }
+  }
+
+  const threshold = Math.min(vw, vh) * 0.45;
+  if (bestPaper && bestDist < threshold) {
+    detectionGuide.classList.remove('hidden'); detectionGuide.classList.add('visible');
+    detectionRect.style.width = (bestPaper.paperW + 16) + 'px';
+    detectionRect.style.top = bestPaper.cy + 'px'; detectionRect.style.left = bestPaper.cx + 'px';
+    const et2 = easeInOutCubic(Math.min((now - bestPaper.startTime)/bestPaper.duration, 1));
+    detectionRect.style.transform = `translate(-50%,-50%) rotate(${lerp(bestPaper.startRot, bestPaper.endRot, et2)}deg)`;
+  } else {
+    detectionGuide.classList.remove('visible'); detectionGuide.classList.add('hidden');
+  }
+  requestAnimationFrame(updatePapers);
+}
+
+function scheduleSpawn() { spawnPaper(); setTimeout(scheduleSpawn, 2000 + Math.random() * 2000); }
+spawnPaper(); setTimeout(scheduleSpawn, 1500);
+requestAnimationFrame(updatePapers);
+
+// ---- Retake Capture: single-shot ----
+let captured = false;
+
+function capture() {
+  if (captured) return;
+  captured = true;
+
+  const flash = document.getElementById('flashOverlay');
+  flash.classList.add('active');
+  setTimeout(() => flash.classList.remove('active'), 400);
+
+  // Show success overlay after brief delay
+  setTimeout(() => {
+    const success = document.getElementById('retakeSuccess');
+    success.classList.add('visible');
+
+    // Auto-close after 1.2s
+    setTimeout(() => {
+      success.classList.remove('visible');
+      console.log('→ ページ編集画面に自動で戻る（画像差し替え完了）');
+    }, 1200);
+  }, 500);
+}
+</script>
+
+</body>
+</html>
