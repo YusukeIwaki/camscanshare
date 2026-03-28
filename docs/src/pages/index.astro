@@ -263,27 +263,19 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list">
             <li>
               <span class="spec-element">カメラビューファインダー</span>
-              <span class="spec-detail">デバイスカメラのリアルタイムプレビューを全画面表示。</span>
+              <span class="spec-detail">デバイスカメラのリアルタイムプレビューを全画面表示。UIを最小限にしてファインダー領域を最大化。</span>
             </li>
             <li>
               <span class="spec-element">紙検出ガイド（矩形オーバーレイ）</span>
-              <span class="spec-detail">紙を検出すると、四角形の枠ガイドが紙の輪郭に沿って表示される。コーナーマーカーと半透明フィルで視認性を確保。検出中は微かにトラッキングアニメーション。</span>
+              <span class="spec-detail">紙を検出すると、四角形の枠ガイドが紙の輪郭に沿って表示される。コーナーマーカーと半透明フィルで視認性を確保。検出中はリアルタイムでトラッキング。</span>
             </li>
             <li>
               <span class="spec-element">撮影ボタン</span>
-              <span class="spec-detail">画面下部中央に大型の円形ボタン。物理シャッターボタンを模した2重円デザイン。</span>
+              <span class="spec-detail">画面下部中央に大型の円形ボタン。物理シャッターボタンを模した2重円デザイン。グラデーション付きオーバーレイ上に配置。</span>
             </li>
             <li>
-              <span class="spec-element">サムネイルスタック</span>
-              <span class="spec-detail">撮影済みページのスタック表示。撮影枚数に応じてサムネイルが重なっていく。</span>
-            </li>
-            <li>
-              <span class="spec-element">スキャン済み枚数カウンター</span>
-              <span class="spec-detail">「N枚スキャン済み」とリアルタイム表示。撮影時にバウンスアニメーション。</span>
-            </li>
-            <li>
-              <span class="spec-element">完了ボタン</span>
-              <span class="spec-detail">右上に配置。撮影完了時にタップしてページ一覧へ遷移。</span>
+              <span class="spec-element">左下アクションエリア</span>
+              <span class="spec-detail">撮影枚数に応じて表示が切り替わる。0枚時は閉じるボタン（✕アイコン）、1枚以上ではサムネイルスタック（枚数バッジ付き）を表示。最新の撮影ページがサムネイルの最前面に反映される。</span>
             </li>
           </ul>
         </div>
@@ -293,19 +285,19 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list interaction-list">
             <li>
               <span class="interaction-trigger">撮影ボタンをタップ</span>
-              <span class="interaction-result">フラッシュエフェクト → 撮影画像が縮小しながらサムネイルスタックへ飛んでいくアニメーション（アルバムに入る演出） → カウンターがインクリメント（バウンス）</span>
+              <span class="interaction-result">フラッシュエフェクト → 撮影画像が縮小しながら左下のサムネイルスタックへ飛んでいくアニメーション → 枚数バッジがインクリメント</span>
             </li>
             <li>
-              <span class="interaction-trigger">完了ボタンをタップ</span>
+              <span class="interaction-trigger">閉じるボタンをタップ（0枚時）</span>
+              <span class="interaction-result">スキャンを中断し、文書一覧画面へ戻る。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">サムネイルスタックをタップ（1枚以上）</span>
               <span class="interaction-result">スキャンを終了し、ページ一覧画面へ遷移。クロップ処理が実行される。</span>
             </li>
             <li>
               <span class="interaction-trigger">紙の検出</span>
-              <span class="interaction-result">検出矩形がリアルタイムでトラッキング。検出成功時に「文書を検出しました」ラベル表示。</span>
-            </li>
-            <li>
-              <span class="interaction-trigger">フラッシュ切替</span>
-              <span class="interaction-result">フラッシュON/OFFのトグルボタン。アイコン変化で状態を明示。</span>
+              <span class="interaction-result">検出矩形がリアルタイムでトラッキング。紙がファインダー中央付近にあるときのみガイドが表示される。</span>
             </li>
           </ul>
         </div>
@@ -323,7 +315,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">連続撮影</span>
-              <span class="spec-detail">撮影後もカメラは起動したまま。ユーザーが完了を押すまで連続して撮影可能。</span>
+              <span class="spec-detail">撮影後もカメラは起動したまま。閉じるボタンまたはサムネイルスタックをタップするまで連続して撮影可能。</span>
             </li>
           </ul>
         </div>

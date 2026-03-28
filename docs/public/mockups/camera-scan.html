@@ -22,76 +22,15 @@
     color: #fff;
     height: 100vh;
     overflow: hidden;
-    display: flex;
-    flex-direction: column;
   }
 
-  /* Top Bar */
-  .top-bar {
-    background: rgba(0,0,0,0.7);
-    backdrop-filter: blur(8px);
-    padding: 12px 16px;
-    display: flex;
-    align-items: center;
-    height: 56px;
-    z-index: 10;
-  }
-
-  .top-bar .back-btn {
-    background: none;
-    border: none;
-    color: #fff;
-    cursor: pointer;
-    padding: 4px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    transition: background 0.2s;
-  }
-
-  .top-bar .back-btn:hover {
-    background: rgba(255,255,255,0.1);
-  }
-
-  .top-bar .title {
-    flex: 1;
-    text-align: center;
-    font-size: 18px;
-    font-weight: 500;
-  }
-
-  .top-bar .done-btn {
-    background: var(--md-sys-color-primary);
-    color: #fff;
-    border: none;
-    padding: 6px 16px;
-    border-radius: 20px;
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-    transition: background 0.2s, transform 0.1s;
-    font-family: inherit;
-  }
-
-  .top-bar .done-btn:hover {
-    background: #1567d3;
-  }
-
-  .top-bar .done-btn:active {
-    transform: scale(0.95);
-  }
-
-  /* Camera Viewfinder */
+  /* Full-screen viewfinder */
   .viewfinder {
-    flex: 1;
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
+    position: absolute;
+    inset: 0;
     overflow: hidden;
   }
 
-  /* Simulated camera feed */
   .camera-feed {
     position: absolute;
     inset: 0;
@@ -108,56 +47,52 @@
       repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.01) 2px, rgba(255,255,255,0.01) 4px);
   }
 
-  /* Simulated document on desk */
-  .sim-document {
+  /* Simulated papers (dynamically spawned) */
+  .sim-paper {
     position: absolute;
-    width: 65%;
-    aspect-ratio: 210/297;
+    top: 0;
+    left: 0;
     background: #f5f5f0;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%) perspective(600px) rotateX(3deg) rotateY(-1deg);
     box-shadow: 0 8px 32px rgba(0,0,0,0.5);
-    z-index: 1;
+    will-change: transform, opacity;
   }
 
-  .sim-document .sim-line {
+  .sim-paper .sim-line {
     height: 3px;
     background: #ccc;
-    margin: 8px 12px;
+    margin: 6% 8%;
     border-radius: 1px;
   }
 
-  .sim-document .sim-line:first-child {
+  .sim-paper .sim-line:first-child {
     width: 50%;
     height: 5px;
     background: #999;
-    margin-top: 16px;
+    margin-top: 10%;
   }
 
-  .sim-document .sim-line:nth-child(2) { width: 85%; }
-  .sim-document .sim-line:nth-child(3) { width: 70%; }
-  .sim-document .sim-line:nth-child(4) { width: 90%; }
-  .sim-document .sim-line:nth-child(5) { width: 65%; }
-  .sim-document .sim-line:nth-child(6) { width: 80%; }
-  .sim-document .sim-line:nth-child(7) { width: 75%; }
-  .sim-document .sim-line:nth-child(8) { width: 88%; }
+  #paperContainer {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+  }
 
   /* Paper Detection Guide */
   .detection-guide {
     position: absolute;
+    inset: 0;
     z-index: 5;
     pointer-events: none;
   }
 
   .detection-rect {
-    width: 68%;
-    aspect-ratio: 210/297;
     position: absolute;
     top: 50%;
     left: 50%;
+    width: 68%;
+    aspect-ratio: 210/297;
     transform: translate(-50%, -50%);
-    animation: guide-track 3s ease-in-out infinite;
+    transition: top 0.5s ease, left 0.5s ease, width 0.5s ease, transform 0.5s ease;
   }
 
   .detection-rect .corner {
@@ -185,7 +120,6 @@
   .edge.left { top: 24px; bottom: 24px; left: 0; width: 2px; }
   .edge.right { top: 24px; bottom: 24px; right: 0; width: 2px; }
 
-  /* Detection rectangle fill overlay */
   .detection-rect .fill {
     position: absolute;
     inset: 0;
@@ -194,110 +128,95 @@
     animation: fill-pulse 2s ease-in-out infinite;
   }
 
-  @keyframes guide-track {
-    0%, 100% { transform: translate(-50%, -50%) scale(1); }
-    25% { transform: translate(-50.5%, -50.3%) scale(1.005); }
-    50% { transform: translate(-49.8%, -49.7%) scale(0.998); }
-    75% { transform: translate(-50.2%, -50.5%) scale(1.003); }
-  }
-
   @keyframes fill-pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
   }
 
-  /* Detected label */
-  .detection-label {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    z-index: 6;
-    pointer-events: none;
-  }
+  .detection-guide.hidden .detection-rect { opacity: 0; }
+  .detection-guide.hidden .detection-rect .corner,
+  .detection-guide.hidden .detection-rect .edge,
+  .detection-guide.hidden .detection-rect .fill { opacity: 0; }
+  .detection-guide.visible .detection-rect { opacity: 1; }
+  .detection-guide .detection-rect .corner,
+  .detection-guide .detection-rect .edge,
+  .detection-guide .detection-rect .fill { transition: opacity 0.3s ease; }
 
-  .detection-label span {
-    background: rgba(26, 115, 232, 0.85);
-    color: #fff;
-    padding: 4px 12px;
-    border-radius: 12px;
-    font-size: 12px;
-    font-weight: 500;
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    animation: label-appear 0.3s ease;
-  }
-
-  .detection-label .material-symbols-outlined {
-    font-size: 16px;
-  }
-
-  /* Bottom Controls */
+  /* Bottom Controls - overlay on viewfinder */
   .bottom-controls {
-    background: rgba(0,0,0,0.85);
-    backdrop-filter: blur(12px);
-    padding: 16px;
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    padding: 20px 24px;
+    padding-bottom: max(20px, env(safe-area-inset-bottom, 20px));
     display: flex;
-    flex-direction: column;
     align-items: center;
-    gap: 16px;
+    justify-content: center;
     z-index: 10;
-  }
-
-  .page-counter {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    font-size: 13px;
-    color: rgba(255,255,255,0.8);
-  }
-
-  .page-counter .material-symbols-outlined {
-    font-size: 18px;
-    color: var(--md-sys-color-primary);
-  }
-
-  .page-counter .count {
-    font-weight: 700;
-    color: #fff;
-    min-width: 16px;
-    text-align: center;
-    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .page-counter .count.bump {
-    animation: count-bump 0.3s ease;
-  }
-
-  @keyframes count-bump {
-    0% { transform: scale(1); }
-    50% { transform: scale(1.5); color: var(--md-sys-color-primary); }
-    100% { transform: scale(1); }
+    background: linear-gradient(transparent, rgba(0,0,0,0.6));
   }
 
   .capture-row {
     display: flex;
     align-items: center;
     justify-content: center;
-    gap: 40px;
     width: 100%;
+    position: relative;
+  }
+
+  /* Left area: back button or thumbnail stack */
+  .left-action {
+    position: absolute;
+    left: 0;
+    width: 52px;
+    height: 52px;
+    cursor: pointer;
+  }
+
+  .back-circle {
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    background: rgba(255,255,255,0.15);
+    backdrop-filter: blur(8px);
+    border: 1.5px solid rgba(255,255,255,0.25);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: background 0.2s;
+  }
+
+  .back-circle:hover {
+    background: rgba(255,255,255,0.25);
+  }
+
+  .back-circle .material-symbols-outlined {
+    font-size: 24px;
+    color: #fff;
   }
 
   /* Thumbnail stack */
   .thumb-stack {
-    width: 44px;
-    height: 44px;
+    width: 52px;
+    height: 52px;
     position: relative;
-    border-radius: 8px;
+    border-radius: 12px;
     overflow: visible;
+    cursor: pointer;
+    display: none;
+  }
+
+  .thumb-stack.has-pages {
+    display: block;
   }
 
   .thumb-item {
     position: absolute;
-    width: 44px;
-    height: 44px;
-    border-radius: 8px;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
     background: #f5f5f0;
     border: 2px solid rgba(255,255,255,0.8);
     box-shadow: 0 2px 8px rgba(0,0,0,0.3);
@@ -307,12 +226,28 @@
   }
 
   .thumb-item .material-symbols-outlined {
-    font-size: 20px;
+    font-size: 22px;
     color: #999;
   }
 
-  .thumb-item:nth-child(1) { transform: rotate(-5deg) translate(0, 2px); }
-  .thumb-item:nth-child(2) { transform: rotate(2deg) translate(2px, -1px); z-index: 1; }
+  .thumb-stack .page-badge {
+    position: absolute;
+    top: -6px;
+    right: -6px;
+    min-width: 20px;
+    height: 20px;
+    border-radius: 10px;
+    background: var(--md-sys-color-primary);
+    color: #fff;
+    font-size: 11px;
+    font-weight: 700;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0 5px;
+    z-index: 10;
+    box-shadow: 0 2px 6px rgba(0,0,0,0.3);
+  }
 
   /* Capture button */
   .capture-btn {
@@ -322,11 +257,11 @@
     background: transparent;
     border: 4px solid #fff;
     cursor: pointer;
-    position: relative;
     transition: transform 0.1s;
     display: flex;
     align-items: center;
     justify-content: center;
+    flex-shrink: 0;
   }
 
   .capture-btn:active {
@@ -383,7 +318,6 @@
     top: 50%;
     left: 50%;
     transform: translate(-50%, -50%);
-    animation: fly-to-stack 0.6s cubic-bezier(0.4, 0, 0.2, 1) forwards;
   }
 
   .flying-page .fly-lines {
@@ -397,73 +331,24 @@
     border-radius: 1px;
   }
 
-  @keyframes fly-to-stack {
-    0% {
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%) scale(1);
-      opacity: 0.9;
-    }
-    100% {
-      top: calc(100% - 70px);
-      left: 30px;
-      transform: translate(0, 0) scale(0.12) rotate(-5deg);
-      opacity: 0;
-    }
-  }
+  /* fly-to-stack destination set dynamically via JS */
 
-  /* Toggle flash mode, etc */
-  .mode-toggle {
-    width: 44px;
-    height: 44px;
-    border-radius: 50%;
-    background: rgba(255,255,255,0.1);
-    border: none;
-    color: #fff;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: background 0.2s;
-  }
-
-  .mode-toggle:hover {
-    background: rgba(255,255,255,0.2);
-  }
-
-  .mode-toggle .material-symbols-outlined {
-    font-size: 22px;
+  @keyframes count-bump {
+    0% { transform: scale(1); }
+    50% { transform: scale(1.3); }
+    100% { transform: scale(1); }
   }
 </style>
 </head>
 <body>
 
-<div class="top-bar">
-  <button class="back-btn">
-    <span class="material-symbols-outlined">arrow_back</span>
-  </button>
-  <span class="title">スキャン</span>
-  <button class="done-btn" onclick="doneTap()">完了</button>
-</div>
-
 <div class="viewfinder">
   <div class="camera-feed"></div>
 
-  <!-- Simulated document -->
-  <div class="sim-document">
-    <div class="sim-line"></div>
-    <div class="sim-line"></div>
-    <div class="sim-line"></div>
-    <div class="sim-line"></div>
-    <div class="sim-line"></div>
-    <div class="sim-line"></div>
-    <div class="sim-line"></div>
-    <div class="sim-line"></div>
-  </div>
+  <div id="paperContainer"></div>
 
-  <!-- Detection Guide Overlay -->
-  <div class="detection-guide">
-    <div class="detection-rect">
+  <div class="detection-guide hidden" id="detectionGuide">
+    <div class="detection-rect" id="detectionRect">
       <div class="fill"></div>
       <div class="corner tl"></div>
       <div class="corner tr"></div>
@@ -475,34 +360,25 @@
       <div class="edge right"></div>
     </div>
   </div>
-
-  <div class="detection-label">
-    <span>
-      <span class="material-symbols-outlined">check_circle</span>
-      文書を検出しました
-    </span>
-  </div>
 </div>
 
 <div class="bottom-controls">
-  <div class="page-counter">
-    <span class="material-symbols-outlined">description</span>
-    <span class="count" id="pageCount">0</span>
-    <span>枚スキャン済み</span>
-  </div>
-
   <div class="capture-row">
-    <div class="thumb-stack" id="thumbStack">
-      <!-- Thumbnails appear here after capture -->
+    <div class="left-action" id="leftAction" onclick="leftActionTap()">
+      <div class="back-circle" id="backCircle">
+        <span class="material-symbols-outlined">close</span>
+      </div>
+      <div class="thumb-stack" id="thumbStack" onclick="event.stopPropagation(); thumbTap()">
+        <span class="page-badge" id="pageBadge">0</span>
+      </div>
     </div>
 
     <button class="capture-btn" onclick="capture()">
       <div class="capture-btn-inner"></div>
     </button>
 
-    <button class="mode-toggle" onclick="toggleFlash(this)">
-      <span class="material-symbols-outlined">flash_off</span>
-    </button>
+    <!-- Right side spacer for centering -->
+    <div style="position:absolute;right:0;width:52px;height:52px;"></div>
   </div>
 </div>
 
@@ -510,76 +386,296 @@
 
 <script>
 let pageCount = 0;
+const papers = [];
+const container = document.getElementById('paperContainer');
+const detectionGuide = document.getElementById('detectionGuide');
+const detectionRect = document.getElementById('detectionRect');
+const backCircle = document.getElementById('backCircle');
+const thumbStack = document.getElementById('thumbStack');
+const pageBadge = document.getElementById('pageBadge');
+
+// ---- Left action ----
+
+function leftActionTap() {
+  if (pageCount === 0) {
+    // Navigate back to document list
+    console.log('→ 文書一覧画面へ戻る');
+  }
+}
+
+function thumbTap() {
+  if (pageCount > 0) {
+    // Navigate to page list
+    console.log('→ ページ一覧画面へ遷移');
+  }
+}
+
+function updateLeftAction() {
+  if (pageCount === 0) {
+    backCircle.style.display = 'flex';
+    thumbStack.classList.remove('has-pages');
+  } else {
+    backCircle.style.display = 'none';
+    thumbStack.classList.add('has-pages');
+  }
+}
+
+// ---- Paper Spawning ----
+
+const docTypes = [
+  { lines: [50, 85, 70, 90, 65, 80, 75, 88], titleWeight: true, color: '#f5f5f0' },
+  { lines: [40, 60, 90, 55, 80, 70], titleWeight: true, color: '#f8f6ee' },
+  { lines: [90, 90, 90, 90, 90, 90, 90], titleWeight: false, color: '#eef2f7' },
+  { lines: [45, 75, 30, 85, 60], titleWeight: true, color: '#fff8f0' },
+];
+
+function createPaperEl(docType) {
+  const el = document.createElement('div');
+  el.className = 'sim-paper';
+  el.style.background = docType.color;
+
+  docType.lines.forEach((w, i) => {
+    const line = document.createElement('div');
+    line.className = 'sim-line';
+    line.style.width = w + '%';
+    if (i === 0 && docType.titleWeight) {
+      line.style.height = '5px';
+      line.style.background = '#999';
+      line.style.width = '50%';
+    }
+    el.appendChild(line);
+  });
+  return el;
+}
+
+function spawnPaper() {
+  const viewfinder = document.querySelector('.viewfinder');
+  const vw = viewfinder.offsetWidth;
+  const vh = viewfinder.offsetHeight;
+
+  const docType = docTypes[Math.floor(Math.random() * docTypes.length)];
+  const el = createPaperEl(docType);
+
+  const paperW = vw * (0.50 + Math.random() * 0.20);
+  const paperH = paperW * (297 / 210);
+  el.style.width = paperW + 'px';
+  el.style.height = paperH + 'px';
+
+  const scenario = Math.floor(Math.random() * 5);
+  let startX, startY, endX, endY, startRot, endRot, duration;
+
+  switch (scenario) {
+    case 0:
+      startX = -paperW;
+      startY = vh * (0.3 + Math.random() * 0.3);
+      endX = vw + paperW;
+      endY = startY + (Math.random() - 0.5) * vh * 0.3;
+      startRot = -15 + Math.random() * 10;
+      endRot = startRot + (Math.random() - 0.5) * 20;
+      duration = 5000 + Math.random() * 3000;
+      break;
+    case 1:
+      startX = vw * (0.2 + Math.random() * 0.5);
+      startY = -paperH;
+      endX = startX + (Math.random() - 0.5) * vw * 0.4;
+      endY = vh + paperH;
+      startRot = -10 + Math.random() * 20;
+      endRot = startRot + (Math.random() - 0.5) * 15;
+      duration = 5000 + Math.random() * 3000;
+      break;
+    case 2:
+      startX = vw * (0.25 + Math.random() * 0.2);
+      startY = vh * (0.2 + Math.random() * 0.2);
+      endX = startX + (Math.random() > 0.5 ? 1 : -1) * (vw * 0.5 + paperW);
+      endY = startY + (Math.random() - 0.5) * vh * 0.5;
+      startRot = -5 + Math.random() * 10;
+      endRot = startRot + (Math.random() - 0.5) * 30;
+      duration = 6000 + Math.random() * 3000;
+      break;
+    case 3:
+      startX = vw + paperW;
+      startY = vh * (0.2 + Math.random() * 0.4);
+      endX = -paperW;
+      endY = startY + (Math.random() - 0.5) * vh * 0.3;
+      startRot = 5 + Math.random() * 10;
+      endRot = startRot - (Math.random() * 20);
+      duration = 5000 + Math.random() * 3000;
+      break;
+    case 4:
+      startX = vw * (0.1 + Math.random() * 0.5);
+      startY = vh + paperH;
+      endX = startX + (Math.random() - 0.5) * vw * 0.3;
+      endY = -paperH;
+      startRot = Math.random() * 15;
+      endRot = startRot + (Math.random() - 0.5) * 20;
+      duration = 5000 + Math.random() * 3000;
+      break;
+  }
+
+  const tiltX = 2 + Math.random() * 6;
+  const tiltY = -3 + Math.random() * 6;
+
+  el.style.opacity = '0';
+  container.appendChild(el);
+
+  const paper = {
+    el, startX, startY, endX, endY, startRot, endRot,
+    tiltX, tiltY, duration,
+    startTime: performance.now(),
+    paperW, paperH
+  };
+  papers.push(paper);
+  return paper;
+}
+
+// ---- Animation Loop ----
+
+function easeInOutCubic(t) {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+}
+
+function lerp(a, b, t) { return a + (b - a) * t; }
+
+function updatePapers(now) {
+  const viewfinder = document.querySelector('.viewfinder');
+  const vw = viewfinder.offsetWidth;
+  const vh = viewfinder.offsetHeight;
+  const centerX = vw / 2;
+  const centerY = vh / 2;
+
+  let bestPaper = null;
+  let bestDist = Infinity;
+
+  for (let i = papers.length - 1; i >= 0; i--) {
+    const p = papers[i];
+    const elapsed = now - p.startTime;
+    const t = Math.min(elapsed / p.duration, 1);
+    const et = easeInOutCubic(t);
+
+    const x = lerp(p.startX, p.endX, et);
+    const y = lerp(p.startY, p.endY, et);
+    const rot = lerp(p.startRot, p.endRot, et);
+
+    let opacity = 1;
+    if (t < 0.08) opacity = t / 0.08;
+    else if (t > 0.92) opacity = (1 - t) / 0.08;
+
+    p.el.style.transform = `translate(${x}px, ${y}px) perspective(600px) rotateX(${p.tiltX}deg) rotateY(${p.tiltY}deg) rotate(${rot}deg)`;
+    p.el.style.opacity = opacity;
+
+    p.cx = x + p.paperW / 2;
+    p.cy = y + p.paperH / 2;
+
+    const dist = Math.hypot(p.cx - centerX, p.cy - centerY);
+    const inBounds = x > -p.paperW * 0.3 && x < vw - p.paperW * 0.3
+                  && y > -p.paperH * 0.3 && y < vh - p.paperH * 0.3;
+    if (inBounds && dist < bestDist && opacity > 0.5) {
+      bestDist = dist;
+      bestPaper = p;
+    }
+
+    if (t >= 1) {
+      p.el.remove();
+      papers.splice(i, 1);
+    }
+  }
+
+  const detectThreshold = Math.min(vw, vh) * 0.45;
+
+  if (bestPaper && bestDist < detectThreshold) {
+    detectionGuide.classList.remove('hidden');
+    detectionGuide.classList.add('visible');
+
+    const rect = detectionRect;
+    rect.style.width = (bestPaper.paperW + 16) + 'px';
+    rect.style.aspectRatio = '210/297';
+    rect.style.top = bestPaper.cy + 'px';
+    rect.style.left = bestPaper.cx + 'px';
+    rect.style.transform = `translate(-50%, -50%) rotate(${lerp(bestPaper.startRot, bestPaper.endRot, easeInOutCubic(Math.min((now - bestPaper.startTime) / bestPaper.duration, 1)))}deg)`;
+  } else {
+    detectionGuide.classList.remove('visible');
+    detectionGuide.classList.add('hidden');
+  }
+
+  requestAnimationFrame(updatePapers);
+}
+
+// ---- Spawn Timer ----
+function scheduleSpawn() {
+  spawnPaper();
+  const delay = 2000 + Math.random() * 2000;
+  setTimeout(scheduleSpawn, delay);
+}
+
+spawnPaper();
+setTimeout(scheduleSpawn, 1500);
+requestAnimationFrame(updatePapers);
+
+// ---- Capture ----
 
 function capture() {
-  // Flash effect
   const flash = document.getElementById('flashOverlay');
   flash.classList.add('active');
   setTimeout(() => flash.classList.remove('active'), 400);
 
-  // Increment counter
   pageCount++;
-  const countEl = document.getElementById('pageCount');
-  countEl.textContent = pageCount;
-  countEl.classList.add('bump');
-  setTimeout(() => countEl.classList.remove('bump'), 300);
+  pageBadge.textContent = pageCount;
+  pageBadge.style.animation = 'none';
+  pageBadge.offsetHeight; // reflow
+  pageBadge.style.animation = 'count-bump 0.3s ease';
+
+  updateLeftAction();
+
+  // Compute fly destination: the thumb-stack position
+  const stackRect = thumbStack.getBoundingClientRect();
+  const destX = stackRect.left + stackRect.width / 2;
+  const destY = stackRect.top + stackRect.height / 2;
+
+  // Random line widths for the captured "document"
+  const capturedLines = [50, 85, 70, 90, 60].map(w => w + Math.floor((Math.random() - 0.5) * 10));
 
   // Flying page animation
   const flyPage = document.createElement('div');
   flyPage.className = 'flying-page';
   flyPage.innerHTML = `<div class="fly-lines">
-    <div class="fly-line" style="width:50%;height:3px;background:#999"></div>
-    <div class="fly-line" style="width:85%"></div>
-    <div class="fly-line" style="width:70%"></div>
-    <div class="fly-line" style="width:90%"></div>
-    <div class="fly-line" style="width:60%"></div>
+    <div class="fly-line" style="width:${capturedLines[0]}%;height:3px;background:#999"></div>
+    <div class="fly-line" style="width:${capturedLines[1]}%"></div>
+    <div class="fly-line" style="width:${capturedLines[2]}%"></div>
+    <div class="fly-line" style="width:${capturedLines[3]}%"></div>
+    <div class="fly-line" style="width:${capturedLines[4]}%"></div>
   </div>`;
-  document.body.appendChild(flyPage);
-  setTimeout(() => flyPage.remove(), 700);
 
-  // Add thumbnail to stack
-  const stack = document.getElementById('thumbStack');
+  // Set dynamic animation destination
+  const anim = flyPage.animate([
+    { top: '50%', left: '50%', transform: 'translate(-50%, -50%) scale(1)', opacity: 0.9 },
+    { top: destY + 'px', left: destX + 'px', transform: 'translate(-50%, -50%) scale(0.12) rotate(-5deg)', opacity: 0 }
+  ], { duration: 600, easing: 'cubic-bezier(0.4, 0, 0.2, 1)', fill: 'forwards' });
+
+  document.body.appendChild(flyPage);
+  anim.onfinish = () => flyPage.remove();
+
+  // Add thumbnail to stack — show the latest captured page's appearance
   const thumb = document.createElement('div');
   thumb.className = 'thumb-item';
-  thumb.innerHTML = '<span class="material-symbols-outlined">description</span>';
+  // Render mini document lines as the thumbnail content
+  thumb.innerHTML = `<div style="width:100%;height:100%;padding:6px;overflow:hidden;">
+    ${capturedLines.map((w, i) =>
+      `<div style="height:2px;background:${i === 0 ? '#999' : '#ccc'};margin:2px 0;width:${w}%;border-radius:1px;"></div>`
+    ).join('')}
+  </div>`;
   const rotation = (Math.random() - 0.5) * 10;
   thumb.style.transform = `rotate(${rotation}deg)`;
   thumb.style.zIndex = pageCount;
-  stack.appendChild(thumb);
+  thumbStack.appendChild(thumb);
 
-  // Keep only last 3 thumbnails visible
-  const thumbs = stack.querySelectorAll('.thumb-item');
+  const thumbs = thumbStack.querySelectorAll('.thumb-item');
   if (thumbs.length > 3) {
     thumbs[0].remove();
   }
 }
 
-function doneTap() {
-  const btn = document.querySelector('.done-btn');
-  btn.style.transform = 'scale(0.9)';
-  setTimeout(() => {
-    btn.style.transform = '';
-    const overlay = document.createElement('div');
-    overlay.style.cssText = 'position:fixed;inset:0;background:rgba(255,255,255,0.15);z-index:100;animation:fadeout 0.4s ease forwards;';
-    document.body.appendChild(overlay);
-    setTimeout(() => overlay.remove(), 400);
-  }, 100);
-}
-
-function toggleFlash(btn) {
-  const icon = btn.querySelector('.material-symbols-outlined');
-  if (icon.textContent === 'flash_off') {
-    icon.textContent = 'flash_on';
-    btn.style.background = 'rgba(255,200,0,0.2)';
-  } else {
-    icon.textContent = 'flash_off';
-    btn.style.background = 'rgba(255,255,255,0.1)';
-  }
-}
-
-const style = document.createElement('style');
-style.textContent = '@keyframes fadeout { from { opacity: 1; } to { opacity: 0; } }';
-document.head.appendChild(style);
+// Init
+updateLeftAction();
 </script>
 
 </body>
