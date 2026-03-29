@@ -106,8 +106,9 @@ fun PageListScreen(
     var dragOffsetX by remember { mutableStateOf(0f) }
     var dragOffsetY by remember { mutableStateOf(0f) }
     var overDeleteZone by remember { mutableStateOf(false) }
-    // Track pointer Y position in root coordinates for delete zone hit test
-    var pointerRootY by remember { mutableStateOf(0f) }
+    // Track card center Y in root coords + pointer's offset from card center (always ≥ 0)
+    var cardCenterRootY by remember { mutableStateOf(0f) }
+    var pointerBelowCenter by remember { mutableStateOf(0f) } // max(0, pointerLocalY - cardHeight/2)
     val density = androidx.compose.ui.platform.LocalDensity.current
     val deleteZoneHeightPx = with(density) { 80.dp.toPx() }
 
@@ -190,21 +191,24 @@ fun PageListScreen(
                         dragOffsetX = if (isDragging) dragOffsetX else 0f,
                         dragOffsetY = if (isDragging) dragOffsetY else 0f,
                         onClick = { onPageClick(index) },
-                        onDragStart = { cardRootY, pointerLocalY ->
+                        onDragStart = { cardRootY, cardHeight, pointerLocalY ->
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                             draggedIndex = index
                             dragOffsetX = 0f
                             dragOffsetY = 0f
-                            pointerRootY = cardRootY + pointerLocalY
+                            cardCenterRootY = cardRootY + cardHeight / 2f
+                            // How far below card center the pointer is (0 if above center)
+                            pointerBelowCenter = maxOf(0f, pointerLocalY - cardHeight / 2f)
                             viewModel.onDragActiveChanged(true)
                         },
                         onDrag = { dx, dy ->
                             dragOffsetX += dx
                             dragOffsetY += dy
-                            pointerRootY += dy
-                            // Delete zone = bottom 80dp of container
+                            cardCenterRootY += dy
+                            // effectiveY = card center + extra offset if pointer was below center
+                            val effectiveY = cardCenterRootY + pointerBelowCenter
                             overDeleteZone = containerBottomInRoot > 0f &&
-                                pointerRootY > containerBottomInRoot - deleteZoneHeightPx
+                                effectiveY > containerBottomInRoot - deleteZoneHeightPx
                         },
                         onDragEnd = {
                             if (overDeleteZone && draggedIndex >= 0) {
@@ -294,12 +298,13 @@ private fun PageCard(
     dragOffsetX: Float,
     dragOffsetY: Float,
     onClick: () -> Unit,
-    onDragStart: (Float, Float) -> Unit, // (cardRootY, pointerLocalY)
+    onDragStart: (Float, Float, Float) -> Unit, // (cardRootY, cardHeight, pointerLocalY)
     onDrag: (Float, Float) -> Unit,
     onDragEnd: () -> Unit,
 ) {
     val imageProcessor = remember { ImageProcessor() }
     var cardRootY by remember { mutableStateOf(0f) }
+    var cardHeight by remember { mutableStateOf(0f) }
 
     // Keep callbacks fresh so pointerInput always calls latest lambdas
     val currentOnDragStart by rememberUpdatedState(onDragStart)
@@ -309,18 +314,17 @@ private fun PageCard(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .onGloballyPositioned { cardRootY = it.positionInRoot().y }
-            .then(
-                if (isDragging) Modifier
-                    .zIndex(100f)
-                    .offset { IntOffset(dragOffsetX.roundToInt(), dragOffsetY.roundToInt()) }
-                    .graphicsLayer { scaleX = 1.08f; scaleY = 1.08f }
-                else Modifier
-            )
+            .onGloballyPositioned {
+                if (!isDragging) {
+                    cardRootY = it.positionInRoot().y
+                    cardHeight = it.size.height.toFloat()
+                }
+            }
+            // pointerInput BEFORE visual transforms so drag amounts are in root coordinates
             .pointerInput(Unit) {
                 detectDragGesturesAfterLongPress(
                     onDragStart = { offset ->
-                        currentOnDragStart(cardRootY, offset.y)
+                        currentOnDragStart(cardRootY, cardHeight, offset.y)
                     },
                     onDrag = { change, dragAmount ->
                         change.consume()
@@ -329,7 +333,14 @@ private fun PageCard(
                     onDragEnd = { currentOnDragEnd() },
                     onDragCancel = { currentOnDragEnd() },
                 )
-            },
+            }
+            .then(
+                if (isDragging) Modifier
+                    .zIndex(100f)
+                    .offset { IntOffset(dragOffsetX.roundToInt(), dragOffsetY.roundToInt()) }
+                    .graphicsLayer { scaleX = 1.08f; scaleY = 1.08f }
+                else Modifier
+            ),
     ) {
         // Decode bitmap to determine aspect ratio
         val bitmap = remember(imagePath) {

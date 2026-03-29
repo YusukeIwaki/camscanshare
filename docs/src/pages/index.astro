@@ -435,7 +435,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">削除ゾーン（ドラッグ中）</span>
-              <span class="spec-detail">ドラッグ中に画面下部に表示される削除エリア。ページをドロップすると確認なしで削除。ゴミ箱に吸い込まれるアニメーション付き。</span>
+              <span class="spec-detail">ドラッグ中に画面下部（高さ80dp）に表示される削除エリア。ページをドロップすると確認なしで削除。ゴミ箱に吸い込まれるアニメーション付き。</span>
             </li>
           </ul>
         </div>
@@ -460,8 +460,8 @@ import Layout from '../layouts/Layout.astro';
               <span class="interaction-result">ページの並び順がリアルタイムに入れ替わる。ドロップで確定。</span>
             </li>
             <li>
-              <span class="interaction-trigger">ドラッグ中に削除ゾーンへドロップ</span>
-              <span class="interaction-result">ゴミ箱に吸い込まれるアニメーションでページが削除される。確認ダイアログなし。</span>
+              <span class="interaction-trigger">ドラッグ中に削除ゾーンへ到達</span>
+              <span class="interaction-result">削除ゾーンが赤くハイライトされ、ドロップ可能であることを示す。この状態でドロップするとゴミ箱に吸い込まれるアニメーションでページが削除される。確認ダイアログなし。</span>
             </li>
             <li>
               <span class="interaction-trigger">共有ボタンをタップ</span>
@@ -474,6 +474,32 @@ import Layout from '../layouts/Layout.astro';
             <li>
               <span class="interaction-trigger">戻るボタンをタップ</span>
               <span class="interaction-result">文書一覧画面へ戻る。</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="spec-group">
+          <h3>ドラッグ&ドロップの詳細</h3>
+          <ul class="spec-list">
+            <li>
+              <span class="spec-element">ドラッグ開始</span>
+              <span class="spec-detail">ページカードを500ms以上長押しするとドラッグモードに入る。カードが浮き上がり（拡大+影）、元の位置にはプレースホルダーが残る。同時に削除ゾーンが画面下部からスライドインし、FABは非表示になる。</span>
+            </li>
+            <li>
+              <span class="spec-element">削除ゾーンの反応判定</span>
+              <span class="spec-detail">ドラッグ中にサムネイルが削除ゾーンに「到達した」とみなす基準点は、「サムネイルの中心」と「指の位置」のうち画面下方にある方（Y座標が大きい方）とする。サムネイルの上半分をつかんでいる場合はサムネイルの中心が基準となり、下半分をつかんでいる場合は指の位置が基準となる。これにより、つかむ位置に関わらず、サムネイルが削除ゾーンに視覚的に重なった自然なタイミングでハイライトが切り替わる。</span>
+            </li>
+            <li>
+              <span class="spec-element">削除ゾーンのハイライト</span>
+              <span class="spec-detail">基準点が削除ゾーン内に入ると、ゾーンの背景色がエラーカラー（赤）に変わり、アイコンとテキストが白になる。基準点がゾーンから出ると元の色に戻る。</span>
+            </li>
+            <li>
+              <span class="spec-element">ドロップ</span>
+              <span class="spec-detail">指を離した時点でハイライト状態であればページを削除する。ハイライト状態でなければ、カードを現在のドラッグ位置に最も近いグリッド位置に挿入して並べ替える。</span>
+            </li>
+            <li>
+              <span class="spec-element">座標系に関する注意</span>
+              <span class="spec-detail">ドラッグ判定で使う座標（カード位置・指の位置・削除ゾーン位置）は、すべて同一の座標系で計算すること。タッチ座標にはOS/フレームワークによって「画面の土台（Activity等）基準」のものと「ウィンドウ全体のグローバル座標」のものがあり、混同すると判定位置がステータスバーの高さ分ずれる等の不具合が生じる。また、ドラッグ中のカードに拡大・回転等の視覚変換が適用されている場合、タッチ座標の取得がその変換の内側で行われると、変換倍率の分だけ移動量が歪む。タッチ座標の取得は視覚変換の外側で行い、変換はあくまで表示にのみ影響させること。</span>
             </li>
           </ul>
         </div>

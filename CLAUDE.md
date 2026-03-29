@@ -157,6 +157,10 @@ adb shell uiautomator dump /sdcard/ui.xml && adb pull /sdcard/ui.xml /tmp/ui.xml
 # タップ操作
 adb shell input tap <x> <y>
 
+# 長押し+ドラッグ（ドラッグ&ドロップのテスト用）
+# ※ input swipe では長押し検出が動かない。draganddrop を使うこと
+adb shell input draganddrop <startX> <startY> <endX> <endY> <durationMs>
+
 # 作業完了後にオーバーライド解除（必ず実行）
 adb shell wm size reset
 ```
@@ -191,6 +195,11 @@ Domain層・UseCaseは省略（ビジネスロジックが薄いため）。
 
 - `pointerInput(Unit)` は初回コンポジション時のラムダをキャプチャし、再コンポジション時に更新されない。LazyList内で `index` 等が変わるコールバックを使う場合は、`rememberUpdatedState` でラップするか `pointerInput(key)` で再作成すること。
 - `onGloballyPositioned { it.positionInParent() }` はスクロール可能なコンテナ内ではスクロール位置に依存する相対値を返す。画面上の絶対位置が必要な場合は `positionInRoot()` を使うこと。
+
+#### 座標系とタッチ判定（ドラッグ&ドロップ等）
+
+- **座標系の統一が最重要**: タッチ座標には「Activity/コンテンツ領域基準（ステータスバーの下が原点）」と「ウィンドウ全体のグローバル座標（画面最上部が原点）」があり、混同するとステータスバーの高さ分だけ判定がずれる。カード位置・指の位置・判定領域はすべて同じ座標系で計算すること。
+- **視覚変換の内側でタッチ座標を取得しない**: ドラッグ中のカードに `graphicsLayer { scaleX = 1.08f }` 等の視覚変換がかかっている場合、変換の内側にある `pointerInput` はタッチ座標が変換倍率分だけ歪む（1.08倍なら移動量が 1/1.08 に縮小される）。`pointerInput` は `offset` や `graphicsLayer` よりもmodifier chainの先（外側）に配置し、変換はあくまで表示にのみ影響させること。
 
 #### ページ表示のアスペクト比
 
