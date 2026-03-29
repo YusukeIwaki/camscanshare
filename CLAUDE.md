@@ -113,6 +113,22 @@ agent-browser scrollintoview "#screen-page-edit .phone-frame" && agent-browser s
 
 フィルタは今後追加可能な拡張設計とする。
 
+### フィルタ開発フロー
+
+フィルタの開発は「ドキュメント（`docs/`）での検証・研究が先、アプリ実装が後」の順序で行う。
+
+1. **アルゴリズム設計・検証**: `docs/src/pages/filters.astro` のフィルタ解説ページで、フィルタの効果をサンプル画像で確認・比較する。ここが各フィルタのパラメータと処理パイプラインの正（source of truth）。
+2. **サンプル画像の生成**: `scripts/` のPythonスクリプトでサンプル画像を一括生成し、`docs/public/algorithm/` 以下に配置する。
+   - `scripts/generate_magic_filter_steps.py`: マジックフィルタのStep 0/1/2画像を生成（OpenCVパイプライン）
+   - `scripts/generate_simple_filter_samples.py`: くっきり・白黒・ホワイトボード・鮮やかフィルタの画像を生成（ColorMatrix相当の処理）
+   - 入力ソース画像のリストは `docs/filter-samples.json` で管理
+3. **アプリへの実装**: 検証で確定したパラメータをAndroid/iOSアプリに移植する。Androidの実装は `androidapp/` の `ImageFilter.kt`（ColorMatrix定義）と `ImageProcessor.kt`（マジックフィルタのOpenCV実装）にある。
+
+フィルタを追加・変更する際は:
+- まずPythonスクリプトでアルゴリズムを実装し、サンプル画像で効果を確認
+- 結果が良ければドキュメントページに解説セクションを追加
+- 最後にアプリのコードに移植
+
 ## 技術的な注意事項
 
 - 紙検出: GaussianBlur → Canny(複数閾値) → dilate(3x3) → findContours(RETR_LIST) → approxPolyDP → スコアリング選択。面積最大ではなく長方形度・平行度のスコアで選択。リアルタイム表示は5フレーム安定化+500ms保持

@@ -1,0 +1,153 @@
+[
+  {
+    "id": "angled",
+    "title": "暗い机の上に置かれた斜め撮影の文書",
+    "description": "黒い机、強い周辺減光、紙の周囲に暗い背景、細い本文という「スキャナにとって難しい典型例」。",
+    "source": "docs/public/algorithm/test.jpg",
+    "step0": "docs/public/algorithm/steps/test-step0.png",
+    "magic_step1": "docs/public/algorithm/steps/test-step1.png",
+    "magic_step2": "docs/public/algorithm/steps/test-step2.png",
+    "filters": {
+      "sharpen": "docs/public/algorithm/filters/sharpen/test.png",
+      "bw": "docs/public/algorithm/filters/bw/test.png",
+      "whiteboard": "docs/public/algorithm/filters/whiteboard/test.png",
+      "vivid": "docs/public/algorithm/filters/vivid/test.png"
+    }
+  },
+  {
+    "id": "flat",
+    "title": "木目の机の上に置かれた正面撮影の文書",
+    "description": "紙は正面に近いが、暖色照明と木目反射の影響で紙が少し黄ばんで見え、本文も薄い。",
+    "source": "docs/public/algorithm/test2.png",
+    "step0": "docs/public/algorithm/steps/test2-step0.png",
+    "magic_step1": "docs/public/algorithm/steps/test2-step1.png",
+    "magic_step2": "docs/public/algorithm/steps/test2-step2.png",
+    "filters": {
+      "sharpen": "docs/public/algorithm/filters/sharpen/test2.png",
+      "bw": "docs/public/algorithm/filters/bw/test2.png",
+      "whiteboard": "docs/public/algorithm/filters/whiteboard/test2.png",
+      "vivid": "docs/public/algorithm/filters/vivid/test2.png"
+    }
+  },
+  {
+    "id": "cell-pic",
+    "title": "携帯で撮った細文書",
+    "description": "細かい本文が多く、暗い木目の机の上で撮られている。",
+    "source": "docs/public/algorithm/opencv-samples/cell_pic.jpg",
+    "step0": "docs/public/algorithm/steps/opencv-samples/cell_pic-step0.jpg",
+    "magic_step1": "docs/public/algorithm/steps/opencv-samples/cell_pic-step1.png",
+    "magic_step2": "docs/public/algorithm/steps/opencv-samples/cell_pic-step2.png",
+    "filters": {
+      "sharpen": "docs/public/algorithm/filters/sharpen/cell_pic.png",
+      "bw": "docs/public/algorithm/filters/bw/cell_pic.png",
+      "whiteboard": "docs/public/algorithm/filters/whiteboard/cell_pic.png",
+      "vivid": "docs/public/algorithm/filters/vivid/cell_pic.png"
+    }
+  },
+  {
+    "id": "chart",
+    "title": "表組み + 黒い下敷き + 反射",
+    "description": "白地の資料が黒い背景の上にあり、上辺近くに反射と濃い影がある。",
+    "source": "docs/public/algorithm/opencv-samples/chart.JPG",
+    "step0": "docs/public/algorithm/steps/opencv-samples/chart-step0.JPG",
+    "magic_step1": "docs/public/algorithm/steps/opencv-samples/chart-step1.png",
+    "magic_step2": "docs/public/algorithm/steps/opencv-samples/chart-step2.png",
+    "filters": {
+      "sharpen": "docs/public/algorithm/filters/sharpen/chart.png",
+      "bw": "docs/public/algorithm/filters/bw/chart.png",
+      "whiteboard": "docs/public/algorithm/filters/whiteboard/chart.png",
+      "vivid": "docs/public/algorithm/filters/vivid/chart.png"
+    }
+  },
+  {
+    "id": "desk",
+    "title": "机上の斜め配置文書",
+    "description": "ページは斜めで、机の色が暖かく、本文は長文で比較的薄い。",
+    "source": "docs/public/algorithm/opencv-samples/desk.JPG",
+    "step0": "docs/public/algorithm/steps/opencv-samples/desk-step0.JPG",
+    "magic_step1": "docs/public/algorithm/steps/opencv-samples/desk-step1.png",
+    "magic_step2": "docs/public/algorithm/steps/opencv-samples/desk-step2.png",
+    "filters": {
+      "sharpen": "docs/public/algorithm/filters/sharpen/desk.png",
+      "bw": "docs/public/algorithm/filters/bw/desk.png",
+      "whiteboard": "docs/public/algorithm/filters/whiteboard/desk.png",
+      "vivid": "docs/public/algorithm/filters/vivid/desk.png"
+    }
+  },
+  {
+    "id": "dollar-bill",
+    "title": "紙幣のような低アスペクト比資料",
+    "description": "細長い被写体で、文書というより印刷物に近い。",
+    "source": "docs/public/algorithm/opencv-samples/dollar_bill.JPG",
+    "step0": "docs/public/algorithm/steps/opencv-samples/dollar_bill-step0.JPG",
+    "magic_step1": "docs/public/algorithm/steps/opencv-samples/dollar_bill-step1.png",
+    "magic_step2": "docs/public/algorithm/steps/opencv-samples/dollar_bill-step2.png",
+    "filters": {
+      "sharpen": "docs/public/algorithm/filters/sharpen/dollar_bill.png",
+      "bw": "docs/public/algorithm/filters/bw/dollar_bill.png",
+      "whiteboard": "docs/public/algorithm/filters/whiteboard/dollar_bill.png",
+      "vivid": "docs/public/algorithm/filters/vivid/dollar_bill.png"
+    }
+  },
+  {
+    "id": "math-cheat-sheet",
+    "title": "手書き数式の低コントラスト紙",
+    "description": "グレーの紙面全体に手書きが広がり、外周に黒枠もある。",
+    "source": "docs/public/algorithm/opencv-samples/math_cheat_sheet.JPG",
+    "step0": "docs/public/algorithm/steps/opencv-samples/math_cheat_sheet-step0.JPG",
+    "magic_step1": "docs/public/algorithm/steps/opencv-samples/math_cheat_sheet-step1.png",
+    "magic_step2": "docs/public/algorithm/steps/opencv-samples/math_cheat_sheet-step2.png",
+    "filters": {
+      "sharpen": "docs/public/algorithm/filters/sharpen/math_cheat_sheet.png",
+      "bw": "docs/public/algorithm/filters/bw/math_cheat_sheet.png",
+      "whiteboard": "docs/public/algorithm/filters/whiteboard/math_cheat_sheet.png",
+      "vivid": "docs/public/algorithm/filters/vivid/math_cheat_sheet.png"
+    }
+  },
+  {
+    "id": "notepad",
+    "title": "罫線ノート",
+    "description": "ほぼ白紙に近いノートで、罫線の薄い青と赤い余白線がある。",
+    "source": "docs/public/algorithm/opencv-samples/notepad.JPG",
+    "step0": "docs/public/algorithm/steps/opencv-samples/notepad-step0.JPG",
+    "magic_step1": "docs/public/algorithm/steps/opencv-samples/notepad-step1.png",
+    "magic_step2": "docs/public/algorithm/steps/opencv-samples/notepad-step2.png",
+    "filters": {
+      "sharpen": "docs/public/algorithm/filters/sharpen/notepad.png",
+      "bw": "docs/public/algorithm/filters/bw/notepad.png",
+      "whiteboard": "docs/public/algorithm/filters/whiteboard/notepad.png",
+      "vivid": "docs/public/algorithm/filters/vivid/notepad.png"
+    }
+  },
+  {
+    "id": "receipt",
+    "title": "小さなレシート",
+    "description": "レシートは細長く、背景は暗く、印字はもともと薄い。",
+    "source": "docs/public/algorithm/opencv-samples/receipt.jpg",
+    "step0": "docs/public/algorithm/steps/opencv-samples/receipt-step0.jpg",
+    "magic_step1": "docs/public/algorithm/steps/opencv-samples/receipt-step1.png",
+    "magic_step2": "docs/public/algorithm/steps/opencv-samples/receipt-step2.png",
+    "filters": {
+      "sharpen": "docs/public/algorithm/filters/sharpen/receipt.png",
+      "bw": "docs/public/algorithm/filters/bw/receipt.png",
+      "whiteboard": "docs/public/algorithm/filters/whiteboard/receipt.png",
+      "vivid": "docs/public/algorithm/filters/vivid/receipt.png"
+    }
+  },
+  {
+    "id": "tax",
+    "title": "既に整ったフォーム文書",
+    "description": "もともと正面に近く、紙も白く、コントラストも比較的よい。",
+    "source": "docs/public/algorithm/opencv-samples/tax.jpeg",
+    "crop_mode": "copy_source",
+    "step0": "docs/public/algorithm/steps/opencv-samples/tax-step0.jpeg",
+    "magic_step1": "docs/public/algorithm/steps/opencv-samples/tax-step1.png",
+    "magic_step2": "docs/public/algorithm/steps/opencv-samples/tax-step2.png",
+    "filters": {
+      "sharpen": "docs/public/algorithm/filters/sharpen/tax.png",
+      "bw": "docs/public/algorithm/filters/bw/tax.png",
+      "whiteboard": "docs/public/algorithm/filters/whiteboard/tax.png",
+      "vivid": "docs/public/algorithm/filters/vivid/tax.png"
+    }
+  }
+]
