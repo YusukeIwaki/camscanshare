@@ -624,43 +624,8 @@ import Layout from '../layouts/Layout.astro';
 
         <div class="spec-group">
           <h3>フィルタプリセット</h3>
-          <div class="filter-table">
-            <div class="filter-row filter-header">
-              <span>フィルタ名</span>
-              <span>効果</span>
-              <span>用途</span>
-            </div>
-            <div class="filter-row">
-              <span class="filter-name-cell">オリジナル</span>
-              <span>加工なし</span>
-              <span>写真としてそのまま保存</span>
-            </div>
-            <div class="filter-row">
-              <span class="filter-name-cell">くっきり</span>
-              <span>コントラスト強調 + 明るさ微調整</span>
-              <span>一般的な文書の読みやすさ向上</span>
-            </div>
-            <div class="filter-row">
-              <span class="filter-name-cell">白黒</span>
-              <span>グレースケール化 + コントラスト強調</span>
-              <span>白黒文書、コピー用</span>
-            </div>
-            <div class="filter-row">
-              <span class="filter-name-cell">マジック ★既定</span>
-              <span>Flat-field補正（ガウシアンぼかし除算）+ コントラスト強調</span>
-              <span>照明ムラ・影の除去、CamScanner風の自動補正</span>
-            </div>
-            <div class="filter-row">
-              <span class="filter-name-cell">ホワイトボード</span>
-              <span>高明度 + 高コントラスト + 彩度除去</span>
-              <span>ホワイトボードの撮影</span>
-            </div>
-            <div class="filter-row">
-              <span class="filter-name-cell">鮮やか</span>
-              <span>彩度強調 + コントラスト微調整</span>
-              <span>カラー文書、図表の鮮明化</span>
-            </div>
-          </div>
+          <p>オリジナル / くっきり / 白黒 / マジック（既定） / ホワイトボード / 鮮やか の6種。</p>
+          <p>各フィルタの効果・パラメータの詳細は <a href="/filters">フィルタ解説ページ</a> を参照。</p>
           <p class="spec-note">※ フィルタは今後の要件に応じて追加可能な拡張設計とする。</p>
         </div>
       </div>
