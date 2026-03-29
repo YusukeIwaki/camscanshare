@@ -4,6 +4,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.yusukeiwaki.camscanshare.data.db.PageEntity
+import io.github.yusukeiwaki.camscanshare.data.image.FilterRenderPlanner
 import io.github.yusukeiwaki.camscanshare.data.repository.DocumentRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -145,7 +146,10 @@ class PageEditViewModel @Inject constructor(
         viewModelScope.launch {
             val pages = _uiState.value.pages
             pages.forEach { page ->
-                repository.updatePageFilter(page.pageId, page.filterKey)
+                repository.updatePageFilter(
+                    page.pageId,
+                    FilterRenderPlanner.planPersistedFilter(page.filterKey),
+                )
                 repository.updatePageRotation(page.pageId, page.rotationDegrees)
             }
             savedPages = pages

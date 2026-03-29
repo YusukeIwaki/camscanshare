@@ -11,10 +11,12 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.yusukeiwaki.camscanshare.data.db.PageEntity
 import io.github.yusukeiwaki.camscanshare.data.image.ImageProcessor
 import io.github.yusukeiwaki.camscanshare.data.repository.DocumentRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
 
@@ -92,46 +94,45 @@ class PageListViewModel @Inject constructor(
             val pages = repository.getPages(documentId)
             if (pages.isEmpty()) return@launch
 
-            val pdfDocument = PdfDocument()
-            val a4Width = 595
-            val a4Height = 842
+            val pdfFile = withContext(Dispatchers.IO) {
+                val pdfDocument = PdfDocument()
+                val a4Width = 595
+                val a4Height = 842
 
-            pages.forEachIndexed { index, page ->
-                val absPath = repository.getImageAbsolutePath(page.imagePath)
-                val bitmap = BitmapFactory.decodeFile(absPath) ?: return@forEachIndexed
+                pages.forEachIndexed { index, page ->
+                    val absPath = repository.getImageAbsolutePath(page.imagePath)
+                    val bitmap = BitmapFactory.decodeFile(absPath) ?: return@forEachIndexed
 
-                // Apply rotation
-                val rotated = imageProcessor.rotateBitmap(bitmap, page.rotationDegrees.toFloat())
+                    val rotated = imageProcessor.rotateBitmap(bitmap, page.rotationDegrees.toFloat())
+                    val filtered = imageProcessor.applyFilter(rotated, page.filterName)
 
-                // Apply filter
-                val filtered = imageProcessor.applyFilter(rotated, page.filterName)
+                    val pageInfo = PdfDocument.PageInfo.Builder(a4Width, a4Height, index + 1).create()
+                    val pdfPage = pdfDocument.startPage(pageInfo)
 
-                val pageInfo = PdfDocument.PageInfo.Builder(a4Width, a4Height, index + 1).create()
-                val pdfPage = pdfDocument.startPage(pageInfo)
+                    val scale = minOf(
+                        a4Width.toFloat() / filtered.width,
+                        a4Height.toFloat() / filtered.height,
+                    )
+                    val dx = (a4Width - filtered.width * scale) / 2
+                    val dy = (a4Height - filtered.height * scale) / 2
 
-                val scale = minOf(
-                    a4Width.toFloat() / filtered.width,
-                    a4Height.toFloat() / filtered.height,
-                )
-                val dx = (a4Width - filtered.width * scale) / 2
-                val dy = (a4Height - filtered.height * scale) / 2
+                    val canvas = pdfPage.canvas
+                    canvas.translate(dx, dy)
+                    canvas.scale(scale, scale)
+                    canvas.drawBitmap(filtered, 0f, 0f, null)
 
-                val canvas = pdfPage.canvas
-                canvas.translate(dx, dy)
-                canvas.scale(scale, scale)
-                canvas.drawBitmap(filtered, 0f, 0f, null)
+                    pdfDocument.finishPage(pdfPage)
+                    if (filtered !== rotated) filtered.recycle()
+                    if (rotated !== bitmap) rotated.recycle()
+                    bitmap.recycle()
+                }
 
-                pdfDocument.finishPage(pdfPage)
-                if (filtered !== rotated) filtered.recycle()
-                if (rotated !== bitmap) rotated.recycle()
-                bitmap.recycle()
+                val safeName = _uiState.value.documentName.replace(Regex("[/\\\\:*?\"<>|]"), "_")
+                File(context.cacheDir, "$safeName.pdf").also { file ->
+                    file.outputStream().use { pdfDocument.writeTo(it) }
+                    pdfDocument.close()
+                }
             }
-
-            // Sanitize filename: replace chars that are invalid in file paths
-            val safeName = _uiState.value.documentName.replace(Regex("[/\\\\:*?\"<>|]"), "_")
-            val pdfFile = File(context.cacheDir, "$safeName.pdf")
-            pdfFile.outputStream().use { pdfDocument.writeTo(it) }
-            pdfDocument.close()
 
             val uri = FileProvider.getUriForFile(
                 context,

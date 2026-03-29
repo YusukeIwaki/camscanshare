@@ -5,10 +5,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.yusukeiwaki.camscanshare.data.repository.DocumentRepository
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 data class CameraScanUiState(
@@ -40,19 +42,20 @@ class CameraScanViewModel @Inject constructor(
             _uiState.update { it.copy(documentId = documentId) }
             viewModelScope.launch {
                 val pages = repository.getPages(documentId)
-                // Load thumbnail of the last page so the stack shows it
-                val lastPageThumb = pages.lastOrNull()?.let { page ->
-                    repository.loadBitmap(page.imagePath)?.let { bmp ->
-                        val thumbSize = 200
-                        val scale = thumbSize.toFloat() / maxOf(bmp.width, bmp.height)
-                        val thumb = android.graphics.Bitmap.createScaledBitmap(
-                            bmp,
-                            (bmp.width * scale).toInt(),
-                            (bmp.height * scale).toInt(),
-                            true,
-                        )
-                        bmp.recycle()
-                        thumb
+                val lastPageThumb = withContext(Dispatchers.IO) {
+                    pages.lastOrNull()?.let { page ->
+                        repository.loadBitmap(page.imagePath)?.let { bmp ->
+                            val thumbSize = 200
+                            val scale = thumbSize.toFloat() / maxOf(bmp.width, bmp.height)
+                            val thumb = android.graphics.Bitmap.createScaledBitmap(
+                                bmp,
+                                (bmp.width * scale).toInt(),
+                                (bmp.height * scale).toInt(),
+                                true,
+                            )
+                            bmp.recycle()
+                            thumb
+                        }
                     }
                 }
                 _uiState.update {

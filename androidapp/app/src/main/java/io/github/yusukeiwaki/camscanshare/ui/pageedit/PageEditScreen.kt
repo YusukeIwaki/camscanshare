@@ -1,6 +1,5 @@
 package io.github.yusukeiwaki.camscanshare.ui.pageedit
 
-import android.graphics.BitmapFactory
 import android.graphics.Paint
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -55,7 +54,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -65,8 +63,11 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.yusukeiwaki.camscanshare.data.image.FilterRenderPlanner
 import io.github.yusukeiwaki.camscanshare.ui.components.ConfirmDialog
 import io.github.yusukeiwaki.camscanshare.ui.components.computePageAspectRatio
+import io.github.yusukeiwaki.camscanshare.ui.components.previewColorMatrix
+import io.github.yusukeiwaki.camscanshare.ui.components.rememberPreviewBitmap
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -238,29 +239,35 @@ private fun PagePreview(
     filter: ImageFilter,
     rotationDegrees: Float,
 ) {
+    val renderPlan = remember(filter.filterKey) {
+        FilterRenderPlanner.planPreview(
+            selectedFilterKey = filter.filterKey,
+            showOriginal = false,
+        )
+    }
+
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
-        val bitmap = remember(imagePath) {
-            BitmapFactory.decodeFile(imagePath)
-        }
+        val previewBitmap = rememberPreviewBitmap(
+            imagePath = imagePath,
+            rotationDegrees = rotationDegrees,
+            renderPlan = renderPlan,
+            maxDimension = 1600,
+        )
 
-        if (bitmap != null) {
-            val imageProcessor = remember { io.github.yusukeiwaki.camscanshare.data.image.ImageProcessor() }
-            // Apply filter: OpenCV-based filters (magic) produce a new bitmap;
-            // ColorMatrix-based filters use Paint at draw time
-            val filteredBitmap = remember(bitmap, filter) {
-                if (filter.filterKey == "magic") imageProcessor.applyFilter(bitmap, "magic") else bitmap
-            }
-            val colorFilter = remember(filter) {
-                if (filter.filterKey == "magic") null else filter.toColorMatrixFilter()
+        if (previewBitmap != null) {
+            val colorFilter = remember(renderPlan) {
+                previewColorMatrix(renderPlan.colorMatrixFilterKey)?.let {
+                    android.graphics.ColorMatrixColorFilter(it)
+                }
             }
             val paint = remember(colorFilter) {
                 Paint().apply { this.colorFilter = colorFilter }
             }
-            val previewAspectRatio = remember(bitmap) {
-                computePageAspectRatio(bitmap.width, bitmap.height)
+            val previewAspectRatio = remember(previewBitmap) {
+                computePageAspectRatio(previewBitmap.width, previewBitmap.height)
             }
 
             Canvas(
@@ -268,13 +275,12 @@ private fun PagePreview(
                     .padding(24.dp)
                     .fillMaxWidth(if (previewAspectRatio >= 1f) 0.95f else 0.8f)
                     .aspectRatio(previewAspectRatio)
-                    .graphicsLayer { rotationZ = rotationDegrees }
                     .shadow(8.dp, RoundedCornerShape(4.dp))
                     .clip(RoundedCornerShape(4.dp))
                     .background(Color.White),
             ) {
                 drawIntoCanvas { canvas ->
-                    val drawBitmap = filteredBitmap
+                    val drawBitmap = previewBitmap
                     val scaleX = size.width / drawBitmap.width
                     val scaleY = size.height / drawBitmap.height
                     val scale = minOf(scaleX, scaleY)

@@ -1,6 +1,5 @@
 package io.github.yusukeiwaki.camscanshare.ui.pagelist
 
-import android.graphics.BitmapFactory
 import android.graphics.Paint
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -60,14 +59,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
@@ -80,8 +77,10 @@ import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.yusukeiwaki.camscanshare.data.db.PageEntity
-import io.github.yusukeiwaki.camscanshare.data.image.ImageProcessor
+import io.github.yusukeiwaki.camscanshare.data.image.FilterRenderPlanner
 import io.github.yusukeiwaki.camscanshare.ui.components.computePageAspectRatio
+import io.github.yusukeiwaki.camscanshare.ui.components.previewColorMatrix
+import io.github.yusukeiwaki.camscanshare.ui.components.rememberPreviewBitmap
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -303,7 +302,6 @@ private fun PageCard(
     onDrag: (Float, Float) -> Unit,
     onDragEnd: () -> Unit,
 ) {
-    val imageProcessor = remember { ImageProcessor() }
     var cardRootY by remember { mutableStateOf(0f) }
     var cardHeight by remember { mutableStateOf(0f) }
 
@@ -343,12 +341,17 @@ private fun PageCard(
                 else Modifier
             ),
     ) {
-        // Decode bitmap to determine aspect ratio
-        val bitmap = remember(imagePath) {
-            BitmapFactory.decodeFile(imagePath)
+        val renderPlan = remember(page.filterName) {
+            FilterRenderPlanner.planPreview(selectedFilterKey = page.filterName)
         }
-        val cardAspectRatio = remember(bitmap) {
-            if (bitmap != null) computePageAspectRatio(bitmap.width, bitmap.height)
+        val previewBitmap = rememberPreviewBitmap(
+            imagePath = imagePath,
+            rotationDegrees = page.rotationDegrees.toFloat(),
+            renderPlan = renderPlan,
+            maxDimension = 768,
+        )
+        val cardAspectRatio = remember(previewBitmap) {
+            if (previewBitmap != null) computePageAspectRatio(previewBitmap.width, previewBitmap.height)
             else 210f / 297f
         }
 
@@ -365,12 +368,9 @@ private fun PageCard(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
             elevation = CardDefaults.cardElevation(defaultElevation = if (isDragging) 8.dp else 1.dp),
         ) {
-            if (bitmap != null) {
-                val filteredBitmap = remember(bitmap, page.filterName) {
-                    if (page.filterName == "magic") imageProcessor.applyFilter(bitmap, "magic") else bitmap
-                }
-                val colorMatrix = remember(page.filterName) {
-                    imageProcessor.getColorMatrix(page.filterName)
+            if (previewBitmap != null) {
+                val colorMatrix = remember(renderPlan) {
+                    previewColorMatrix(renderPlan.colorMatrixFilterKey)
                 }
                 val paint = remember(colorMatrix) {
                     Paint().apply {
@@ -383,10 +383,9 @@ private fun PageCard(
                 Canvas(
                     modifier = Modifier
                         .fillMaxSize()
-                        .graphicsLayer { rotationZ = page.rotationDegrees.toFloat() },
                 ) {
                     drawIntoCanvas { canvas ->
-                        val drawBmp = filteredBitmap
+                        val drawBmp = previewBitmap
                         val scaleX = size.width / drawBmp.width
                         val scaleY = size.height / drawBmp.height
                         val scale = maxOf(scaleX, scaleY) // crop to fill
