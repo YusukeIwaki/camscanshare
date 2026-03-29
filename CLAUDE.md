@@ -115,8 +115,8 @@ agent-browser scrollintoview "#screen-page-edit .phone-frame" && agent-browser s
 
 ## 技術的な注意事項
 
-- 紙検出: エッジ検出 → 輪郭検出 → 最大矩形抽出（OpenCV等）
-- 台形補正: 検出した4点を用いた射影変換
+- 紙検出: GaussianBlur → Canny(複数閾値) → dilate(3x3) → findContours(RETR_LIST) → approxPolyDP → スコアリング選択。面積最大ではなく長方形度・平行度のスコアで選択。リアルタイム表示は5フレーム安定化+500ms保持
+- 台形補正: 検出した4点を用いた射影変換。キャプチャ画像で再検出してから適用（プレビュー座標は使わない）
 - PDF変換: 全ページをA4サイズにフィットさせて統合
 - 共有: OS標準の共有API（Android: Intent.ACTION_SEND, iOS: UIActivityViewController）
 - 連続撮影: 撮影後もカメラは起動したまま、完了ボタンで終了

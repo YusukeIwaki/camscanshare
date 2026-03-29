@@ -166,12 +166,15 @@ class PaperDetector {
         fun detectEdges(gray: Mat): Mat
     }
 
-    /** Canny with given parameters + morphological close to fill gaps. */
+    /**
+     * Canny edge detection with minimal dilate to close small gaps in edges.
+     * A single dilate with a 3x3 kernel bridges 1-2 pixel gaps without merging
+     * distant edges (unlike morphological close with larger kernels).
+     */
     private class CannyStrategy(
         val blurSize: Int,
         val cannyLow: Double,
         val cannyHigh: Double,
-        val dilateSize: Int,
     ) : EdgeStrategy {
         override fun detectEdges(gray: Mat): Mat {
             val blurred = Mat()
@@ -179,49 +182,23 @@ class PaperDetector {
             val edges = Mat()
             Imgproc.Canny(blurred, edges, cannyLow, cannyHigh)
             blurred.release()
-            // Morphological close (dilate then erode) to connect broken edges
-            val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(dilateSize.toDouble(), dilateSize.toDouble()))
-            Imgproc.morphologyEx(edges, edges, Imgproc.MORPH_CLOSE, kernel)
+            // Minimal dilate (3x3, one pass) to close tiny gaps in edges
+            val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
+            Imgproc.dilate(edges, edges, kernel)
             kernel.release()
             return edges
         }
     }
 
-    /** Adaptive threshold — works well when paper is lighter/darker than background. */
-    private class AdaptiveThresholdStrategy(
-        val blurSize: Int,
-        val blockSize: Int,
-        val c: Double,
-    ) : EdgeStrategy {
-        override fun detectEdges(gray: Mat): Mat {
-            val blurred = Mat()
-            Imgproc.GaussianBlur(gray, blurred, Size(blurSize.toDouble(), blurSize.toDouble()), 0.0)
-            val thresh = Mat()
-            Imgproc.adaptiveThreshold(
-                blurred, thresh, 255.0,
-                Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C,
-                Imgproc.THRESH_BINARY_INV,
-                blockSize, c,
-            )
-            blurred.release()
-            val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(5.0, 5.0))
-            Imgproc.morphologyEx(thresh, thresh, Imgproc.MORPH_CLOSE, kernel)
-            kernel.release()
-            return thresh
-        }
-    }
-
     private val strategies: List<EdgeStrategy> = listOf(
-        // Strategy 1: gentle Canny, minimal morphology to avoid merging nearby edges
-        CannyStrategy(blurSize = 7, cannyLow = 30.0, cannyHigh = 100.0, dilateSize = 3),
-        // Strategy 2: stronger Canny for noisy backgrounds
-        CannyStrategy(blurSize = 5, cannyLow = 50.0, cannyHigh = 150.0, dilateSize = 3),
-        // Strategy 3: heavy blur + low threshold for low contrast
-        CannyStrategy(blurSize = 11, cannyLow = 20.0, cannyHigh = 80.0, dilateSize = 3),
-        // Strategy 4: adaptive threshold with small kernel (avoids merging floor + paper)
-        AdaptiveThresholdStrategy(blurSize = 5, blockSize = 11, c = 3.0),
-        // Strategy 5: adaptive threshold with larger block (for uneven lighting)
-        AdaptiveThresholdStrategy(blurSize = 7, blockSize = 21, c = 5.0),
+        // Strategy 1: low thresholds — catches faint paper edges (cf. AdityaPai: 30,50)
+        CannyStrategy(blurSize = 5, cannyLow = 30.0, cannyHigh = 50.0),
+        // Strategy 2: medium thresholds
+        CannyStrategy(blurSize = 5, cannyLow = 50.0, cannyHigh = 150.0),
+        // Strategy 3: high thresholds — cuts noise on busy backgrounds (cf. savannahar: 75,200)
+        CannyStrategy(blurSize = 5, cannyLow = 75.0, cannyHigh = 200.0),
+        // Strategy 4: heavier blur for low contrast / uneven lighting
+        CannyStrategy(blurSize = 11, cannyLow = 30.0, cannyHigh = 100.0),
     )
 
     private fun findBestQuad(
@@ -233,15 +210,23 @@ class PaperDetector {
     ): Pair<List<PointF>, Double>? {
         val contours = mutableListOf<MatOfPoint>()
         val hierarchy = Mat()
-        Imgproc.findContours(edges, contours, hierarchy, Imgproc.RETR_EXTERNAL, Imgproc.CHAIN_APPROX_SIMPLE)
+        // RETR_LIST: retrieve all contours without hierarchy. This is critical —
+        // RETR_EXTERNAL only returns outermost contours, so a paper contour nested
+        // inside a larger floor/desk contour would be missed.
+        Imgproc.findContours(edges, contours, hierarchy, Imgproc.RETR_LIST, Imgproc.CHAIN_APPROX_SIMPLE)
 
         val imageArea = imageWidth.toDouble() * imageHeight.toDouble()
         var bestCorners: List<PointF>? = null
         var bestScore = currentBestScore
 
-        for (contour in contours) {
+        // Sort by area descending, inspect only the largest candidates (cf. savannahar: top 5)
+        val topContours = contours
+            .filter { Imgproc.contourArea(it) >= minArea }
+            .sortedByDescending { Imgproc.contourArea(it) }
+            .take(10)
+
+        for (contour in topContours) {
             val area = Imgproc.contourArea(contour)
-            if (area < minArea) continue
 
             val contour2f = MatOfPoint2f(*contour.toArray())
             val peri = Imgproc.arcLength(contour2f, true)

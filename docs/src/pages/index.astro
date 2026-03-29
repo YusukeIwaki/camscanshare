@@ -309,11 +309,19 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list">
             <li>
               <span class="spec-element">紙検出アルゴリズム</span>
-              <span class="spec-detail">エッジ検出（Canny等）→ 輪郭検出 → 最大矩形抽出。OpenCV等のライブラリ使用を想定。</span>
+              <span class="spec-detail">GaussianBlur → Canny エッジ検出 → 最小限の膨張（dilate） → 輪郭検出 → 四角形近似 → スコアリング選択。複数のCanny閾値パターンを並行で試行し、最もスコアの高い四角形を採用する。輪郭取得にはRETR_LIST（全輪郭を階層なしで取得）を使用する。RETR_EXTERNALは最外部輪郭のみ返すため、床やデスクの内側にある紙の輪郭を取りこぼす。面積上位10個の輪郭のみを検査対象とする。</span>
+            </li>
+            <li>
+              <span class="spec-element">四角形のスコアリング</span>
+              <span class="spec-detail">検出された四角形の「文書らしさ」を、長方形度（各内角の90°からの偏差）・対辺の平行度・面積比率の加重スコアで評価する。面積が最大でも歪んだ四角形（床のコーナー等）より、小さくても長方形に近い紙を優先する。</span>
+            </li>
+            <li>
+              <span class="spec-element">リアルタイム検出の安定化</span>
+              <span class="spec-detail">カメラプレビュー中のオーバーレイ表示は、直近5フレームの検出結果を保持し、2フレーム以上で合意がある場合に各コーナーの中央値を返す。検出が一時的に失われた場合も最後の有効結果を500ms間保持し、枠のちらつきを防止する。</span>
             </li>
             <li>
               <span class="spec-element">台形補正</span>
-              <span class="spec-detail">検出した四角形の4点を用いた射影変換で正面からの撮影に補正。</span>
+              <span class="spec-detail">検出した四角形の4点を用いた射影変換（getPerspectiveTransform + warpPerspective）で正面からの撮影に補正。出力サイズは検出された四辺の最大幅・最大高さから算出する。台形補正はキャプチャした高解像度画像に対して行い、リアルタイムプレビューの低解像度フレームの検出結果は使わない。</span>
             </li>
             <li>
               <span class="spec-element">連続撮影</span>
