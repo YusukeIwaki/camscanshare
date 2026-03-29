@@ -178,7 +178,8 @@ fun PageListScreen(
                 contentPadding = PaddingValues(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize()
+                    .then(if (uiState.isDragActive) Modifier.zIndex(99f) else Modifier),
             ) {
                 itemsIndexed(uiState.pages, key = { _, page -> page.id }) { index, page ->
                     val isDragging = draggedIndex == index
@@ -239,12 +240,12 @@ fun PageListScreen(
                 }
             }
 
-            // Delete zone
+            // Delete zone (zIndex below dragged card so thumbnail is always on top)
             AnimatedVisibility(
                 visible = uiState.isDragActive,
                 enter = slideInVertically(initialOffsetY = { it }, animationSpec = tween(300)),
                 exit = slideOutVertically(targetOffsetY = { it }, animationSpec = tween(300)),
-                modifier = Modifier.align(Alignment.BottomCenter),
+                modifier = Modifier.align(Alignment.BottomCenter).zIndex(50f),
             ) {
                 Box(
                     modifier = Modifier

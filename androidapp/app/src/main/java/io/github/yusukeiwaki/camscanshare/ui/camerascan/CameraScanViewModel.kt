@@ -40,7 +40,24 @@ class CameraScanViewModel @Inject constructor(
             _uiState.update { it.copy(documentId = documentId) }
             viewModelScope.launch {
                 val pages = repository.getPages(documentId)
-                _uiState.update { it.copy(capturedPageCount = pages.size) }
+                // Load thumbnail of the last page so the stack shows it
+                val lastPageThumb = pages.lastOrNull()?.let { page ->
+                    repository.loadBitmap(page.imagePath)?.let { bmp ->
+                        val thumbSize = 200
+                        val scale = thumbSize.toFloat() / maxOf(bmp.width, bmp.height)
+                        val thumb = android.graphics.Bitmap.createScaledBitmap(
+                            bmp,
+                            (bmp.width * scale).toInt(),
+                            (bmp.height * scale).toInt(),
+                            true,
+                        )
+                        bmp.recycle()
+                        thumb
+                    }
+                }
+                _uiState.update {
+                    it.copy(capturedPageCount = pages.size, lastThumbnail = lastPageThumb)
+                }
             }
         }
     }
