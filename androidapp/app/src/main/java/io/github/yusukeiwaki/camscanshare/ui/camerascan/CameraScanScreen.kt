@@ -16,6 +16,7 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -177,8 +178,16 @@ fun CameraScanScreen(
 
             // Detection overlay — maps normalized image coords to preview coords
             // PreviewView uses FILL scale type: image is scaled up to fill the view, center-cropped
+            // Animate corner positions for smooth visual transition between frames
             val corners = detectedCorners
-            if (corners != null && corners.size == 4) {
+            val animatedCorners = corners?.mapIndexed { i, pt ->
+                val ax by animateFloatAsState(pt.x, tween(150), label = "cx$i")
+                val ay by animateFloatAsState(pt.y, tween(150), label = "cy$i")
+                PointF(ax, ay)
+            }
+            if (animatedCorners != null && animatedCorners.size == 4) {
+                @Suppress("NAME_SHADOWING")
+                val corners = animatedCorners
                 Canvas(modifier = Modifier.fillMaxSize()) {
                     val viewW = size.width
                     val viewH = size.height

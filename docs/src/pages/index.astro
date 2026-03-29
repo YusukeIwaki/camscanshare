@@ -309,7 +309,7 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list">
             <li>
               <span class="spec-element">紙検出アルゴリズム</span>
-              <span class="spec-detail">GaussianBlur → Canny エッジ検出 → 最小限の膨張（dilate） → 輪郭検出 → 四角形近似 → スコアリング選択。複数のCanny閾値パターンを並行で試行し、最もスコアの高い四角形を採用する。輪郭取得にはRETR_LIST（全輪郭を階層なしで取得）を使用する。RETR_EXTERNALは最外部輪郭のみ返すため、床やデスクの内側にある紙の輪郭を取りこぼす。面積上位10個の輪郭のみを検査対象とする。</span>
+              <span class="spec-detail">GaussianBlur → Canny エッジ検出 → 膨張（dilate） → 輪郭検出 → 四角形近似 → スコアリング選択。複数のCanny閾値パターンを並行で試行し、最もスコアの高い四角形を採用する。輪郭取得にはRETR_LIST（全輪郭を階層なしで取得）を使用する。RETR_EXTERNALは最外部輪郭のみ返すため、床やデスクの内側にある紙の輪郭を取りこぼす。リアルタイムプレビューの低解像度フレーム（640×480等）では、エッジが断片的になりやすいため膨張カーネルを大きめ（5×5）にし、候補輪郭も上位20個まで検査する。高解像度のキャプチャ画像では膨張を最小限（3×3）にし、上位10個で十分である。</span>
             </li>
             <li>
               <span class="spec-element">四角形のスコアリング</span>
@@ -317,7 +317,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">リアルタイム検出の安定化</span>
-              <span class="spec-detail">カメラプレビュー中のオーバーレイ表示は、直近5フレームの検出結果を保持し、2フレーム以上で合意がある場合に各コーナーの中央値を返す。検出が一時的に失われた場合も最後の有効結果を500ms間保持し、枠のちらつきを防止する。</span>
+              <span class="spec-detail">カメラプレビュー中のオーバーレイ表示は、直近7フレームの検出結果を保持し、3フレーム以上で合意がある場合に各コーナーの中央値を返す。検出が一時的に失われた場合も最後の有効結果を500ms間保持し、枠の消失を防止する。さらに、コーナー座標の変化はアニメーション補間（150ms）で描画し、フレーム間の微小な座標変動による視覚的なちらつきを抑える。</span>
             </li>
             <li>
               <span class="spec-element">台形補正</span>

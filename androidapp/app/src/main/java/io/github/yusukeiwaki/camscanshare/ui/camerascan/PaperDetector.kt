@@ -24,9 +24,9 @@ class PaperDetector {
         private const val DETECT_SIZE = 500.0
         private const val MIN_AREA_RATIO = 0.05
         /** Number of recent frames to keep for stabilization. */
-        private const val STABLE_BUFFER_SIZE = 5
+        private const val STABLE_BUFFER_SIZE = 7
         /** Minimum number of detections in the buffer to consider it stable. */
-        private const val STABLE_MIN_DETECTIONS = 2
+        private const val STABLE_MIN_DETECTIONS = 3
         /** How long to hold the last valid detection after detection is lost (ms). */
         private const val HOLD_DURATION_MS = 500L
     }
@@ -97,13 +97,19 @@ class PaperDetector {
         val imageArea = small.width().toDouble() * small.height().toDouble()
         val minArea = imageArea * MIN_AREA_RATIO
 
-        // Try multiple detection strategies and keep the best-scoring result
+        // Choose strategies based on whether this is a low-res analysis frame or
+        // a high-res capture image that was downscaled to DETECT_SIZE
+        val isLowRes = maxDim <= DETECT_SIZE
+        val strategies = if (isLowRes) lowResStrategies else highResStrategies
+        // Low-res: check more candidates (edges are noisier, more fragmented contours)
+        val maxCandidates = if (isLowRes) 20 else 10
+
         var bestCorners: List<PointF>? = null
         var bestScore = 0.0
 
         for (strategy in strategies) {
             val edges = strategy.detectEdges(gray)
-            val result = findBestQuad(edges, minArea, bestScore, small.width(), small.height())
+            val result = findBestQuad(edges, minArea, bestScore, small.width(), small.height(), maxCandidates)
             edges.release()
             if (result != null) {
                 bestCorners = result.first
@@ -167,14 +173,16 @@ class PaperDetector {
     }
 
     /**
-     * Canny edge detection with minimal dilate to close small gaps in edges.
-     * A single dilate with a 3x3 kernel bridges 1-2 pixel gaps without merging
-     * distant edges (unlike morphological close with larger kernels).
+     * Canny edge detection with dilate to close gaps in edges.
+     * dilateSize is adapted to image resolution: low-res analysis frames need
+     * slightly larger kernels (5x5) because edges have more gaps per pixel,
+     * while high-res capture images only need minimal bridging (3x3).
      */
     private class CannyStrategy(
         val blurSize: Int,
         val cannyLow: Double,
         val cannyHigh: Double,
+        val dilateSize: Int,
     ) : EdgeStrategy {
         override fun detectEdges(gray: Mat): Mat {
             val blurred = Mat()
@@ -182,23 +190,27 @@ class PaperDetector {
             val edges = Mat()
             Imgproc.Canny(blurred, edges, cannyLow, cannyHigh)
             blurred.release()
-            // Minimal dilate (3x3, one pass) to close tiny gaps in edges
-            val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
+            val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(dilateSize.toDouble(), dilateSize.toDouble()))
             Imgproc.dilate(edges, edges, kernel)
             kernel.release()
             return edges
         }
     }
 
-    private val strategies: List<EdgeStrategy> = listOf(
-        // Strategy 1: low thresholds — catches faint paper edges (cf. AdityaPai: 30,50)
-        CannyStrategy(blurSize = 5, cannyLow = 30.0, cannyHigh = 50.0),
-        // Strategy 2: medium thresholds
-        CannyStrategy(blurSize = 5, cannyLow = 50.0, cannyHigh = 150.0),
-        // Strategy 3: high thresholds — cuts noise on busy backgrounds (cf. savannahar: 75,200)
-        CannyStrategy(blurSize = 5, cannyLow = 75.0, cannyHigh = 200.0),
-        // Strategy 4: heavier blur for low contrast / uneven lighting
-        CannyStrategy(blurSize = 11, cannyLow = 30.0, cannyHigh = 100.0),
+    /** Strategies for low-res frames (≤500px). Larger dilate to bridge gaps. */
+    private val lowResStrategies: List<EdgeStrategy> = listOf(
+        CannyStrategy(blurSize = 5, cannyLow = 30.0, cannyHigh = 50.0, dilateSize = 5),
+        CannyStrategy(blurSize = 5, cannyLow = 50.0, cannyHigh = 150.0, dilateSize = 5),
+        CannyStrategy(blurSize = 5, cannyLow = 75.0, cannyHigh = 200.0, dilateSize = 5),
+        CannyStrategy(blurSize = 11, cannyLow = 30.0, cannyHigh = 100.0, dilateSize = 5),
+    )
+
+    /** Strategies for high-res capture images (>500px after downscale). Minimal dilate. */
+    private val highResStrategies: List<EdgeStrategy> = listOf(
+        CannyStrategy(blurSize = 5, cannyLow = 30.0, cannyHigh = 50.0, dilateSize = 3),
+        CannyStrategy(blurSize = 5, cannyLow = 50.0, cannyHigh = 150.0, dilateSize = 3),
+        CannyStrategy(blurSize = 5, cannyLow = 75.0, cannyHigh = 200.0, dilateSize = 3),
+        CannyStrategy(blurSize = 11, cannyLow = 30.0, cannyHigh = 100.0, dilateSize = 3),
     )
 
     private fun findBestQuad(
@@ -207,6 +219,7 @@ class PaperDetector {
         currentBestScore: Double,
         imageWidth: Int,
         imageHeight: Int,
+        maxCandidates: Int = 10,
     ): Pair<List<PointF>, Double>? {
         val contours = mutableListOf<MatOfPoint>()
         val hierarchy = Mat()
@@ -219,11 +232,11 @@ class PaperDetector {
         var bestCorners: List<PointF>? = null
         var bestScore = currentBestScore
 
-        // Sort by area descending, inspect only the largest candidates (cf. savannahar: top 5)
+        // Sort by area descending, inspect the largest candidates
         val topContours = contours
             .filter { Imgproc.contourArea(it) >= minArea }
             .sortedByDescending { Imgproc.contourArea(it) }
-            .take(10)
+            .take(maxCandidates)
 
         for (contour in topContours) {
             val area = Imgproc.contourArea(contour)
