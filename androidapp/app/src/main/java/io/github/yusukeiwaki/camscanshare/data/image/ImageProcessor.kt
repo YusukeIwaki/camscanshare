@@ -105,6 +105,19 @@ class ImageProcessor @Inject constructor() {
         Imgproc.medianBlur(stretchedL, denoisedL, 3)
 
         val paperMask = buildPaperMask(denoisedL, aChannel, bChannel)
+        val structureMask = buildStructureMask(denoisedL)
+        val invertedStructureMask = invertMask(structureMask)
+        Core.bitwise_and(paperMask, invertedStructureMask, paperMask)
+        val paperCloseKernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(5.0, 5.0))
+        Imgproc.morphologyEx(
+            paperMask,
+            paperMask,
+            Imgproc.MORPH_CLOSE,
+            paperCloseKernel,
+            org.opencv.core.Point(-1.0, -1.0),
+            2,
+        )
+
         val accentMask = buildAccentMask(denoisedL, aChannel, bChannel)
 
         val paperBias = estimatePaperBias(aChannel, bChannel, paperMask)
@@ -116,7 +129,9 @@ class ImageProcessor @Inject constructor() {
         val accentA = compressChroma(neutralizedA, 0.85)
         val accentB = compressChroma(neutralizedB, 0.85)
 
-        val outputL = blendTowardValue(denoisedL, paperMask, 255.0, 0.82)
+        val outputL = blendTowardValue(denoisedL, paperMask, 244.0, 0.34)
+        val blendedL = Mat()
+        Core.addWeighted(outputL, 0.58, denoisedL, 0.42, 0.0, blendedL)
         val outputA = Mat(mutedA.size(), mutedA.type())
         val outputB = Mat(mutedB.size(), mutedB.type())
         mutedA.copyTo(outputA)
@@ -127,7 +142,7 @@ class ImageProcessor @Inject constructor() {
         outputB.setTo(Scalar.all(128.0), paperMask)
 
         val resultLab = Mat()
-        Core.merge(listOf(outputL, outputA, outputB), resultLab)
+        Core.merge(listOf(blendedL, outputA, outputB), resultLab)
 
         val resultRgb = Mat()
         Imgproc.cvtColor(resultLab, resultRgb, Imgproc.COLOR_Lab2RGB)
@@ -149,6 +164,9 @@ class ImageProcessor @Inject constructor() {
         stretchedL.release()
         denoisedL.release()
         paperMask.release()
+        structureMask.release()
+        invertedStructureMask.release()
+        paperCloseKernel.release()
         accentMask.release()
         neutralizedA.release()
         neutralizedB.release()
@@ -157,6 +175,7 @@ class ImageProcessor @Inject constructor() {
         accentA.release()
         accentB.release()
         outputL.release()
+        blendedL.release()
         outputA.release()
         outputB.release()
         resultLab.release()
@@ -184,9 +203,17 @@ class ImageProcessor @Inject constructor() {
             luminance.copyTo(working)
         }
 
+        val kernelSide = maxOf(15, ((minOf(working.width(), working.height()) / 24.0).toInt() or 1))
+        val kernel = Imgproc.getStructuringElement(
+            Imgproc.MORPH_ELLIPSE,
+            Size(kernelSide.toDouble(), kernelSide.toDouble()),
+        )
+        val closed = Mat()
+        Imgproc.morphologyEx(working, closed, Imgproc.MORPH_CLOSE, kernel)
+
         val blurred = Mat()
         val sigma = maxOf(12.0, minOf(80.0, minOf(working.width(), working.height()) / 18.0))
-        Imgproc.GaussianBlur(working, blurred, Size(0.0, 0.0), sigma)
+        Imgproc.GaussianBlur(closed, blurred, Size(0.0, 0.0), sigma)
 
         val illumination = Mat()
         if (scale < 1.0) {
@@ -196,6 +223,8 @@ class ImageProcessor @Inject constructor() {
         }
 
         working.release()
+        kernel.release()
+        closed.release()
         blurred.release()
 
         return illumination
@@ -232,8 +261,8 @@ class ImageProcessor @Inject constructor() {
             }
         }
 
-        val blackPoint = findPercentile(histogram, totalPixels, 0.02)
-        val whitePoint = findPercentile(histogram, totalPixels, 0.985).coerceAtLeast(blackPoint + 1)
+        val blackPoint = findPercentile(histogram, totalPixels, 0.005)
+        val whitePoint = findPercentile(histogram, totalPixels, 0.995).coerceAtLeast(blackPoint + 1)
 
         val clipped = Mat()
         Imgproc.threshold(luminance, clipped, whitePoint.toDouble(), 255.0, Imgproc.THRESH_TRUNC)
@@ -265,17 +294,25 @@ class ImageProcessor @Inject constructor() {
 
     private fun buildPaperMask(luminance: Mat, aChannel: Mat, bChannel: Mat): Mat {
         val chroma = computeChroma(aChannel, bChannel)
+        val brightThreshold = maxOf(96.0, percentileOfMat(luminance, 0.18))
         val brightMask = Mat()
-        Imgproc.threshold(luminance, brightMask, 170.0, 255.0, Imgproc.THRESH_BINARY)
+        Imgproc.threshold(luminance, brightMask, brightThreshold, 255.0, Imgproc.THRESH_BINARY)
         val lowChromaMask = Mat()
-        Imgproc.threshold(chroma, lowChromaMask, 20.0, 255.0, Imgproc.THRESH_BINARY_INV)
+        Imgproc.threshold(chroma, lowChromaMask, 34.0, 255.0, Imgproc.THRESH_BINARY_INV)
 
         val paperMask = Mat()
         Core.bitwise_and(brightMask, lowChromaMask, paperMask)
 
         val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(5.0, 5.0))
+        Imgproc.morphologyEx(
+            paperMask,
+            paperMask,
+            Imgproc.MORPH_CLOSE,
+            kernel,
+            org.opencv.core.Point(-1.0, -1.0),
+            2,
+        )
         Imgproc.morphologyEx(paperMask, paperMask, Imgproc.MORPH_OPEN, kernel)
-        Imgproc.morphologyEx(paperMask, paperMask, Imgproc.MORPH_CLOSE, kernel)
 
         chroma.release()
         brightMask.release()
@@ -283,6 +320,36 @@ class ImageProcessor @Inject constructor() {
         kernel.release()
 
         return paperMask
+    }
+
+    private fun buildStructureMask(luminance: Mat): Mat {
+        val adaptive = Mat()
+        Imgproc.adaptiveThreshold(
+            luminance,
+            adaptive,
+            255.0,
+            Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C,
+            Imgproc.THRESH_BINARY_INV,
+            31,
+            9.0,
+        )
+
+        val dark = Mat()
+        val darkThreshold = maxOf(72.0, percentileOfMat(luminance, 0.10))
+        Imgproc.threshold(luminance, dark, darkThreshold, 255.0, Imgproc.THRESH_BINARY_INV)
+
+        val structureMask = Mat()
+        Core.bitwise_or(adaptive, dark, structureMask)
+
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(3.0, 3.0))
+        Imgproc.morphologyEx(structureMask, structureMask, Imgproc.MORPH_OPEN, kernel)
+        Imgproc.dilate(structureMask, structureMask, kernel, org.opencv.core.Point(-1.0, -1.0), 2)
+
+        adaptive.release()
+        dark.release()
+        kernel.release()
+
+        return structureMask
     }
 
     private fun buildAccentMask(luminance: Mat, aChannel: Mat, bChannel: Mat): Mat {
@@ -342,6 +409,24 @@ class ImageProcessor @Inject constructor() {
         val meanA = Core.mean(aChannel, paperMask).`val`[0]
         val meanB = Core.mean(bChannel, paperMask).`val`[0]
         return meanA to meanB
+    }
+
+    private fun percentileOfMat(channel: Mat, percentile: Double): Double {
+        val histogram = IntArray(256)
+        val totalPixels = channel.rows() * channel.cols()
+        for (y in 0 until channel.rows()) {
+            for (x in 0 until channel.cols()) {
+                val value = channel.get(y, x)[0].toInt().coerceIn(0, 255)
+                histogram[value]++
+            }
+        }
+        return findPercentile(histogram, totalPixels, percentile).toDouble()
+    }
+
+    private fun invertMask(mask: Mat): Mat {
+        val inverted = Mat()
+        Core.bitwise_not(mask, inverted)
+        return inverted
     }
 
     private fun shiftChannel(channel: Mat, bias: Double): Mat {

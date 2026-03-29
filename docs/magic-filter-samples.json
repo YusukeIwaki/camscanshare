@@ -65,6 +65,7 @@
   {
     "id": "tax",
     "source": "docs/public/algorithm/opencv-samples/tax.jpeg",
+    "crop_mode": "copy_source",
     "step0": "docs/public/algorithm/steps/opencv-samples/tax-step0.jpeg",
     "step1": "docs/public/algorithm/steps/opencv-samples/tax-step1.png",
     "step2": "docs/public/algorithm/steps/opencv-samples/tax-step2.png"

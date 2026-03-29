@@ -28,6 +28,21 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
+def resize_for_detection(image: np.ndarray, target_height: int = 500) -> tuple[np.ndarray, float]:
+    height, width = image.shape[:2]
+    scale = target_height / float(height) if height > target_height else 1.0
+    if scale != 1.0:
+        resized = cv2.resize(
+            image,
+            (int(round(width * scale)), int(round(height * scale))),
+            interpolation=cv2.INTER_AREA,
+        )
+    else:
+        resized = image.copy()
+    ratio = height / float(resized.shape[0])
+    return resized, ratio
+
+
 def order_points(points: np.ndarray) -> np.ndarray:
     rect = np.zeros((4, 2), dtype=np.float32)
     sums = points.sum(axis=1)
@@ -64,20 +79,134 @@ def four_point_transform(image: np.ndarray, points: np.ndarray) -> np.ndarray:
     return cv2.warpPerspective(image, matrix, (max_width, max_height))
 
 
-def detect_document(image: np.ndarray) -> tuple[np.ndarray, str]:
-    original = image.copy()
-    height, width = image.shape[:2]
-    scale = 500.0 / float(height) if height > 500 else 1.0
-    if scale != 1.0:
-        resized = cv2.resize(
-            image,
-            (int(round(width * scale)), int(round(height * scale))),
-            interpolation=cv2.INTER_AREA,
-        )
-    else:
-        resized = image.copy()
+def collect_candidate_quads(mask: np.ndarray, ratio: float, min_area: float) -> list[np.ndarray]:
+    candidates: list[np.ndarray] = []
+    contours, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:40]:
+        area = cv2.contourArea(contour)
+        if area < min_area:
+            continue
+        perimeter = cv2.arcLength(contour, True)
+        polygon = cv2.approxPolyDP(contour, 0.02 * perimeter, True)
+        if len(polygon) == 4 and cv2.isContourConvex(polygon):
+            candidates.append(polygon.reshape(4, 2).astype(np.float32) * ratio)
+            continue
+        rect = cv2.minAreaRect(contour)
+        candidates.append(cv2.boxPoints(rect).astype(np.float32) * ratio)
+    return candidates
 
-    ratio = height / float(resized.shape[0])
+
+def build_paper_candidate_mask(resized: np.ndarray) -> np.ndarray:
+    lab = cv2.cvtColor(resized, cv2.COLOR_BGR2LAB)
+    luminance, a_channel, b_channel = cv2.split(lab)
+    chroma = compute_chroma(a_channel, b_channel)
+    bright_threshold = max(110, int(np.percentile(luminance, 55)))
+    _, bright_mask = cv2.threshold(luminance, bright_threshold, 255, cv2.THRESH_BINARY)
+    _, low_chroma_mask = cv2.threshold(chroma, 42, 255, cv2.THRESH_BINARY_INV)
+    paper_mask = cv2.bitwise_and(bright_mask, low_chroma_mask)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (9, 9))
+    paper_mask = cv2.morphologyEx(paper_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
+    paper_mask = cv2.morphologyEx(paper_mask, cv2.MORPH_OPEN, kernel, iterations=1)
+    return paper_mask
+
+
+def score_candidate(image: np.ndarray, points: np.ndarray) -> float:
+    try:
+        warped = four_point_transform(image, points)
+    except cv2.error:
+        return -1.0
+
+    if warped.size == 0:
+        return -1.0
+
+    height, width = warped.shape[:2]
+    area_ratio = (width * height) / float(image.shape[0] * image.shape[1])
+    if area_ratio < 0.08:
+        return -1.0
+
+    gray = cv2.cvtColor(warped, cv2.COLOR_BGR2GRAY)
+    center = gray[height // 6: height * 5 // 6, width // 6: width * 5 // 6]
+    border = np.concatenate([
+        gray[: max(1, height // 20), :].ravel(),
+        gray[-max(1, height // 20):, :].ravel(),
+        gray[:, : max(1, width // 20)].ravel(),
+        gray[:, -max(1, width // 20):].ravel(),
+    ])
+    center_mean = float(center.mean()) / 255.0
+    border_mean = float(border.mean()) / 255.0
+    aspect = max(width, height) / float(max(1, min(width, height)))
+    aspect_penalty = 0.0 if aspect < 2.4 else min(1.0, (aspect - 2.4) / 2.0)
+    xs = points[:, 0]
+    ys = points[:, 1]
+    margin_x = image.shape[1] * 0.02
+    margin_y = image.shape[0] * 0.02
+    edge_touches = float(np.count_nonzero(xs < margin_x) + np.count_nonzero(xs > image.shape[1] - margin_x))
+    edge_touches += float(np.count_nonzero(ys < margin_y) + np.count_nonzero(ys > image.shape[0] - margin_y))
+    edge_penalty = min(1.8, edge_touches * 0.35)
+    return area_ratio * 4.0 + center_mean * 1.8 - (0.35 - border_mean) * 1.2 - aspect_penalty - edge_penalty
+
+
+def trim_dark_border(image: np.ndarray) -> np.ndarray:
+    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
+    row_ratio = (gray > 18).mean(axis=1)
+    col_ratio = (gray > 18).mean(axis=0)
+
+    def find_start(values: np.ndarray) -> int:
+        for index, value in enumerate(values):
+            if value > 0.65:
+                return index
+        return 0
+
+    def find_end(values: np.ndarray) -> int:
+        for index in range(len(values) - 1, -1, -1):
+            if values[index] > 0.65:
+                return index + 1
+        return len(values)
+
+    top = find_start(row_ratio)
+    bottom = find_end(row_ratio)
+    left = find_start(col_ratio)
+    right = find_end(col_ratio)
+
+    if bottom - top < image.shape[0] * 0.5 or right - left < image.shape[1] * 0.5:
+        return image
+    return image[top:bottom, left:right]
+
+
+def largest_component_mask(mask: np.ndarray) -> np.ndarray:
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return mask
+    largest = max(contours, key=cv2.contourArea)
+    filled = np.zeros_like(mask)
+    cv2.drawContours(filled, [largest], -1, 255, thickness=cv2.FILLED)
+    return filled
+
+
+def trim_to_document_bounds(image: np.ndarray) -> np.ndarray:
+    mask = build_paper_candidate_mask(image)
+    mask = largest_component_mask(mask)
+    contours, _ = cv2.findContours(mask, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not contours:
+        return image
+    x, y, w, h = cv2.boundingRect(max(contours, key=cv2.contourArea))
+    pad_x = int(round(w * 0.02))
+    pad_y = int(round(h * 0.02))
+    left = max(0, x - pad_x)
+    top = max(0, y - pad_y)
+    right = min(image.shape[1], x + w + pad_x)
+    bottom = min(image.shape[0], y + h + pad_y)
+    if right - left < image.shape[1] * 0.5 or bottom - top < image.shape[0] * 0.5:
+        return image
+    return image[top:bottom, left:right]
+
+
+def detect_document(image: np.ndarray, crop_mode: str | None = None) -> tuple[np.ndarray, str]:
+    if crop_mode == "copy_source":
+        return image.copy(), "copy_source"
+
+    original = image.copy()
+    resized, ratio = resize_for_detection(image)
     gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
 
@@ -118,12 +247,17 @@ def detect_document(image: np.ndarray) -> tuple[np.ndarray, str]:
         polygon = cv2.approxPolyDP(contour, 0.02 * perimeter, True)
         if len(polygon) == 4 and cv2.isContourConvex(polygon):
             points = polygon.reshape(4, 2).astype(np.float32) * ratio
-            return four_point_transform(original, points), "quad"
+            warped = trim_dark_border(four_point_transform(original, points))
+            return trim_to_document_bounds(warped), "quad"
+
+    if not contours:
+        return image.copy(), "fallback_source"
 
     fallback = max(contours, key=cv2.contourArea)
     rect = cv2.minAreaRect(fallback)
     points = cv2.boxPoints(rect).astype(np.float32) * ratio
-    return four_point_transform(original, points), "minAreaRect"
+    warped = trim_dark_border(four_point_transform(original, points))
+    return trim_to_document_bounds(warped), "minAreaRect"
 
 
 def estimate_illumination(luminance: np.ndarray) -> np.ndarray:
@@ -140,8 +274,13 @@ def estimate_illumination(luminance: np.ndarray) -> np.ndarray:
     else:
         working = luminance.copy()
 
+    kernel_side = max(15, int(round(min(working.shape[1], working.shape[0]) / 24.0)))
+    if kernel_side % 2 == 0:
+        kernel_side += 1
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (kernel_side, kernel_side))
+    closed = cv2.morphologyEx(working, cv2.MORPH_CLOSE, kernel)
     sigma = max(12.0, min(80.0, min(working.shape[1], working.shape[0]) / 18.0))
-    blurred = cv2.GaussianBlur(working, (0, 0), sigmaX=sigma, sigmaY=sigma)
+    blurred = cv2.GaussianBlur(closed, (0, 0), sigmaX=sigma, sigmaY=sigma)
 
     if scale < 1.0:
         return cv2.resize(blurred, (width, height), interpolation=cv2.INTER_CUBIC)
@@ -168,8 +307,8 @@ def find_percentile(histogram: np.ndarray, total_pixels: int, percentile: float)
 def auto_stretch_luminance(luminance: np.ndarray) -> np.ndarray:
     histogram = cv2.calcHist([luminance], [0], None, [256], [0, 256]).flatten()
     total_pixels = int(luminance.shape[0] * luminance.shape[1])
-    black_point = find_percentile(histogram, total_pixels, 0.02)
-    white_point = max(black_point + 1, find_percentile(histogram, total_pixels, 0.985))
+    black_point = find_percentile(histogram, total_pixels, 0.005)
+    white_point = max(black_point + 1, find_percentile(histogram, total_pixels, 0.995))
 
     clipped = np.minimum(luminance, white_point).astype(np.float32)
     stretched = (clipped - float(black_point)) * (255.0 / float(white_point - black_point))
@@ -185,12 +324,13 @@ def compute_chroma(a_channel: np.ndarray, b_channel: np.ndarray) -> np.ndarray:
 
 def build_paper_mask(luminance: np.ndarray, a_channel: np.ndarray, b_channel: np.ndarray) -> np.ndarray:
     chroma = compute_chroma(a_channel, b_channel)
-    _, bright_mask = cv2.threshold(luminance, 170, 255, cv2.THRESH_BINARY)
-    _, low_chroma_mask = cv2.threshold(chroma, 20, 255, cv2.THRESH_BINARY_INV)
+    bright_threshold = max(96, int(np.percentile(luminance, 18)))
+    _, bright_mask = cv2.threshold(luminance, bright_threshold, 255, cv2.THRESH_BINARY)
+    _, low_chroma_mask = cv2.threshold(chroma, 34, 255, cv2.THRESH_BINARY_INV)
     paper_mask = cv2.bitwise_and(bright_mask, low_chroma_mask)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5))
+    paper_mask = cv2.morphologyEx(paper_mask, cv2.MORPH_CLOSE, kernel, iterations=2)
     paper_mask = cv2.morphologyEx(paper_mask, cv2.MORPH_OPEN, kernel)
-    paper_mask = cv2.morphologyEx(paper_mask, cv2.MORPH_CLOSE, kernel)
     return paper_mask
 
 
@@ -201,6 +341,28 @@ def build_accent_mask(luminance: np.ndarray, a_channel: np.ndarray, b_channel: n
     accent_mask = cv2.bitwise_and(strong_chroma_mask, visible_mask)
     kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     return cv2.morphologyEx(accent_mask, cv2.MORPH_OPEN, kernel)
+
+
+def build_structure_mask(luminance: np.ndarray) -> np.ndarray:
+    adaptive = cv2.adaptiveThreshold(
+        luminance,
+        255,
+        cv2.ADAPTIVE_THRESH_GAUSSIAN_C,
+        cv2.THRESH_BINARY_INV,
+        31,
+        9,
+    )
+    _, dark = cv2.threshold(
+        luminance,
+        max(72, int(np.percentile(luminance, 10))),
+        255,
+        cv2.THRESH_BINARY_INV,
+    )
+    structure = cv2.bitwise_or(adaptive, dark)
+    kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    structure = cv2.morphologyEx(structure, cv2.MORPH_OPEN, kernel)
+    structure = cv2.dilate(structure, kernel, iterations=2)
+    return structure
 
 
 def compress_chroma(channel: np.ndarray, factor: float) -> np.ndarray:
@@ -231,6 +393,14 @@ def apply_magic_pipeline(cropped: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     stretched_l = auto_stretch_luminance(flattened_l)
     denoised_l = cv2.medianBlur(stretched_l, 3)
     paper_mask = build_paper_mask(denoised_l, a_channel, b_channel)
+    structure_mask = build_structure_mask(denoised_l)
+    paper_mask = cv2.bitwise_and(paper_mask, cv2.bitwise_not(structure_mask))
+    paper_mask = cv2.morphologyEx(
+        paper_mask,
+        cv2.MORPH_CLOSE,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)),
+        iterations=2,
+    )
     accent_mask = build_accent_mask(denoised_l, a_channel, b_channel)
 
     if int(cv2.countNonZero(paper_mask)) > 0:
@@ -248,7 +418,8 @@ def apply_magic_pipeline(cropped: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     accent_a = compress_chroma(neutralized_a, 0.85)
     accent_b = compress_chroma(neutralized_b, 0.85)
 
-    output_l = blend_toward_value(denoised_l, paper_mask, 255.0, 0.82)
+    output_l = blend_toward_value(denoised_l, paper_mask, 244.0, 0.34)
+    output_l = cv2.addWeighted(output_l, 0.58, denoised_l, 0.42, 0.0)
     output_a = muted_a.copy()
     output_b = muted_b.copy()
     output_a[accent_mask > 0] = accent_a[accent_mask > 0]
@@ -289,7 +460,7 @@ def main() -> None:
         if image is None:
             raise RuntimeError(f"Failed to read source image: {source}")
 
-        step0, mode = detect_document(image)
+        step0, mode = detect_document(image, entry.get("crop_mode"))
         step1, step2 = apply_magic_pipeline(step0)
 
         write_image(step0_path, step0)
