@@ -366,6 +366,9 @@ private fun PageCard(
             elevation = CardDefaults.cardElevation(defaultElevation = if (isDragging) 8.dp else 1.dp),
         ) {
             if (bitmap != null) {
+                val filteredBitmap = remember(bitmap, page.filterName) {
+                    if (page.filterName == "magic") imageProcessor.applyFilter(bitmap, "magic") else bitmap
+                }
                 val colorMatrix = remember(page.filterName) {
                     imageProcessor.getColorMatrix(page.filterName)
                 }
@@ -383,15 +386,16 @@ private fun PageCard(
                         .graphicsLayer { rotationZ = page.rotationDegrees.toFloat() },
                 ) {
                     drawIntoCanvas { canvas ->
-                        val scaleX = size.width / bitmap.width
-                        val scaleY = size.height / bitmap.height
+                        val drawBmp = filteredBitmap
+                        val scaleX = size.width / drawBmp.width
+                        val scaleY = size.height / drawBmp.height
                         val scale = maxOf(scaleX, scaleY) // crop to fill
-                        val dx = (size.width - bitmap.width * scale) / 2
-                        val dy = (size.height - bitmap.height * scale) / 2
+                        val dx = (size.width - drawBmp.width * scale) / 2
+                        val dy = (size.height - drawBmp.height * scale) / 2
                         canvas.nativeCanvas.save()
                         canvas.nativeCanvas.translate(dx, dy)
                         canvas.nativeCanvas.scale(scale, scale)
-                        canvas.nativeCanvas.drawBitmap(bitmap, 0f, 0f, paint)
+                        canvas.nativeCanvas.drawBitmap(drawBmp, 0f, 0f, paint)
                         canvas.nativeCanvas.restore()
                     }
                 }

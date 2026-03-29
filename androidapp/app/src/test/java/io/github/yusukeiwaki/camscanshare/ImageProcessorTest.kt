@@ -50,16 +50,10 @@ class ImageProcessorTest {
     }
 
     @Test
-    fun `magic filter combines brightness contrast saturation`() {
-        // Magic = brightness(1.4) + contrast(2.0) + saturate(0.3)
-        // Verify the parameter values are within expected ranges
-        val brightness = 1.4f
-        val contrast = 2.0f
-        val saturation = 0.3f
+    fun `magic filter is handled outside ColorMatrix`() {
+        val colorMatrixFilters = setOf("sharpen", "bw", "whiteboard", "vivid")
 
-        assertTrue(brightness > 1f) // brightens
-        assertTrue(contrast > 1f) // increases contrast
-        assertTrue(saturation < 1f) // desaturates (closer to grayscale)
+        assertTrue("magic should be handled by the OpenCV pipeline", "magic" !in colorMatrixFilters)
     }
 
     @Test

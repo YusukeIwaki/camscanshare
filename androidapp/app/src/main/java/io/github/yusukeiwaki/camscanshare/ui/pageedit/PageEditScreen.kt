@@ -247,7 +247,15 @@ private fun PagePreview(
         }
 
         if (bitmap != null) {
-            val colorFilter = remember(filter) { filter.toColorMatrixFilter() }
+            val imageProcessor = remember { io.github.yusukeiwaki.camscanshare.data.image.ImageProcessor() }
+            // Apply filter: OpenCV-based filters (magic) produce a new bitmap;
+            // ColorMatrix-based filters use Paint at draw time
+            val filteredBitmap = remember(bitmap, filter) {
+                if (filter.filterKey == "magic") imageProcessor.applyFilter(bitmap, "magic") else bitmap
+            }
+            val colorFilter = remember(filter) {
+                if (filter.filterKey == "magic") null else filter.toColorMatrixFilter()
+            }
             val paint = remember(colorFilter) {
                 Paint().apply { this.colorFilter = colorFilter }
             }
@@ -266,16 +274,17 @@ private fun PagePreview(
                     .background(Color.White),
             ) {
                 drawIntoCanvas { canvas ->
-                    val scaleX = size.width / bitmap.width
-                    val scaleY = size.height / bitmap.height
+                    val drawBitmap = filteredBitmap
+                    val scaleX = size.width / drawBitmap.width
+                    val scaleY = size.height / drawBitmap.height
                     val scale = minOf(scaleX, scaleY)
-                    val dx = (size.width - bitmap.width * scale) / 2
-                    val dy = (size.height - bitmap.height * scale) / 2
+                    val dx = (size.width - drawBitmap.width * scale) / 2
+                    val dy = (size.height - drawBitmap.height * scale) / 2
 
                     canvas.nativeCanvas.save()
                     canvas.nativeCanvas.translate(dx, dy)
                     canvas.nativeCanvas.scale(scale, scale)
-                    canvas.nativeCanvas.drawBitmap(bitmap, 0f, 0f, paint)
+                    canvas.nativeCanvas.drawBitmap(drawBitmap, 0f, 0f, paint)
                     canvas.nativeCanvas.restore()
                 }
             }

@@ -7,21 +7,24 @@ import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.Paint
 import androidx.camera.core.ImageProxy
+import org.opencv.android.OpenCVLoader
+import org.opencv.android.Utils
+import org.opencv.core.Core
+import org.opencv.core.CvType
+import org.opencv.core.Mat
+import org.opencv.core.Scalar
+import org.opencv.core.Size
+import org.opencv.imgproc.Imgproc
 import javax.inject.Inject
 import javax.inject.Singleton
 
-/**
- * Handles image processing operations: EXIF rotation correction, filter application.
- * Designed to be testable — filter matrix logic is pure and can be unit tested.
- */
 @Singleton
 class ImageProcessor @Inject constructor() {
 
-    /**
-     * Convert an ImageProxy to a correctly-oriented Bitmap.
-     * CameraX's ImageProxy.toBitmap() does NOT apply rotation,
-     * so we manually rotate based on imageInfo.rotationDegrees.
-     */
+    init {
+        OpenCVLoader.initLocal()
+    }
+
     fun toBitmapWithCorrectRotation(imageProxy: ImageProxy): Bitmap {
         val bitmap = imageProxy.toBitmap()
         val rotationDegrees = imageProxy.imageInfo.rotationDegrees
@@ -39,9 +42,12 @@ class ImageProcessor @Inject constructor() {
     }
 
     /**
-     * Apply a color filter to a bitmap, returning a new bitmap.
+     * Apply a filter to a bitmap. "magic" uses OpenCV flat-field correction;
+     * other filters use ColorMatrix.
      */
     fun applyFilter(source: Bitmap, filterKey: String): Bitmap {
+        if (filterKey == "magic") return applyMagicFilter(source)
+
         val colorMatrix = getColorMatrix(filterKey) ?: return source
         val result = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(result)
@@ -53,23 +59,344 @@ class ImageProcessor @Inject constructor() {
     }
 
     /**
-     * Get the ColorMatrix for a given filter key. Returns null for "original".
-     * Pure function — can be unit tested directly.
+     * Get the ColorMatrix for a given filter key. Returns null for "original" and "magic".
+     * "magic" is handled separately via OpenCV in applyFilter/applyMagicFilter.
      */
     fun getColorMatrix(filterKey: String): ColorMatrix? = when (filterKey) {
         "original" -> null
+        "magic" -> null // handled by OpenCV
         "sharpen" -> contrastMatrix(1.4f).apply { postConcat(brightnessMatrix(1.05f)) }
         "bw" -> grayscaleMatrix().apply { postConcat(contrastMatrix(1.3f)) }
-        "magic" -> brightnessMatrix(1.4f).apply {
-            postConcat(contrastMatrix(2.0f))
-            postConcat(saturationMatrix(0.3f))
-        }
         "whiteboard" -> brightnessMatrix(1.3f).apply {
             postConcat(contrastMatrix(1.6f))
             postConcat(saturationMatrix(0f))
         }
         "vivid" -> saturationMatrix(2f).apply { postConcat(contrastMatrix(1.2f)) }
         else -> null
+    }
+
+    /**
+     * Magic filter: deterministic document enhancement.
+     *
+     * 1. Flatten illumination on Lab-L
+     * 2. Auto-select black/white points from the luminance histogram
+     * 3. Neutralize paper color cast
+     * 4. Desaturate neutral content while preserving strong accent colors
+     */
+    private fun applyMagicFilter(source: Bitmap): Bitmap {
+        val mat = Mat()
+        Utils.bitmapToMat(source, mat)
+        val rgb = Mat()
+        Imgproc.cvtColor(mat, rgb, Imgproc.COLOR_RGBA2RGB)
+
+        val lab = Mat()
+        Imgproc.cvtColor(rgb, lab, Imgproc.COLOR_RGB2Lab)
+
+        val channels = ArrayList<Mat>(3)
+        Core.split(lab, channels)
+        val luminance = channels[0]
+        val aChannel = channels[1]
+        val bChannel = channels[2]
+
+        val illumination = estimateIllumination(luminance)
+        val flattenedL = flatFieldCorrect(luminance, illumination)
+        val stretchedL = autoStretchLuminance(flattenedL)
+        val denoisedL = Mat()
+        Imgproc.medianBlur(stretchedL, denoisedL, 3)
+
+        val paperMask = buildPaperMask(denoisedL, aChannel, bChannel)
+        val accentMask = buildAccentMask(denoisedL, aChannel, bChannel)
+
+        val paperBias = estimatePaperBias(aChannel, bChannel, paperMask)
+        val neutralizedA = shiftChannel(aChannel, paperBias.first - 128.0)
+        val neutralizedB = shiftChannel(bChannel, paperBias.second - 128.0)
+
+        val mutedA = compressChroma(neutralizedA, 0.18)
+        val mutedB = compressChroma(neutralizedB, 0.18)
+        val accentA = compressChroma(neutralizedA, 0.85)
+        val accentB = compressChroma(neutralizedB, 0.85)
+
+        val outputL = blendTowardValue(denoisedL, paperMask, 255.0, 0.82)
+        val outputA = Mat(mutedA.size(), mutedA.type())
+        val outputB = Mat(mutedB.size(), mutedB.type())
+        mutedA.copyTo(outputA)
+        mutedB.copyTo(outputB)
+        accentA.copyTo(outputA, accentMask)
+        accentB.copyTo(outputB, accentMask)
+        outputA.setTo(Scalar.all(128.0), paperMask)
+        outputB.setTo(Scalar.all(128.0), paperMask)
+
+        val resultLab = Mat()
+        Core.merge(listOf(outputL, outputA, outputB), resultLab)
+
+        val resultRgb = Mat()
+        Imgproc.cvtColor(resultLab, resultRgb, Imgproc.COLOR_Lab2RGB)
+
+        val resultRgba = Mat()
+        Imgproc.cvtColor(resultRgb, resultRgba, Imgproc.COLOR_RGB2RGBA)
+
+        val output = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
+        Utils.matToBitmap(resultRgba, output)
+
+        mat.release()
+        rgb.release()
+        lab.release()
+        luminance.release()
+        aChannel.release()
+        bChannel.release()
+        illumination.release()
+        flattenedL.release()
+        stretchedL.release()
+        denoisedL.release()
+        paperMask.release()
+        accentMask.release()
+        neutralizedA.release()
+        neutralizedB.release()
+        mutedA.release()
+        mutedB.release()
+        accentA.release()
+        accentB.release()
+        outputL.release()
+        outputA.release()
+        outputB.release()
+        resultLab.release()
+        resultRgb.release()
+        resultRgba.release()
+
+        return output
+    }
+
+    private fun estimateIllumination(luminance: Mat): Mat {
+        val minSide = minOf(luminance.width(), luminance.height())
+        val scale = if (minSide > 1024) 1024.0 / minSide else 1.0
+
+        val working = Mat()
+        if (scale < 1.0) {
+            Imgproc.resize(
+                luminance,
+                working,
+                Size(luminance.width() * scale, luminance.height() * scale),
+                0.0,
+                0.0,
+                Imgproc.INTER_AREA,
+            )
+        } else {
+            luminance.copyTo(working)
+        }
+
+        val blurred = Mat()
+        val sigma = maxOf(12.0, minOf(80.0, minOf(working.width(), working.height()) / 18.0))
+        Imgproc.GaussianBlur(working, blurred, Size(0.0, 0.0), sigma)
+
+        val illumination = Mat()
+        if (scale < 1.0) {
+            Imgproc.resize(blurred, illumination, luminance.size(), 0.0, 0.0, Imgproc.INTER_CUBIC)
+        } else {
+            blurred.copyTo(illumination)
+        }
+
+        working.release()
+        blurred.release()
+
+        return illumination
+    }
+
+    private fun flatFieldCorrect(luminance: Mat, illumination: Mat): Mat {
+        val luminance32 = Mat()
+        val illumination32 = Mat()
+        luminance.convertTo(luminance32, CvType.CV_32F)
+        illumination.convertTo(illumination32, CvType.CV_32F)
+        Core.add(luminance32, Scalar.all(1.0), luminance32)
+        Core.add(illumination32, Scalar.all(1.0), illumination32)
+
+        val corrected32 = Mat()
+        Core.divide(luminance32, illumination32, corrected32, Core.mean(illumination).`val`[0])
+
+        val corrected = Mat()
+        corrected32.convertTo(corrected, CvType.CV_8U)
+
+        luminance32.release()
+        illumination32.release()
+        corrected32.release()
+
+        return corrected
+    }
+
+    private fun autoStretchLuminance(luminance: Mat): Mat {
+        val histogram = IntArray(256)
+        val totalPixels = luminance.rows() * luminance.cols()
+        for (y in 0 until luminance.rows()) {
+            for (x in 0 until luminance.cols()) {
+                val value = luminance.get(y, x)[0].toInt().coerceIn(0, 255)
+                histogram[value]++
+            }
+        }
+
+        val blackPoint = findPercentile(histogram, totalPixels, 0.02)
+        val whitePoint = findPercentile(histogram, totalPixels, 0.985).coerceAtLeast(blackPoint + 1)
+
+        val clipped = Mat()
+        Imgproc.threshold(luminance, clipped, whitePoint.toDouble(), 255.0, Imgproc.THRESH_TRUNC)
+
+        val stretched32 = Mat()
+        clipped.convertTo(stretched32, CvType.CV_32F)
+        Core.subtract(stretched32, Scalar.all(blackPoint.toDouble()), stretched32)
+        val scale = 255.0 / (whitePoint - blackPoint).toDouble()
+        Core.multiply(stretched32, Scalar.all(scale), stretched32)
+
+        val stretched = Mat()
+        stretched32.convertTo(stretched, CvType.CV_8U)
+
+        clipped.release()
+        stretched32.release()
+
+        return stretched
+    }
+
+    private fun findPercentile(histogram: IntArray, totalPixels: Int, percentile: Double): Int {
+        val target = (totalPixels * percentile).toInt().coerceIn(0, totalPixels - 1)
+        var cumulative = 0
+        for (value in histogram.indices) {
+            cumulative += histogram[value]
+            if (cumulative > target) return value
+        }
+        return histogram.lastIndex
+    }
+
+    private fun buildPaperMask(luminance: Mat, aChannel: Mat, bChannel: Mat): Mat {
+        val chroma = computeChroma(aChannel, bChannel)
+        val brightMask = Mat()
+        Imgproc.threshold(luminance, brightMask, 170.0, 255.0, Imgproc.THRESH_BINARY)
+        val lowChromaMask = Mat()
+        Imgproc.threshold(chroma, lowChromaMask, 20.0, 255.0, Imgproc.THRESH_BINARY_INV)
+
+        val paperMask = Mat()
+        Core.bitwise_and(brightMask, lowChromaMask, paperMask)
+
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(5.0, 5.0))
+        Imgproc.morphologyEx(paperMask, paperMask, Imgproc.MORPH_OPEN, kernel)
+        Imgproc.morphologyEx(paperMask, paperMask, Imgproc.MORPH_CLOSE, kernel)
+
+        chroma.release()
+        brightMask.release()
+        lowChromaMask.release()
+        kernel.release()
+
+        return paperMask
+    }
+
+    private fun buildAccentMask(luminance: Mat, aChannel: Mat, bChannel: Mat): Mat {
+        val chroma = computeChroma(aChannel, bChannel)
+        val strongChromaMask = Mat()
+        Imgproc.threshold(chroma, strongChromaMask, 28.0, 255.0, Imgproc.THRESH_BINARY)
+        val visibleMask = Mat()
+        Imgproc.threshold(luminance, visibleMask, 48.0, 255.0, Imgproc.THRESH_BINARY)
+
+        val accentMask = Mat()
+        Core.bitwise_and(strongChromaMask, visibleMask, accentMask)
+
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(3.0, 3.0))
+        Imgproc.morphologyEx(accentMask, accentMask, Imgproc.MORPH_OPEN, kernel)
+
+        chroma.release()
+        strongChromaMask.release()
+        visibleMask.release()
+        kernel.release()
+
+        return accentMask
+    }
+
+    private fun computeChroma(aChannel: Mat, bChannel: Mat): Mat {
+        val a32 = Mat()
+        val b32 = Mat()
+        aChannel.convertTo(a32, CvType.CV_32F)
+        bChannel.convertTo(b32, CvType.CV_32F)
+        Core.subtract(a32, Scalar.all(128.0), a32)
+        Core.subtract(b32, Scalar.all(128.0), b32)
+
+        val aSq = Mat()
+        val bSq = Mat()
+        Core.multiply(a32, a32, aSq)
+        Core.multiply(b32, b32, bSq)
+
+        val chroma32 = Mat()
+        Core.add(aSq, bSq, chroma32)
+        Core.sqrt(chroma32, chroma32)
+
+        val chroma = Mat()
+        chroma32.convertTo(chroma, CvType.CV_8U)
+
+        a32.release()
+        b32.release()
+        aSq.release()
+        bSq.release()
+        chroma32.release()
+
+        return chroma
+    }
+
+    private fun estimatePaperBias(aChannel: Mat, bChannel: Mat, paperMask: Mat): Pair<Double, Double> {
+        val paperPixels = Core.countNonZero(paperMask)
+        if (paperPixels == 0) return 128.0 to 128.0
+
+        val meanA = Core.mean(aChannel, paperMask).`val`[0]
+        val meanB = Core.mean(bChannel, paperMask).`val`[0]
+        return meanA to meanB
+    }
+
+    private fun shiftChannel(channel: Mat, bias: Double): Mat {
+        val shifted32 = Mat()
+        channel.convertTo(shifted32, CvType.CV_32F)
+        Core.subtract(shifted32, Scalar.all(bias), shifted32)
+
+        val shifted = Mat()
+        shifted32.convertTo(shifted, CvType.CV_8U)
+        shifted32.release()
+        return shifted
+    }
+
+    private fun compressChroma(channel: Mat, factor: Double): Mat {
+        val channel32 = Mat()
+        channel.convertTo(channel32, CvType.CV_32F)
+        Core.subtract(channel32, Scalar.all(128.0), channel32)
+        Core.multiply(channel32, Scalar.all(factor), channel32)
+        Core.add(channel32, Scalar.all(128.0), channel32)
+
+        val compressed = Mat()
+        channel32.convertTo(compressed, CvType.CV_8U)
+        channel32.release()
+        return compressed
+    }
+
+    private fun blendTowardValue(channel: Mat, mask: Mat, target: Double, strength: Double): Mat {
+        val channel32 = Mat()
+        val mask32 = Mat()
+        channel.convertTo(channel32, CvType.CV_32F)
+        mask.convertTo(mask32, CvType.CV_32F, strength / 255.0)
+
+        val inverseMask = Mat(mask.size(), CvType.CV_32F, Scalar.all(1.0))
+        Core.subtract(inverseMask, mask32, inverseMask)
+
+        val preserved = Mat()
+        Core.multiply(channel32, inverseMask, preserved)
+
+        val targetContribution = Mat(mask.size(), CvType.CV_32F, Scalar.all(target))
+        Core.multiply(targetContribution, mask32, targetContribution)
+
+        val blended32 = Mat()
+        Core.add(preserved, targetContribution, blended32)
+
+        val blended = Mat()
+        blended32.convertTo(blended, CvType.CV_8U)
+
+        channel32.release()
+        mask32.release()
+        inverseMask.release()
+        preserved.release()
+        targetContribution.release()
+        blended32.release()
+
+        return blended
     }
 
     companion object {

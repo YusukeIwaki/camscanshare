@@ -1,0 +1,692 @@
+---
+import Layout from '../layouts/Layout.astro';
+
+const buildViewer = (original, step0, step1, step2) => [
+  { label: 'Original', src: original, caption: 'Original: 入力画像。' },
+  { label: 'Step 0', src: step0, caption: 'Step 0: 台形補正とクロップ後。ページ領域だけを正面にそろえた状態。' },
+  { label: 'Step 1', src: step1, caption: 'Step 1: 照明ムラ補正後。影・周辺減光・色かぶりをならした状態。' },
+  { label: 'Step 2', src: step2, caption: 'Step 2: 最終出力。Auto RMODE と紙面白化を通した状態。' },
+];
+
+const primaryExamples = [
+  {
+    id: 'angled',
+    anchor: 'case-angled',
+    eyebrow: 'Case Study 1',
+    title: '暗い机の上に置かれた斜め撮影の文書',
+    description: '入力画像: `test.jpg`。黒い机、強い周辺減光、紙の周囲に暗い背景、細い本文という「スキャナにとって難しい典型例」。',
+    source: '/algorithm/test.jpg',
+    watchFor: '背景の暗さや周辺減光が紙の中へ持ち込まれず、本文だけが自然に締まっているかを見る。',
+    viewer: buildViewer(
+      '/algorithm/test.jpg',
+      '/algorithm/steps/test-step0.png',
+      '/algorithm/steps/test-step1.png',
+      '/algorithm/steps/test-step2.png',
+    ),
+  },
+  {
+    id: 'flat',
+    anchor: 'case-flat',
+    eyebrow: 'Case Study 2',
+    title: '木目の机の上に置かれた正面撮影の文書',
+    description: '入力画像: `test2.png`。紙は正面に近いが、暖色照明と木目反射の影響で紙が少し黄ばんで見え、本文も薄い。',
+    source: '/algorithm/test2.png',
+    watchFor: '紙の黄ばみが自然に消え、広い余白が灰色のベールをかぶらず、文字だけが読みやすく持ち上がっているかを見る。',
+    viewer: buildViewer(
+      '/algorithm/test2.png',
+      '/algorithm/steps/test2-step0.png',
+      '/algorithm/steps/test2-step1.png',
+      '/algorithm/steps/test2-step2.png',
+    ),
+  },
+];
+
+const additionalExamples = [
+  {
+    id: 'cell-pic',
+    anchor: 'sample-cell-pic',
+    eyebrow: 'Additional Sample',
+    file: 'cell_pic.jpg',
+    title: '携帯で撮った細文書',
+    description: '細かい本文が多く、暗い木目の机の上で撮られている。ページ検出と照明補正の両方の癖が見えやすいサンプル。',
+    source: '/algorithm/opencv-samples/cell_pic.jpg',
+    watchFor: '細い本文がつぶれず、背景の机が紙面へにじまず、ページ全体の明るさが均一にそろうかを見る。',
+    viewer: buildViewer(
+      '/algorithm/opencv-samples/cell_pic.jpg',
+      '/algorithm/steps/opencv-samples/cell_pic-step0.jpg',
+      '/algorithm/steps/opencv-samples/cell_pic-step1.png',
+      '/algorithm/steps/opencv-samples/cell_pic-step2.png',
+    ),
+  },
+  {
+    id: 'chart',
+    anchor: 'sample-chart',
+    eyebrow: 'Additional Sample',
+    file: 'chart.JPG',
+    title: '表組み + 黒い下敷き + 反射',
+    description: '白地の資料が黒い背景の上にあり、上辺近くに反射と濃い影がある。色保持と影除去の両方が問われる。',
+    source: '/algorithm/opencv-samples/chart.JPG',
+    watchFor: '反射の灰色ベールが抑えられつつ、青いセルのような意味のある色だけは残るかを見る。',
+    viewer: buildViewer(
+      '/algorithm/opencv-samples/chart.JPG',
+      '/algorithm/steps/opencv-samples/chart-step0.JPG',
+      '/algorithm/steps/opencv-samples/chart-step1.png',
+      '/algorithm/steps/opencv-samples/chart-step2.png',
+    ),
+  },
+  {
+    id: 'desk',
+    anchor: 'sample-desk',
+    eyebrow: 'Additional Sample',
+    file: 'desk.JPG',
+    title: '机上の斜め配置文書',
+    description: 'ページは斜めで、机の色が暖かく、本文は長文で比較的薄い。視点補正とトーン補正の両方が必要。',
+    source: '/algorithm/opencv-samples/desk.JPG',
+    watchFor: '正面化のあとに紙の白が自然に戻り、長文本文のコントラストだけが上がっているかを見る。',
+    viewer: buildViewer(
+      '/algorithm/opencv-samples/desk.JPG',
+      '/algorithm/steps/opencv-samples/desk-step0.JPG',
+      '/algorithm/steps/opencv-samples/desk-step1.png',
+      '/algorithm/steps/opencv-samples/desk-step2.png',
+    ),
+  },
+  {
+    id: 'dollar-bill',
+    anchor: 'sample-dollar-bill',
+    eyebrow: 'Additional Sample',
+    file: 'dollar_bill.JPG',
+    title: '紙幣のような低アスペクト比資料',
+    description: '細長い被写体で、文書というより印刷物に近い。一般的な紙文書以外でどこまで自然に見えるかを確認できる。',
+    source: '/algorithm/opencv-samples/dollar_bill.JPG',
+    watchFor: '白紙化が強すぎて主要色まで消えていないか、逆に背景色が残りすぎていないかを見る。',
+    viewer: buildViewer(
+      '/algorithm/opencv-samples/dollar_bill.JPG',
+      '/algorithm/steps/opencv-samples/dollar_bill-step0.JPG',
+      '/algorithm/steps/opencv-samples/dollar_bill-step1.png',
+      '/algorithm/steps/opencv-samples/dollar_bill-step2.png',
+    ),
+  },
+  {
+    id: 'math-cheat-sheet',
+    anchor: 'sample-math-cheat-sheet',
+    eyebrow: 'Additional Sample',
+    file: 'math_cheat_sheet.JPG',
+    title: '手書き数式の低コントラスト紙',
+    description: 'グレーの紙面全体に手書きが広がり、外周に黒枠もある。背景と書き込みの境界が弱い難ケース。',
+    source: '/algorithm/opencv-samples/math_cheat_sheet.JPG',
+    watchFor: '手書き線を締める過程で、紙全体が汚く見えたり、薄い書き込みが飛んだりしていないかを見る。',
+    viewer: buildViewer(
+      '/algorithm/opencv-samples/math_cheat_sheet.JPG',
+      '/algorithm/steps/opencv-samples/math_cheat_sheet-step0.JPG',
+      '/algorithm/steps/opencv-samples/math_cheat_sheet-step1.png',
+      '/algorithm/steps/opencv-samples/math_cheat_sheet-step2.png',
+    ),
+  },
+  {
+    id: 'notepad',
+    anchor: 'sample-notepad',
+    eyebrow: 'Additional Sample',
+    file: 'notepad.JPG',
+    title: '罫線ノート',
+    description: 'ほぼ白紙に近いノートで、罫線の薄い青と赤い余白線がある。低彩度の色線をどう扱うかがわかりやすい。',
+    source: '/algorithm/opencv-samples/notepad.JPG',
+    watchFor: '紙は白く見えつつ、残したいガイド線まで消えすぎないか、逆に机色が混ざらないかを見る。',
+    viewer: buildViewer(
+      '/algorithm/opencv-samples/notepad.JPG',
+      '/algorithm/steps/opencv-samples/notepad-step0.JPG',
+      '/algorithm/steps/opencv-samples/notepad-step1.png',
+      '/algorithm/steps/opencv-samples/notepad-step2.png',
+    ),
+  },
+  {
+    id: 'receipt',
+    anchor: 'sample-receipt',
+    eyebrow: 'Additional Sample',
+    file: 'receipt.jpg',
+    title: '小さなレシート',
+    description: 'レシートは細長く、背景は暗く、印字はもともと薄い。輪郭抽出と黒白点調整の影響が非常に大きい。',
+    source: '/algorithm/opencv-samples/receipt.jpg',
+    watchFor: '背景がきれいに落ちる一方で、薄い印字や端の細線が消えすぎないかを見る。',
+    viewer: buildViewer(
+      '/algorithm/opencv-samples/receipt.jpg',
+      '/algorithm/steps/opencv-samples/receipt-step0.jpg',
+      '/algorithm/steps/opencv-samples/receipt-step1.png',
+      '/algorithm/steps/opencv-samples/receipt-step2.png',
+    ),
+  },
+  {
+    id: 'tax',
+    anchor: 'sample-tax',
+    eyebrow: 'Additional Sample',
+    file: 'tax.jpeg',
+    title: '既に整ったフォーム文書',
+    description: 'もともと正面に近く、紙も白く、コントラストも比較的よい。補正が強すぎると不自然さが出やすい。',
+    source: '/algorithm/opencv-samples/tax.jpeg',
+    watchFor: 'もともと良い画像に対して過剰補正にならず、細線や文字が不自然に荒れていないかを見る。',
+    viewer: buildViewer(
+      '/algorithm/opencv-samples/tax.jpeg',
+      '/algorithm/steps/opencv-samples/tax-step0.jpeg',
+      '/algorithm/steps/opencv-samples/tax-step1.png',
+      '/algorithm/steps/opencv-samples/tax-step2.png',
+    ),
+  },
+];
+
+const allExamples = [...primaryExamples, ...additionalExamples];
+---
+
+<Layout title="CamScanShare - マジックフィルタ解説">
+  <header class="algo-header">
+    <div class="algo-header-inner">
+      <div>
+        <a href="/" class="algo-back">← 画面設計ドキュメントへ戻る</a>
+        <h1>マジックフィルタのアルゴリズム解説</h1>
+        <p class="algo-subtitle">
+          決定的な document enhancement パイプラインとして、照明補正・自動トーン伸長・紙面白化・色保持をどう組み合わせるかを、
+          2つの入力画像をケーススタディにして説明する。
+        </p>
+      </div>
+      <div class="algo-badges">
+        <span class="algo-badge">Deterministic</span>
+        <span class="algo-badge">OpenCV / Kotlin / Android</span>
+      </div>
+    </div>
+  </header>
+
+  <nav class="algo-nav">
+    <div class="algo-nav-inner">
+      <a href="#overview">概要</a>
+      <a href="#pipeline">処理パイプライン</a>
+      <a href="#examples">サンプル</a>
+    </div>
+  </nav>
+
+  <main class="algo-main">
+    <section class="algo-section" id="overview">
+      <div class="section-heading">
+        <p class="eyebrow">Overview</p>
+        <h2>このページで説明すること</h2>
+        <p>
+          ここで扱うのは「撮影画像から紙の四隅を検出し、台形補正でページを正面化したあと」に適用するマジックフィルタである。
+          目的は、背景の色や影を目立たなくしながら、本文や図版は読みやすく、赤や黄のような意味のある強い色は残すことにある。
+        </p>
+      </div>
+
+      <div class="principle-grid">
+        <article class="principle-card">
+          <h3>狙い</h3>
+          <p>白い紙はより白く、黒い文字はより締める。ただしポスターや注意表示のような強い色は情報として残す。</p>
+        </article>
+        <article class="principle-card">
+          <h3>避けたいこと</h3>
+          <p>K-means のようなランダム性、過剰な二値化、背景と文字の境界にハローを生む強い局所シャープ。</p>
+        </article>
+        <article class="principle-card">
+          <h3>採用する方向</h3>
+          <p>RMODE の黒白点調整に近いトーン設計を軸にしつつ、その前段に照明ムラ補正と紙色補正を足した自動化版を使う。</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="algo-section" id="pipeline">
+      <div class="section-heading">
+        <p class="eyebrow">Pipeline</p>
+        <h2>処理パイプライン</h2>
+        <p>サンプル表示に合わせて、処理は `Step 0 / Step 1 / Step 2` の 3 段階で整理する。式は概念図であり、実装では OpenCV の `GaussianBlur` や `Core.divide` を使う。</p>
+      </div>
+
+      <div class="pipeline-list">
+        <article class="pipeline-step">
+          <div class="step-index">0</div>
+          <div>
+            <h3>Step 0: ページの正面化とクロップ</h3>
+            <p>四隅検出と射影変換で、紙をほぼ長方形の正面ビューにそろえる。フィルタはこの段階の画像を受け取る。</p>
+          </div>
+        </article>
+        <article class="pipeline-step">
+          <div class="step-index">1</div>
+          <div>
+            <h3>Step 1: 照明ムラのフラット化</h3>
+            <p>`Lab` の `L` を大きくぼかした照明面で割り戻し、右だけ暗い、上だけ暖色、といった撮影条件の偏りを均す。</p>
+            <pre><code>L_flat = L / blur(L) * mean(blur(L))</code></pre>
+          </div>
+        </article>
+        <article class="pipeline-step">
+          <div class="step-index">2</div>
+          <div>
+            <h3>Step 2: 最終出力</h3>
+            <p>`L` のヒストグラムから黒点と白点を自動決定して再マップし、さらに紙面白化・色かぶり除去・アクセント色保持までをまとめて適用する。これで眠いグレーを減らし、本文を読みやすくする。</p>
+            <pre><code>L_stretch = clamp((L_flat - blackPoint) / (whitePoint - blackPoint))</code></pre>
+            <p>明るく低彩度な紙領域は `a,b` を 128 へ寄せて白く整え、高彩度な画素だけは別マスクで保持する。</p>
+          </div>
+        </article>
+      </div>
+
+      <div class="comparison-table">
+        <div class="comparison-row comparison-head">
+          <span>方式</span>
+          <span>得意</span>
+          <span>弱点</span>
+        </div>
+        <div class="comparison-row">
+          <span>K-means 減色</span>
+          <span>見た目の整理、少色化</span>
+          <span>ランダム性、色の揺れ、文字がクラスタ境界に引っぱられる</span>
+        </div>
+        <div class="comparison-row">
+          <span>RMODE 単体</span>
+          <span>決定的、速い、実装が単純</span>
+          <span>照明ムラや紙色の補正が弱い</span>
+        </div>
+        <div class="comparison-row">
+          <span>Flat-field + Auto RMODE</span>
+          <span>白紙化、文字強調、再現性</span>
+          <span>閾値チューニングが必要</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="algo-section" id="examples">
+      <div class="section-heading">
+        <p class="eyebrow">Samples</p>
+        <h2>Samples</h2>
+        <p>全画像に同じ Original / Step 0 / Step 1 / Step 2 を適用した結果を並べる。</p>
+      </div>
+
+      <div class="example-stack">
+        {allExamples.map((example) => (
+          <article class="sample-view-card" id={example.anchor}>
+            <figure class="case-figure sample-view-figure">
+              <div class="step-viewer" data-viewer={example.id}>
+                <div class="step-toggle-row">
+                  {example.viewer.map((step, index) => (
+                    <button
+                      type="button"
+                      class={`step-toggle${index === 0 ? ' is-active' : ''}`}
+                      data-viewer-target={example.id}
+                      data-src={step.src}
+                      data-caption={step.caption}
+                    >
+                      {step.label}
+                    </button>
+                  ))}
+                </div>
+                <img
+                  class="step-viewer-image"
+                  data-step-image={example.id}
+                  src={example.viewer[0].src}
+                  alt={`${example.title} の段階画像`}
+                  loading="lazy"
+                />
+                <div class="step-viewer-meta">
+                  <p class="step-viewer-caption" data-step-caption={example.id}>{example.viewer[0].caption}</p>
+                </div>
+              </div>
+            </figure>
+          </article>
+        ))}
+      </div>
+    </section>
+  </main>
+</Layout>
+
+<style>
+  .algo-header {
+    background: linear-gradient(135deg, #0c66e4 0%, #1d7af0 55%, #7fd0ff 100%);
+    color: var(--ds-text-inverse);
+    padding: var(--ds-space-500) var(--ds-space-400);
+  }
+
+  .algo-header-inner,
+  .algo-nav-inner,
+  .algo-main {
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+
+  .algo-back {
+    display: inline-flex;
+    color: rgba(255, 255, 255, 0.9);
+    text-decoration: none;
+    font-size: var(--ds-font-size-100);
+    margin-bottom: var(--ds-space-150);
+  }
+
+  .algo-back:hover { color: #fff; }
+
+  .algo-header h1 {
+    font-size: clamp(32px, 4vw, 54px);
+    line-height: 1.05;
+    margin-bottom: var(--ds-space-150);
+    max-width: 11ch;
+  }
+
+  .algo-subtitle {
+    max-width: 760px;
+    font-size: var(--ds-font-size-200);
+    line-height: 1.8;
+    opacity: 0.94;
+  }
+
+  .algo-badges {
+    display: flex;
+    gap: var(--ds-space-100);
+    flex-wrap: wrap;
+    margin-top: var(--ds-space-300);
+  }
+
+  .algo-badge {
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.16);
+    border: 1px solid rgba(255, 255, 255, 0.28);
+    font-size: var(--ds-font-size-075);
+    font-weight: var(--ds-font-weight-semibold);
+  }
+
+  .algo-nav {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: rgba(255, 255, 255, 0.92);
+    backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--ds-border);
+  }
+
+  .algo-nav-inner {
+    display: flex;
+    gap: var(--ds-space-150);
+    overflow-x: auto;
+    padding: var(--ds-space-150) var(--ds-space-400);
+  }
+
+  .algo-nav a {
+    color: var(--ds-text-subtle);
+    text-decoration: none;
+    white-space: nowrap;
+    font-weight: var(--ds-font-weight-medium);
+  }
+
+  .algo-nav a:hover { color: var(--ds-text-brand); }
+
+  .algo-main {
+    padding: var(--ds-space-500) var(--ds-space-400) var(--ds-space-800);
+  }
+
+  .algo-section + .algo-section {
+    margin-top: var(--ds-space-800);
+  }
+
+  .section-heading {
+    max-width: 820px;
+    margin-bottom: var(--ds-space-400);
+  }
+
+  .eyebrow {
+    color: var(--ds-text-brand);
+    font-size: var(--ds-font-size-075);
+    font-weight: var(--ds-font-weight-bold);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-bottom: var(--ds-space-100);
+  }
+
+  .section-heading h2,
+  .section-heading h3 {
+    font-size: clamp(24px, 3vw, 40px);
+    line-height: 1.15;
+    margin-bottom: var(--ds-space-150);
+  }
+
+  .section-heading h3 {
+    font-size: clamp(22px, 2.5vw, 32px);
+  }
+
+  .section-heading p {
+    color: var(--ds-text-subtle);
+    font-size: var(--ds-font-size-200);
+    line-height: 1.8;
+  }
+
+  .principle-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--ds-space-200);
+  }
+
+  .principle-card,
+  .comparison-table,
+  .case-figure {
+    background: var(--ds-surface-raised);
+    border: 1px solid var(--ds-border);
+    border-radius: 20px;
+    box-shadow: var(--ds-shadow-raised);
+  }
+
+  .principle-card {
+    padding: var(--ds-space-300);
+  }
+
+  .principle-card h3,
+  .sample-view-header h3 {
+    margin-bottom: var(--ds-space-100);
+    font-size: var(--ds-font-size-300);
+  }
+
+  .principle-card p,
+  .sample-view-header p {
+    color: var(--ds-text-subtle);
+    line-height: 1.8;
+  }
+
+  .pipeline-list {
+    display: grid;
+    gap: var(--ds-space-150);
+  }
+
+  .pipeline-step {
+    display: grid;
+    grid-template-columns: 56px 1fr;
+    gap: var(--ds-space-200);
+    padding: var(--ds-space-250, 20px);
+    background: var(--ds-surface-raised);
+    border: 1px solid var(--ds-border);
+    border-radius: 18px;
+    box-shadow: var(--ds-shadow-raised);
+  }
+
+  .step-index {
+    width: 56px;
+    height: 56px;
+    border-radius: 18px;
+    display: grid;
+    place-items: center;
+    background: linear-gradient(135deg, #0c66e4, #7f56d9);
+    color: white;
+    font-size: 22px;
+    font-weight: var(--ds-font-weight-bold);
+  }
+
+  .pipeline-step h3 { margin-bottom: var(--ds-space-100); }
+  .pipeline-step p { color: var(--ds-text-subtle); line-height: 1.8; }
+
+  .pipeline-step pre {
+    margin-top: var(--ds-space-150);
+    padding: var(--ds-space-200);
+    border-radius: 14px;
+    background: #101828;
+    color: #e9f2ff;
+    overflow-x: auto;
+    font-size: 13px;
+  }
+
+  .comparison-table {
+    margin-top: var(--ds-space-300);
+    overflow: hidden;
+  }
+
+  .comparison-row {
+    display: grid;
+    grid-template-columns: 1.1fr 1fr 1fr;
+  }
+
+  .comparison-row span {
+    padding: var(--ds-space-200);
+    border-top: 1px solid var(--ds-border);
+  }
+
+  .comparison-head span {
+    background: #f1f5ff;
+    font-weight: var(--ds-font-weight-semibold);
+    border-top: none;
+  }
+
+  .example-stack {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: var(--ds-space-300);
+    align-items: start;
+  }
+
+  .sample-view-card {
+    display: grid;
+    gap: 0;
+    align-self: start;
+  }
+
+  .case-figure {
+    position: sticky;
+    top: 96px;
+    overflow: hidden;
+  }
+
+  .sample-view-figure {
+    position: static;
+  }
+
+  .case-figure img {
+    display: block;
+    width: 100%;
+    height: auto;
+    background: #fff;
+  }
+
+  .step-viewer {
+    display: grid;
+    gap: var(--ds-space-150);
+    padding: var(--ds-space-200);
+  }
+
+  .step-toggle-row {
+    display: flex;
+    gap: var(--ds-space-100);
+    flex-wrap: wrap;
+  }
+
+  .step-toggle {
+    border: 1px solid var(--ds-border);
+    background: var(--ds-surface);
+    color: var(--ds-text-subtle);
+    border-radius: 999px;
+    padding: 8px 14px;
+    font: inherit;
+    font-weight: var(--ds-font-weight-semibold);
+    cursor: pointer;
+    transition: 0.18s ease;
+  }
+
+  .step-toggle:hover {
+    border-color: var(--ds-border-brand);
+    color: var(--ds-text-brand);
+  }
+
+  .step-toggle.is-active {
+    background: #e9f2ff;
+    border-color: var(--ds-border-brand);
+    color: var(--ds-text-brand);
+  }
+
+  .step-viewer-image {
+    width: 100%;
+    display: block;
+    border-radius: 16px;
+    border: 1px solid var(--ds-border);
+    background: #fff;
+  }
+
+  .step-viewer-meta {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--ds-space-150);
+  }
+
+  .step-viewer-caption {
+    color: var(--ds-text-subtle);
+    font-size: var(--ds-font-size-075);
+    line-height: 1.7;
+  }
+
+  .step-viewer-source {
+    flex-shrink: 0;
+    color: var(--ds-text-brand);
+    text-decoration: none;
+    font-size: var(--ds-font-size-075);
+    font-weight: var(--ds-font-weight-semibold);
+  }
+
+  .step-viewer-source:hover {
+    text-decoration: underline;
+  }
+
+  @media (max-width: 960px) {
+    .principle-grid,
+    .comparison-row {
+      grid-template-columns: 1fr;
+    }
+
+    .example-stack {
+      grid-template-columns: 1fr;
+    }
+
+    .case-figure {
+      position: static;
+    }
+
+    .step-viewer-meta {
+      align-items: flex-start;
+      flex-direction: column;
+    }
+
+    .algo-main,
+    .algo-nav-inner {
+      padding-left: var(--ds-space-200);
+      padding-right: var(--ds-space-200);
+    }
+  }
+</style>
+
+<script>
+  const stepButtons = document.querySelectorAll('.step-toggle');
+
+  stepButtons.forEach((button) => {
+    button.addEventListener('click', () => {
+      const viewer = button.dataset.viewerTarget;
+      const src = button.dataset.src;
+      const caption = button.dataset.caption;
+      if (!viewer || !src || !caption) return;
+
+      const image = document.querySelector(`[data-step-image="${viewer}"]`);
+      const captionNode = document.querySelector(`[data-step-caption="${viewer}"]`);
+      if (!image || !captionNode) return;
+
+      document
+        .querySelectorAll(`.step-toggle[data-viewer-target="${viewer}"]`)
+        .forEach((node) => node.classList.remove('is-active'));
+
+      button.classList.add('is-active');
+      image.setAttribute('src', src);
+      captionNode.textContent = caption;
+    });
+  });
+</script>
