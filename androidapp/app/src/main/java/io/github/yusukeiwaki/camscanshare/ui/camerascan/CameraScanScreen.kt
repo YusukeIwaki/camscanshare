@@ -146,7 +146,7 @@ fun CameraScanScreen(
                                         try {
                                             val bitmap = imageProcessor.toBitmapWithCorrectRotation(imageProxy)
                                             analysisImageAspectRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
-                                            val corners = paperDetector.value.detect(bitmap)
+                                            val corners = paperDetector.value.detectStabilized(bitmap)
                                             detectedCorners = corners
                                             bitmap.recycle()
                                         } catch (e: Exception) {
