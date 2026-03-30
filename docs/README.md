@@ -1,43 +1,59 @@
-# Astro Starter Kit: Minimal
+# Documentation Site
 
-```sh
-npm create astro@latest -- --template minimal
+This directory contains the Astro-based documentation site for CamScanShare.
+
+Note: the site content itself is currently only available in Japanese.
+
+## Local Development
+
+Run all commands from `docs/`.
+
+```bash
+npm install
+npm run dev
 ```
 
-> 🧑‍🚀 **Seasoned astronaut?** Delete this file. Have fun!
+Open [http://localhost:4321/](http://localhost:4321/) in your browser to view the documentation site. Each screen section contains an interactive mockup so you can inspect transitions and behavior.
 
-## 🚀 Project Structure
-
-Inside of your Astro project, you'll see the following folders and files:
+## Project Structure
 
 ```text
-/
-├── public/
+docs/
 ├── src/
+│   ├── layouts/Layout.astro     # Base layout using Atlassian Design System styling
 │   └── pages/
-│       └── index.astro
-└── package.json
+│       ├── index.astro          # Main documentation page
+│       └── filters.astro        # Filter behavior documentation
+├── public/
+│   ├── mockups/                 # Interactive HTML mockups
+│   │   ├── document-list.html   # Document list mockup
+│   │   ├── camera-scan.html     # Camera scan mockup
+│   │   ├── camera-retake.html   # Camera retake mockup
+│   │   ├── page-list.html       # Page list mockup
+│   │   └── page-edit.html       # Page edit mockup
+│   └── algorithm/               # Static assets for algorithm and filter docs
+├── astro.config.mjs
+├── package.json
+└── README.md
 ```
 
-Astro looks for `.astro` or `.md` files in the `src/pages/` directory. Each page is exposed as a route based on its file name.
+## Commands
 
-There's nothing special about `src/components/`, but that's where we like to put any Astro/React/Vue/Svelte/Preact components.
+| Command | Action |
+| --- | --- |
+| `npm install` | Install dependencies |
+| `npm run dev` | Start the local dev server at `http://localhost:4321/` |
+| `npm run build` | Build the static site |
+| `npm run preview` | Preview the production build locally |
 
-Any static assets, like images, can be placed in the `public/` directory.
+## Design Systems
 
-## 🧞 Commands
+| Target | Design System |
+| --- | --- |
+| Documentation site | [Atlassian Design System](https://atlassian.design/components) |
+| App screen mockups | [Material Web](https://github.com/material-components/material-web) |
 
-All commands are run from the root of the project, from a terminal:
+## Notes
 
-| Command                   | Action                                           |
-| :------------------------ | :----------------------------------------------- |
-| `npm install`             | Installs dependencies                            |
-| `npm run dev`             | Starts local dev server at `localhost:4321`      |
-| `npm run build`           | Build your production site to `./dist/`          |
-| `npm run preview`         | Preview your build locally, before deploying     |
-| `npm run astro ...`       | Run CLI commands like `astro add`, `astro check` |
-| `npm run astro -- --help` | Get help using the Astro CLI                     |
-
-## 👀 Want to learn more?
-
-Feel free to check [our documentation](https://docs.astro.build) or jump into our [Discord server](https://astro.build/chat).
+- `public/mockups/` contains standalone interactive mockups embedded from the main documentation page.
+- `public/algorithm/` contains sample images and generated assets used to explain detection and filter behavior.
