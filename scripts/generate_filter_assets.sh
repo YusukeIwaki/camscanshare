@@ -26,5 +26,6 @@ then
 fi
 
 python "$ROOT_DIR/scripts/generate_step0_samples.py" "$@"
+python "$ROOT_DIR/scripts/generate_step1_aspect_samples.py" "$@"
 python "$ROOT_DIR/scripts/generate_magic_filter_steps.py" "$@"
 python "$ROOT_DIR/scripts/generate_simple_filter_samples.py" "$@"

@@ -26,6 +26,10 @@ FILTERS = {
     },
 }
 
+A4_PORTRAIT = 210.0 / 297.0
+A4_LANDSCAPE = 297.0 / 210.0
+A4_TOLERANCE = 0.20
+
 
 def repo_root_for(script_path: str) -> Path:
     return Path(script_path).resolve().parent.parent
@@ -52,6 +56,78 @@ def write_image(path: Path, image: np.ndarray) -> None:
     ok = cv2.imwrite(str(path), image)
     if not ok:
         raise RuntimeError(f"Failed to write image: {path}")
+
+
+def snap_ratio_to_paper(image_ratio: float, tolerance: float = A4_TOLERANCE) -> float | None:
+    portrait_delta = abs(image_ratio / A4_PORTRAIT - 1.0)
+    landscape_delta = abs(image_ratio / A4_LANDSCAPE - 1.0)
+    best_ratio, best_delta = (
+        (A4_PORTRAIT, portrait_delta)
+        if portrait_delta <= landscape_delta
+        else (A4_LANDSCAPE, landscape_delta)
+    )
+    if best_delta <= tolerance:
+        return best_ratio
+    return None
+
+
+def compute_target_paper_ratio(width: int, height: int) -> float | None:
+    if width <= 0 or height <= 0:
+        return A4_PORTRAIT
+    return snap_ratio_to_paper(width / float(height))
+
+
+def normalize_document_aspect(
+    image: np.ndarray,
+    target_ratio: float | None = None,
+) -> tuple[np.ndarray, str]:
+    height, width = image.shape[:2]
+    if target_ratio is None:
+        target_ratio = compute_target_paper_ratio(width, height)
+    if target_ratio is None:
+        return image.copy(), "keep_original_ratio"
+
+    area = width * height
+    target_width = max(1, int(round(np.sqrt(area * target_ratio))))
+    target_height = max(1, int(round(np.sqrt(area / target_ratio))))
+
+    if target_width == width and target_height == height:
+        return image.copy(), "already_close_to_a4"
+
+    interpolation = cv2.INTER_CUBIC if target_width > width or target_height > height else cv2.INTER_AREA
+    normalized = cv2.resize(image, (target_width, target_height), interpolation=interpolation)
+    orientation = "portrait" if target_ratio == A4_PORTRAIT else "landscape"
+    return normalized, f"a4_{orientation}"
+
+
+def quad_side_lengths(points: np.ndarray) -> tuple[float, float, float, float]:
+    rect = order_points(points.reshape(4, 2).astype(np.float32))
+    top_left, top_right, bottom_right, bottom_left = rect
+    width_top = float(np.linalg.norm(top_right - top_left))
+    width_bottom = float(np.linalg.norm(bottom_right - bottom_left))
+    height_left = float(np.linalg.norm(bottom_left - top_left))
+    height_right = float(np.linalg.norm(bottom_right - top_right))
+    return width_top, width_bottom, height_left, height_right
+
+
+def estimate_quad_paper_ratio(points: np.ndarray) -> float | None:
+    width_top, width_bottom, height_left, height_right = quad_side_lengths(points)
+    max_width = max(width_top, width_bottom)
+    min_width = max(1.0, min(width_top, width_bottom))
+    max_height = max(height_left, height_right)
+    min_height = max(1.0, min(height_left, height_right))
+
+    observed_ratio = max_width / max_height
+    width_skew = max_width / min_width
+    height_skew = max_height / min_height
+    estimated_ratio = observed_ratio
+
+    # When a portrait page is strongly foreshortened, max-width/max-height drifts
+    # toward a square. Prefer the far edge width against the tall edge height.
+    if observed_ratio < 1.05 and width_skew > 1.20 and width_skew >= height_skew:
+        estimated_ratio = min_width / max_height
+
+    return snap_ratio_to_paper(estimated_ratio)
 
 
 def resize_for_detection(image: np.ndarray, target_height: int = 500) -> tuple[np.ndarray, float]:
@@ -317,11 +393,14 @@ def trim_to_document_bounds(image: np.ndarray) -> np.ndarray:
     return image[top:bottom, left:right]
 
 
-def detect_document(image: np.ndarray, crop_mode: str | None = None) -> tuple[np.ndarray, str]:
+def find_document_candidate(image: np.ndarray, crop_mode: str | None = None) -> dict[str, object] | None:
     if crop_mode == "copy_source":
-        return image.copy(), "copy_source"
+        return {
+            "points": None,
+            "source": "copy_source",
+            "kind": "copy_source",
+        }
 
-    original = image.copy()
     resized, ratio = resize_for_detection(image)
     gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
@@ -359,7 +438,7 @@ def detect_document(image: np.ndarray, crop_mode: str | None = None) -> tuple[np
 
     for source, mask in (("merged", merged), ("paper", paper_mask)):
         for points, kind in collect_candidate_quads(mask, ratio, min_area):
-            score = score_detection_candidate(original, points, source, kind)
+            score = score_detection_candidate(image, points, source, kind)
             if score < 0:
                 continue
             candidates.append(
@@ -372,19 +451,44 @@ def detect_document(image: np.ndarray, crop_mode: str | None = None) -> tuple[np
             )
 
     if candidates:
-        selected = max(candidates, key=lambda candidate: float(candidate["score"]))
-        warped = trim_dark_border(four_point_transform(original, selected["points"]))
-        return trim_to_document_bounds(warped), str(selected["source"])
+        return max(candidates, key=lambda candidate: float(candidate["score"]))
 
     contours, _ = cv2.findContours(merged, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
-        return image.copy(), "fallback_source"
+        return None
 
     fallback = max(contours, key=cv2.contourArea)
     rect = cv2.minAreaRect(fallback)
     points = cv2.boxPoints(rect).astype(np.float32) * ratio
-    warped = trim_dark_border(four_point_transform(original, points))
-    return trim_to_document_bounds(warped), "minAreaRect"
+    return {
+        "points": points,
+        "source": "fallback_source",
+        "kind": "minAreaRect",
+    }
+
+
+def detect_document(image: np.ndarray, crop_mode: str | None = None) -> tuple[np.ndarray, str]:
+    candidate = find_document_candidate(image, crop_mode)
+    if candidate is None:
+        return image.copy(), "fallback_source"
+    points = candidate["points"]
+    if points is None:
+        return image.copy(), str(candidate["source"])
+
+    warped = trim_dark_border(four_point_transform(image, points))
+    return trim_to_document_bounds(warped), str(candidate["source"])
+
+
+def estimate_document_paper_ratio(image: np.ndarray, crop_mode: str | None = None) -> float | None:
+    candidate = find_document_candidate(image, crop_mode)
+    if candidate is None:
+        return compute_target_paper_ratio(image.shape[1], image.shape[0])
+
+    points = candidate["points"]
+    if points is None:
+        return compute_target_paper_ratio(image.shape[1], image.shape[0])
+
+    return estimate_quad_paper_ratio(points)
 
 
 def estimate_illumination(luminance: np.ndarray) -> np.ndarray:

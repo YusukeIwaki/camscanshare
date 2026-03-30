@@ -111,9 +111,10 @@ agent-browser scrollintoview "#screen-page-edit .phone-frame" && agent-browser s
 1. **アルゴリズム設計・検証**: `docs/src/pages/filters.astro` のフィルタ解説ページで、フィルタの効果をサンプル画像で確認・比較する。ここが各フィルタのパラメータと処理パイプラインの正（source of truth）。
 2. **サンプル画像の生成**: `scripts/` のPythonスクリプトでサンプル画像を一括生成し、`docs/public/algorithm/` 以下に配置する。
    - `scripts/generate_step0_samples.py`: 全サンプルのStep 0画像を生成（台形選択 + 射影変換）
-   - `scripts/generate_magic_filter_steps.py`: Step 0を入力に、マジックフィルタのStep 1/2画像を生成（OpenCVパイプライン）
-   - `scripts/generate_simple_filter_samples.py`: Step 0を入力に、くっきり・白黒・ホワイトボード・鮮やかフィルタを生成（ColorMatrix相当の処理）
-   - `scripts/generate_filter_assets.sh`: 上記3段を順に実行して全画像を再生成
+   - `scripts/generate_step1_aspect_samples.py`: Step 0を入力に、A4 に近い文書だけ比率正規化したStep 1画像を生成
+   - `scripts/generate_magic_filter_steps.py`: Step 1を入力に、マジックフィルタのStep 2/3画像を生成（OpenCVパイプライン）
+   - `scripts/generate_simple_filter_samples.py`: Step 1を入力に、くっきり・白黒・ホワイトボード・鮮やかフィルタを生成（ColorMatrix相当の処理）
+   - `scripts/generate_filter_assets.sh`: 上記4段を順に実行して全画像を再生成
    - 入力ソース画像のリストは `docs/filter-samples.json` で管理
 3. **アプリへの実装**: 検証で確定したパラメータをAndroid/iOSアプリに移植する。Androidの実装は `androidapp/` の `ImageFilter.kt`（ColorMatrix定義）と `ImageProcessor.kt`（マジックフィルタのOpenCV実装）にある。
 

@@ -20,12 +20,13 @@ const filters = [
   {
     key: 'magic',
     name: 'マジック',
-    description: 'OpenCV による照明補正・自動トーン伸長・紙面白化・色保持を組み合わせた決定的パイプライン。既定フィルタ。',
-    formula: 'Flat-field correction → Auto RMODE → Paper whitening',
-    detail: 'Lab 色空間の L チャンネルをぼかし面で割り戻して照明ムラを除去（Step 1）、ヒストグラムの黒白点で自動ストレッチし、紙領域は白化しつつアクセント色を保持する（Step 2）。',
+    description: 'OpenCV による比率正規化・照明補正・自動トーン伸長・紙面白化・色保持を組み合わせた決定的パイプライン。既定フィルタ。',
+    formula: 'A4 ratio normalization → Flat-field correction → Auto RMODE → Paper whitening',
+    detail: 'A4 に近い比率の文書は、画素数をほぼ維持したまま正確な A4 比率へ寄せる（Step 1）。その後、Lab 色空間の L チャンネルをぼかし面で割り戻して照明ムラを除去し（Step 2）、ヒストグラムの黒白点で自動ストレッチし、紙領域は白化しつつアクセント色を保持する（Step 3）。',
     steps: [
-      { label: 'Step 1', description: '照明ムラ補正: L_flat = L / blur(L) * mean(blur(L))' },
-      { label: 'Step 2', description: '自動トーン + 白化: L_stretch = clamp((L_flat - blackPoint) / (whitePoint - blackPoint))' },
+      { label: 'Step 1', description: 'A4比率補正: A4 に近い文書だけ、縦横をバランスよく伸縮して正確な紙比率へ寄せる。' },
+      { label: 'Step 2', description: '照明ムラ補正: L_flat = L / blur(L) * mean(blur(L))' },
+      { label: 'Step 3', description: '自動トーン + 白化: L_stretch = clamp((L_flat - blackPoint) / (whitePoint - blackPoint))' },
     ],
   },
   {
@@ -47,12 +48,13 @@ const filters = [
 function buildViewerForFilter(filterKey, sample) {
   const steps = [
     { label: 'Step 0', src: '/' + sample.step0.replace('docs/public/', ''), caption: 'Step 0: 台形選択とクロップ後。' },
+    { label: 'Step 1', src: '/' + sample.step1.replace('docs/public/', ''), caption: 'Step 1: A4 比率に近い文書だけ、画素数をほぼ維持したまま紙比率へ正規化。' },
   ];
 
   if (filterKey === 'magic') {
     steps.push(
-      { label: 'Step 1', src: '/' + sample.magic_step1.replace('docs/public/', ''), caption: 'Step 1: 照明ムラ補正後。' },
-      { label: 'Step 2', src: '/' + sample.magic_step2.replace('docs/public/', ''), caption: 'Step 2: 最終出力。Auto RMODE + 紙面白化。' },
+      { label: 'Step 2', src: '/' + sample.magic_step2.replace('docs/public/', ''), caption: 'Step 2: 照明ムラ補正後。' },
+      { label: 'Step 3', src: '/' + sample.magic_step3.replace('docs/public/', ''), caption: 'Step 3: 最終出力。Auto RMODE + 紙面白化。' },
     );
   } else {
     const filterPath = sample.filters[filterKey];
@@ -92,7 +94,7 @@ function buildViewerForFilter(filterKey, sample) {
     <section class="algo-section filter-section" id="perspective" data-filter-section="perspective">
       <div class="section-heading">
         <h2>台形選択</h2>
-        <p>撮影画像から紙の四隅を検出し、射影変換で正面ビューにそろえる。すべてのフィルタはこの補正後の画像に対して適用される。</p>
+        <p>撮影画像から紙の四隅を検出し、射影変換で正面ビューにそろえる。A4 に近い比率の文書は、その後に紙比率へ正規化してからフィルタを適用する。</p>
       </div>
 
       <div class="example-stack">
@@ -100,7 +102,8 @@ function buildViewerForFilter(filterKey, sample) {
           const viewerId = `perspective-${sample.id}`;
           const viewer = [
             { label: 'オリジナル', src: '/' + sample.source.replace('docs/public/', ''), caption: 'オリジナル: カメラ撮影そのままの入力画像。' },
-            { label: '台形選択後', src: '/' + sample.step0.replace('docs/public/', ''), caption: '台形選択後: 紙領域を検出し、正面に射影変換した状態。' },
+            { label: 'Step 0', src: '/' + sample.step0.replace('docs/public/', ''), caption: 'Step 0: 紙領域を検出し、正面に射影変換した状態。' },
+            { label: 'Step 1', src: '/' + sample.step1.replace('docs/public/', ''), caption: 'Step 1: A4 に近い文書だけ、画素数をほぼ維持したまま紙比率へ正規化。' },
           ];
           return (
             <article class="sample-view-card">

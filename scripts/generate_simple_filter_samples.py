@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Generate filter sample images for sharpen / bw / whiteboard / vivid filters.
 
-Reads Step 0 (cropped) images produced by generate_step0_samples.py
+Reads Step 1 (aspect-normalized) images produced by generate_step1_aspect_samples.py
 and applies each simple filter using ColorMatrix-equivalent operations
 that match the Android app's ImageFilter.kt / ImageProcessor.kt.
 
@@ -26,7 +26,7 @@ from filter_asset_pipeline import (
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Generate simple filter sample images from Step 0 crops.",
+        description="Generate simple filter sample images from Step 1 normalized crops.",
     )
     parser.add_argument(
         "--manifest",
@@ -56,11 +56,11 @@ def main() -> None:
     selected_filters = set(args.filter) if args.filter else set(FILTERS.keys())
 
     for entry in entries:
-        step0_path = (repo_root / entry["step0"]).resolve()
+        step0_path = (repo_root / entry["step1"]).resolve()
         try:
             step0 = read_image(step0_path)
         except RuntimeError:
-            print(f'  SKIP {entry["id"]}: step0 not found at {step0_path}')
+            print(f'  SKIP {entry["id"]}: step1 not found at {step0_path}')
             continue
 
         for filter_key in sorted(selected_filters):

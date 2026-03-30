@@ -4,63 +4,72 @@
     "source": "docs/public/algorithm/test.jpg",
     "step0": "docs/public/algorithm/steps/test-step0.png",
     "step1": "docs/public/algorithm/steps/test-step1.png",
-    "step2": "docs/public/algorithm/steps/test-step2.png"
+    "step2": "docs/public/algorithm/steps/test-step2.png",
+    "step3": "docs/public/algorithm/steps/test-step3.png"
   },
   {
     "id": "flat",
     "source": "docs/public/algorithm/test2.png",
     "step0": "docs/public/algorithm/steps/test2-step0.png",
     "step1": "docs/public/algorithm/steps/test2-step1.png",
-    "step2": "docs/public/algorithm/steps/test2-step2.png"
+    "step2": "docs/public/algorithm/steps/test2-step2.png",
+    "step3": "docs/public/algorithm/steps/test2-step3.png"
   },
   {
     "id": "cell-pic",
     "source": "docs/public/algorithm/opencv-samples/cell_pic.jpg",
     "step0": "docs/public/algorithm/steps/opencv-samples/cell_pic-step0.jpg",
     "step1": "docs/public/algorithm/steps/opencv-samples/cell_pic-step1.png",
-    "step2": "docs/public/algorithm/steps/opencv-samples/cell_pic-step2.png"
+    "step2": "docs/public/algorithm/steps/opencv-samples/cell_pic-step2.png",
+    "step3": "docs/public/algorithm/steps/opencv-samples/cell_pic-step3.png"
   },
   {
     "id": "chart",
     "source": "docs/public/algorithm/opencv-samples/chart.JPG",
     "step0": "docs/public/algorithm/steps/opencv-samples/chart-step0.JPG",
     "step1": "docs/public/algorithm/steps/opencv-samples/chart-step1.png",
-    "step2": "docs/public/algorithm/steps/opencv-samples/chart-step2.png"
+    "step2": "docs/public/algorithm/steps/opencv-samples/chart-step2.png",
+    "step3": "docs/public/algorithm/steps/opencv-samples/chart-step3.png"
   },
   {
     "id": "desk",
     "source": "docs/public/algorithm/opencv-samples/desk.JPG",
     "step0": "docs/public/algorithm/steps/opencv-samples/desk-step0.JPG",
     "step1": "docs/public/algorithm/steps/opencv-samples/desk-step1.png",
-    "step2": "docs/public/algorithm/steps/opencv-samples/desk-step2.png"
+    "step2": "docs/public/algorithm/steps/opencv-samples/desk-step2.png",
+    "step3": "docs/public/algorithm/steps/opencv-samples/desk-step3.png"
   },
   {
     "id": "dollar-bill",
     "source": "docs/public/algorithm/opencv-samples/dollar_bill.JPG",
     "step0": "docs/public/algorithm/steps/opencv-samples/dollar_bill-step0.JPG",
     "step1": "docs/public/algorithm/steps/opencv-samples/dollar_bill-step1.png",
-    "step2": "docs/public/algorithm/steps/opencv-samples/dollar_bill-step2.png"
+    "step2": "docs/public/algorithm/steps/opencv-samples/dollar_bill-step2.png",
+    "step3": "docs/public/algorithm/steps/opencv-samples/dollar_bill-step3.png"
   },
   {
     "id": "math-cheat-sheet",
     "source": "docs/public/algorithm/opencv-samples/math_cheat_sheet.JPG",
     "step0": "docs/public/algorithm/steps/opencv-samples/math_cheat_sheet-step0.JPG",
     "step1": "docs/public/algorithm/steps/opencv-samples/math_cheat_sheet-step1.png",
-    "step2": "docs/public/algorithm/steps/opencv-samples/math_cheat_sheet-step2.png"
+    "step2": "docs/public/algorithm/steps/opencv-samples/math_cheat_sheet-step2.png",
+    "step3": "docs/public/algorithm/steps/opencv-samples/math_cheat_sheet-step3.png"
   },
   {
     "id": "notepad",
     "source": "docs/public/algorithm/opencv-samples/notepad.JPG",
     "step0": "docs/public/algorithm/steps/opencv-samples/notepad-step0.JPG",
     "step1": "docs/public/algorithm/steps/opencv-samples/notepad-step1.png",
-    "step2": "docs/public/algorithm/steps/opencv-samples/notepad-step2.png"
+    "step2": "docs/public/algorithm/steps/opencv-samples/notepad-step2.png",
+    "step3": "docs/public/algorithm/steps/opencv-samples/notepad-step3.png"
   },
   {
     "id": "receipt",
     "source": "docs/public/algorithm/opencv-samples/receipt.jpg",
     "step0": "docs/public/algorithm/steps/opencv-samples/receipt-step0.jpg",
     "step1": "docs/public/algorithm/steps/opencv-samples/receipt-step1.png",
-    "step2": "docs/public/algorithm/steps/opencv-samples/receipt-step2.png"
+    "step2": "docs/public/algorithm/steps/opencv-samples/receipt-step2.png",
+    "step3": "docs/public/algorithm/steps/opencv-samples/receipt-step3.png"
   },
   {
     "id": "tax",
@@ -68,6 +77,7 @@
     "crop_mode": "copy_source",
     "step0": "docs/public/algorithm/steps/opencv-samples/tax-step0.jpeg",
     "step1": "docs/public/algorithm/steps/opencv-samples/tax-step1.png",
-    "step2": "docs/public/algorithm/steps/opencv-samples/tax-step2.png"
+    "step2": "docs/public/algorithm/steps/opencv-samples/tax-step2.png",
+    "step3": "docs/public/algorithm/steps/opencv-samples/tax-step3.png"
   }
 ]
