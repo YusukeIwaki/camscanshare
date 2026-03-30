@@ -13,8 +13,8 @@ FILTERS = {
         "ops": [("contrast", 1.4), ("brightness", 1.05)],
     },
     "bw": {
-        # grayscale(1) contrast(1.3)
-        "ops": [("grayscale", 1.0), ("contrast", 1.3)],
+        # illumination correction + Sauvola-like text mask + multitone grayscale quantization
+        "pipeline": "document_bw",
     },
     "whiteboard": {
         # brightness(1.3) contrast(1.6) saturate(0)
@@ -603,6 +603,199 @@ def blend_toward_value(channel: np.ndarray, mask: np.ndarray, target: float, str
     return np.clip(blended, 0, 255).astype(np.uint8)
 
 
+def compute_local_mean_std(
+    luminance: np.ndarray,
+    window_size: int = 31,
+) -> tuple[np.ndarray, np.ndarray]:
+    source = luminance.astype(np.float32)
+    mean = cv2.boxFilter(
+        source,
+        cv2.CV_32F,
+        (window_size, window_size),
+        normalize=True,
+        borderType=cv2.BORDER_REPLICATE,
+    )
+    sq_mean = cv2.boxFilter(
+        source * source,
+        cv2.CV_32F,
+        (window_size, window_size),
+        normalize=True,
+        borderType=cv2.BORDER_REPLICATE,
+    )
+    variance = np.maximum(sq_mean - mean * mean, 0.0)
+    stddev = np.sqrt(variance)
+    return mean, stddev
+
+
+def build_sauvola_structure_masks(
+    luminance: np.ndarray,
+    window_size: int = 31,
+    k: float = 0.18,
+    dynamic_range: float = 128.0,
+) -> tuple[np.ndarray, np.ndarray]:
+    source = luminance.astype(np.float32)
+    mean, stddev = compute_local_mean_std(luminance, window_size=window_size)
+    threshold = mean * (1.0 + k * (stddev / dynamic_range - 1.0))
+    delta = mean - source
+    candidate = source <= threshold
+    soft = np.logical_and(candidate, delta >= np.maximum(10.0, stddev * 0.22))
+    strong = np.logical_and(candidate, delta >= np.maximum(22.0, stddev * 0.40))
+    return (soft.astype(np.uint8) * 255, strong.astype(np.uint8) * 255)
+
+
+def quantize_luminance(
+    luminance: np.ndarray,
+    thresholds: list[int],
+    levels: list[int],
+) -> np.ndarray:
+    bins = np.digitize(luminance, thresholds, right=False)
+    palette = np.asarray(levels, dtype=np.uint8)
+    return palette[bins]
+
+
+def build_quantization_sample(luminance: np.ndarray) -> np.ndarray:
+    values = luminance.reshape(-1)
+    darker = values[values < 224]
+    brighter = values[values >= 224]
+
+    max_brighter = min(len(brighter), max(len(darker) * 2, 12000))
+    if len(brighter) > max_brighter and max_brighter > 0:
+        brighter = np.sort(brighter)[np.linspace(0, len(brighter) - 1, max_brighter, dtype=int)]
+
+    sample = np.concatenate([darker, brighter]) if len(darker) else values
+    if len(sample) > 50000:
+        sample = np.sort(sample)[np.linspace(0, len(sample) - 1, 50000, dtype=int)]
+    return sample.astype(np.float32)
+
+
+def estimate_bw_tone_count(luminance: np.ndarray) -> int:
+    values = luminance.reshape(-1)
+    q10, q50 = np.percentile(values, [10, 50])
+    low_tail = q50 - q10
+    mid_ratio = float(np.mean((values >= 96) & (values < 220)))
+
+    if q10 >= 232 and low_tail < 12:
+        return 2
+    if q10 >= 185 and low_tail < 60 and mid_ratio < 0.12:
+        return 3
+    return 4
+
+
+def fit_quantization_levels(sample: np.ndarray, tone_count: int) -> list[int]:
+    if tone_count == 2:
+        threshold, _ = cv2.threshold(
+            sample.reshape(-1, 1).astype(np.uint8),
+            0,
+            255,
+            cv2.THRESH_BINARY + cv2.THRESH_OTSU,
+        )
+        dark_level = int(max(16, min(48, threshold * 0.30)))
+        return [dark_level, 244]
+
+    criteria = (cv2.TERM_CRITERIA_EPS + cv2.TERM_CRITERIA_MAX_ITER, 32, 0.2)
+    compactness, labels, centers = cv2.kmeans(
+        sample.reshape(-1, 1),
+        tone_count,
+        None,
+        criteria,
+        4,
+        cv2.KMEANS_PP_CENTERS,
+    )
+    _ = compactness, labels
+    ordered = sorted(int(round(value)) for value in centers.flatten())
+
+    if tone_count == 3:
+        ordered[0] = max(16, min(52, ordered[0]))
+        ordered[1] = max(112, min(188, ordered[1]))
+        ordered[2] = max(236, ordered[2])
+    else:
+        ordered[0] = max(16, min(56, ordered[0]))
+        ordered[1] = max(72, min(132, ordered[1]))
+        ordered[2] = max(136, min(196, ordered[2]))
+        ordered[3] = max(236, ordered[3])
+
+    deduped = []
+    for level in ordered:
+        if deduped and level <= deduped[-1]:
+            level = min(244, deduped[-1] + 8)
+        deduped.append(level)
+    return deduped
+
+
+def quantize_with_levels(luminance: np.ndarray, levels: list[int]) -> np.ndarray:
+    thresholds = [int(round((left + right) / 2.0)) for left, right in zip(levels, levels[1:])]
+    return quantize_luminance(luminance, thresholds, levels)
+
+
+def apply_document_bw_pipeline(image: np.ndarray) -> np.ndarray:
+    original_height, original_width = image.shape[:2]
+    upscale = max(original_width, original_height) < 1400
+    working = image
+    if upscale:
+        working = cv2.resize(
+            image,
+            (original_width * 2, original_height * 2),
+            interpolation=cv2.INTER_CUBIC,
+        )
+
+    rgb = cv2.cvtColor(working, cv2.COLOR_BGR2RGB)
+    lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)
+    luminance, a_channel, b_channel = cv2.split(lab)
+
+    illumination = estimate_illumination(luminance)
+    flattened_l = flat_field_correct(luminance, illumination)
+    stretched_l = auto_stretch_luminance(flattened_l)
+    denoised_l = cv2.medianBlur(stretched_l, 3)
+    emphasized_l = apply_channel_contrast(denoised_l, 1.48)
+
+    paper_mask = build_paper_mask(denoised_l, a_channel, b_channel)
+    soft_structure, strong_structure = build_sauvola_structure_masks(emphasized_l)
+    _, dark_mask = cv2.threshold(
+        denoised_l,
+        max(70, int(np.percentile(denoised_l, 12))),
+        255,
+        cv2.THRESH_BINARY_INV,
+    )
+    strong_structure = cv2.bitwise_or(strong_structure, dark_mask)
+    kernel3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    soft_structure = cv2.dilate(soft_structure, kernel3, iterations=1)
+    strong_structure = cv2.dilate(strong_structure, kernel3, iterations=1)
+    structure_mask = cv2.bitwise_or(soft_structure, strong_structure)
+    structure_mask = cv2.medianBlur(structure_mask, 3)
+    paper_mask = cv2.bitwise_and(paper_mask, cv2.bitwise_not(structure_mask))
+    paper_mask = cv2.morphologyEx(
+        paper_mask,
+        cv2.MORPH_CLOSE,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)),
+        iterations=2,
+    )
+
+    toned_l = blend_toward_value(emphasized_l, paper_mask, 246.0, 0.44)
+    toned_l32 = toned_l.astype(np.float32)
+    structure_idx = structure_mask > 0
+    toned_l32[structure_idx] = np.minimum(toned_l32[structure_idx], emphasized_l[structure_idx].astype(np.float32) * 0.92)
+    toned_l = np.clip(toned_l32, 0, 255).astype(np.uint8)
+    _, bright_background = cv2.threshold(toned_l, 182, 255, cv2.THRESH_BINARY)
+    bright_background = cv2.bitwise_and(bright_background, cv2.bitwise_not(structure_mask))
+    toned_l = blend_toward_value(toned_l, bright_background, 236.0, 0.32)
+    quantize_source = cv2.GaussianBlur(toned_l, (3, 3), 0)
+    tone_count = estimate_bw_tone_count(quantize_source)
+    sample = build_quantization_sample(quantize_source)
+    levels = fit_quantization_levels(sample, tone_count)
+    quantized = quantize_with_levels(quantize_source, levels)
+
+    if tone_count >= 3:
+        paper_floor = levels[-2]
+        quantized[paper_mask > 0] = np.maximum(quantized[paper_mask > 0], paper_floor)
+    else:
+        quantized[paper_mask > 0] = levels[-1]
+
+    bw = cv2.merge([quantized, quantized, quantized])
+    if upscale:
+        bw = cv2.resize(bw, (original_width, original_height), interpolation=cv2.INTER_AREA)
+    return bw
+
+
 def apply_magic_pipeline(cropped: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     rgb = cv2.cvtColor(cropped, cv2.COLOR_BGR2RGB)
     lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)
@@ -669,6 +862,12 @@ def apply_contrast(image: np.ndarray, value: float) -> np.ndarray:
     return np.clip(result, 0, 255).astype(np.uint8)
 
 
+def apply_channel_contrast(channel: np.ndarray, value: float) -> np.ndarray:
+    offset = 128.0 * (1.0 - value)
+    result = channel.astype(np.float32) * value + offset
+    return np.clip(result, 0, 255).astype(np.uint8)
+
+
 def apply_grayscale(image: np.ndarray, _value: float) -> np.ndarray:
     b, g, r = cv2.split(image)
     gray = (
@@ -712,6 +911,8 @@ OP_DISPATCH = {
 
 def apply_filter(image: np.ndarray, filter_key: str) -> np.ndarray:
     spec = FILTERS[filter_key]
+    if spec.get("pipeline") == "document_bw":
+        return apply_document_bw_pipeline(image)
     result = image.copy()
     for op_name, op_value in spec["ops"]:
         result = OP_DISPATCH[op_name](result, op_value)

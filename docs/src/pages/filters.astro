@@ -13,9 +13,9 @@ const filters = [
   {
     key: 'bw',
     name: '白黒',
-    description: 'グレースケール化 + コントラスト強調。白黒コピーやFAX用途に最適。',
-    formula: 'grayscale(1.0) * contrast(1.3)',
-    detail: 'BT.601 の輝度係数 (R=0.2127, G=0.7151, B=0.0722) でグレースケールに変換し、コントラストを 1.3 倍で引き締める。色情報は完全に破棄される。',
+    description: '照明補正後のヒストグラム傾向を見て 2色 / 3色 / 4色 を自動選択する適応型モノクロ化。',
+    formula: 'Flat-field correction → Histogram analysis → choose 2/3/4 tones → grayscale quantization',
+    detail: 'Lab の L チャンネルを照明補正してから、平坦化された輝度ヒストグラムの下側テール量と中間調の占有率を見て、2色・3色・4色のどれが安全かを先に決める。量子化の前段では Sauvola 系の局所しきい値を紙面保護用マスクとして使い、清潔なフォームは 2色、通常文書は 3色、手書きや低コントラスト文書は 4色へ寄せる。',
   },
   {
     key: 'magic',
