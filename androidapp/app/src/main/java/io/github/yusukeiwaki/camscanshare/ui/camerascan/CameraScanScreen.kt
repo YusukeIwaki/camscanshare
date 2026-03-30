@@ -366,7 +366,7 @@ fun CameraScanScreen(
                                         // Re-detect paper in the captured image and apply perspective correction
                                         val corners = paperDetector.value.detect(bitmap)
                                         if (corners != null && corners.size == 4) {
-                                            val corrected = paperDetector.value.correctPerspective(bitmap, corners)
+                                            val corrected = paperDetector.value.correctDocumentGeometry(bitmap, corners)
                                             bitmap.recycle()
                                             bitmap = corrected
                                         }

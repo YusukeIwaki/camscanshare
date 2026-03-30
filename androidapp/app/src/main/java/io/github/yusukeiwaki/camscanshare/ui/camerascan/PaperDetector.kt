@@ -23,6 +23,9 @@ class PaperDetector {
     companion object {
         private const val DETECT_SIZE = 500.0
         private const val MIN_AREA_RATIO = 0.05
+        private const val A4_PORTRAIT = 210.0 / 297.0
+        private const val A4_LANDSCAPE = 297.0 / 210.0
+        private const val A4_TOLERANCE = 0.20
         /** Number of recent frames to keep for stabilization. */
         private const val STABLE_BUFFER_SIZE = 7
         /** Minimum number of detections in the buffer to consider it stable. */
@@ -124,7 +127,7 @@ class PaperDetector {
         return bestCorners
     }
 
-    fun correctPerspective(bitmap: Bitmap, corners: List<PointF>): Bitmap {
+    fun correctDocumentGeometry(bitmap: Bitmap, corners: List<PointF>): Bitmap {
         val mat = Mat()
         Utils.bitmapToMat(bitmap, mat)
 
@@ -152,8 +155,8 @@ class PaperDetector {
         val output = Mat()
         Imgproc.warpPerspective(mat, output, transform, Size(outWidth, outHeight))
 
-        val result = Bitmap.createBitmap(outWidth.toInt(), outHeight.toInt(), Bitmap.Config.ARGB_8888)
-        Utils.matToBitmap(output, result)
+        val step0 = Bitmap.createBitmap(outWidth.toInt(), outHeight.toInt(), Bitmap.Config.ARGB_8888)
+        Utils.matToBitmap(output, step0)
 
         mat.release()
         srcMat.release()
@@ -161,7 +164,8 @@ class PaperDetector {
         transform.release()
         output.release()
 
-        return result
+        val targetRatio = estimateTargetPaperRatio(srcPoints)
+        return normalizeDocumentAspect(step0, targetRatio)
     }
 
     // --- Detection strategies ---
@@ -364,5 +368,60 @@ class PaperDetector {
         val dx = p1.x - p2.x
         val dy = p1.y - p2.y
         return kotlin.math.sqrt(dx * dx + dy * dy)
+    }
+
+    private fun estimateTargetPaperRatio(points: List<Point>): Double? {
+        if (points.size != 4) return null
+
+        val ordered = orderPoints(points.toTypedArray())
+        val widthTop = distance(ordered[0], ordered[1])
+        val widthBottom = distance(ordered[3], ordered[2])
+        val heightLeft = distance(ordered[0], ordered[3])
+        val heightRight = distance(ordered[1], ordered[2])
+
+        val maxWidth = maxOf(widthTop, widthBottom)
+        val minWidth = maxOf(1.0, minOf(widthTop, widthBottom))
+        val maxHeight = maxOf(heightLeft, heightRight)
+        val minHeight = maxOf(1.0, minOf(heightLeft, heightRight))
+
+        val observedRatio = maxWidth / maxHeight
+        val widthSkew = maxWidth / minWidth
+        val heightSkew = maxHeight / minHeight
+        val estimatedRatio = if (observedRatio < 1.05 && widthSkew > 1.20 && widthSkew >= heightSkew) {
+            minWidth / maxHeight
+        } else {
+            observedRatio
+        }
+
+        return snapRatioToPaper(estimatedRatio)
+    }
+
+    private fun snapRatioToPaper(imageRatio: Double, tolerance: Double = A4_TOLERANCE): Double? {
+        val portraitDelta = kotlin.math.abs(imageRatio / A4_PORTRAIT - 1.0)
+        val landscapeDelta = kotlin.math.abs(imageRatio / A4_LANDSCAPE - 1.0)
+        val (bestRatio, bestDelta) = if (portraitDelta <= landscapeDelta) {
+            A4_PORTRAIT to portraitDelta
+        } else {
+            A4_LANDSCAPE to landscapeDelta
+        }
+        return if (bestDelta <= tolerance) bestRatio else null
+    }
+
+    private fun normalizeDocumentAspect(bitmap: Bitmap, targetRatio: Double?): Bitmap {
+        if (targetRatio == null) return bitmap
+
+        val width = bitmap.width
+        val height = bitmap.height
+        val area = width.toDouble() * height.toDouble()
+        val targetWidth = kotlin.math.sqrt(area * targetRatio).toInt().coerceAtLeast(1)
+        val targetHeight = kotlin.math.sqrt(area / targetRatio).toInt().coerceAtLeast(1)
+
+        if (targetWidth == width && targetHeight == height) return bitmap
+
+        val resized = Bitmap.createScaledBitmap(bitmap, targetWidth, targetHeight, true)
+        if (resized !== bitmap) {
+            bitmap.recycle()
+        }
+        return resized
     }
 }

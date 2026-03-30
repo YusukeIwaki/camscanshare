@@ -310,7 +310,7 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list">
             <li>
               <span class="spec-element">紙検出アルゴリズム</span>
-              <span class="spec-detail">GaussianBlur → Canny エッジ検出 → 膨張（dilate） → 輪郭検出 → 四角形近似 → スコアリング選択。複数のCanny閾値パターンを並行で試行し、最もスコアの高い四角形を採用する。輪郭取得にはRETR_LIST（全輪郭を階層なしで取得）を使用する。RETR_EXTERNALは最外部輪郭のみ返すため、床やデスクの内側にある紙の輪郭を取りこぼす。リアルタイムプレビューの低解像度フレーム（640×480等）では、エッジが断片的になりやすいため膨張カーネルを大きめ（5×5）にし、候補輪郭も上位20個まで検査する。高解像度のキャプチャ画像では膨張を最小限（3×3）にし、上位10個で十分である。</span>
+              <span class="spec-detail">ファインダー中は、紙の四隅を見つけるための軽量なリアルタイム検出のみを行う。低解像度フレームを対象に、ぼかし → エッジ抽出 → 膨張 → 輪郭検出 → 四角形近似 → スコアリング選択を複数条件で試し、もっとも文書らしい四角形をオーバーレイ表示する。ここでの目的は保存用画像を作ることではなく、ユーザーに「今どこが紙として認識されているか」を安定して見せることにある。</span>
             </li>
             <li>
               <span class="spec-element">四角形のスコアリング</span>
@@ -321,8 +321,12 @@ import Layout from '../layouts/Layout.astro';
               <span class="spec-detail">カメラプレビュー中のオーバーレイ表示は、直近7フレームの検出結果を保持し、3フレーム以上で合意がある場合に各コーナーの中央値を返す。検出が一時的に失われた場合も最後の有効結果を500ms間保持し、枠の消失を防止する。さらに、コーナー座標の変化はアニメーション補間（150ms）で描画し、フレーム間の微小な座標変動による視覚的なちらつきを抑える。</span>
             </li>
             <li>
-              <span class="spec-element">台形補正</span>
-              <span class="spec-detail">検出した四角形の4点を用いた射影変換（getPerspectiveTransform + warpPerspective）で正面からの撮影に補正。出力サイズは検出された四辺の最大幅・最大高さから算出する。台形補正はキャプチャした高解像度画像に対して行い、リアルタイムプレビューの低解像度フレームの検出結果は使わない。</span>
+              <span class="spec-element">保存時の Step 0 生成</span>
+              <span class="spec-detail">シャッター押下後は、保存対象となる高解像度画像に対してあらためて紙検出を実行し、その四角形を使って射影変換を行う。これがページ画像の基準となる Step 0 であり、「台形補正済み・正面化済みの元画像」として保存される。ファインダー中の低解像度検出結果はガイド表示のためだけに使い、保存時の補正には流用しない。</span>
+            </li>
+            <li>
+              <span class="spec-element">Step 1 以降との関係</span>
+              <span class="spec-detail">文書処理パイプラインは、保存基準画像となる Step 0 の後に、必要に応じて「A4 に近い文書だけ比率を正規化する Step 1」を挟み、その後にフィルタ処理へ進む設計とする。カメラスキャン画面の責務は Step 0 を安定して作ることであり、Step 1 以降は編集・表示パイプライン側で扱えるよう段階を分離する。</span>
             </li>
             <li>
               <span class="spec-element">連続撮影</span>
@@ -618,6 +622,28 @@ import Layout from '../layouts/Layout.astro';
             <li>
               <span class="spec-element">永続化の対象</span>
               <span class="spec-detail">編集後の画像ではなく、編集前の原画像＋編集パラメータ（フィルタ・回転）を保存。プレビュー画像はキャッシュのみで永続化しない。</span>
+            </li>
+            <li>
+              <span class="spec-element">ページ編集の基準画像</span>
+              <span class="spec-detail">ページ編集が扱う原画像は、撮影時に生成された Step 0 とする。つまり、台形補正と正面化が終わった画像を基準に、回転・フィルタの編集状態を重ねていく。編集画面は撮影前の生画像には戻らない。</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="spec-group">
+          <h3>プレビュー生成パイプライン</h3>
+          <ul class="spec-list">
+            <li>
+              <span class="spec-element">オリジナル表示</span>
+              <span class="spec-detail">保存済みの Step 0 画像を読み込み、必要な回転だけを反映して表示する。これが全フィルタの共通の出発点になる。</span>
+            </li>
+            <li>
+              <span class="spec-element">マジック以外のフィルタ</span>
+              <span class="spec-detail">くっきり・白黒・ホワイトボード・鮮やかは、Step 0 画像に対して軽量な色変換をその場で適用してプレビューする。フィルタ切り替え時は画像ファイルを作り直すのではなく、表示用ビットマップを再生成する。</span>
+            </li>
+            <li>
+              <span class="spec-element">マジックフィルタ</span>
+              <span class="spec-detail">マジックは Step 0 または Step 1 を入力として、文書向けの画像補正を適用してプレビューする。概念的には docs の Step 2・Step 3 に近い処理であり、照明ムラの補正、トーンの自動伸長、紙面の白化、色アクセントの保持をまとめて行う。A4 に近い文書では、必要に応じて Step 1 の比率正規化を経由してからマジック処理に入れる。</span>
             </li>
           </ul>
         </div>

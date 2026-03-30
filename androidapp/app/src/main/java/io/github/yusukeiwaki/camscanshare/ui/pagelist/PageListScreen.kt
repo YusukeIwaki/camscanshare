@@ -352,7 +352,7 @@ private fun PageCard(
         )
         val cardAspectRatio = remember(previewBitmap) {
             if (previewBitmap != null) computePageAspectRatio(previewBitmap.width, previewBitmap.height)
-            else 210f / 297f
+            else 1f
         }
 
         Card(
