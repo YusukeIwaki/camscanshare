@@ -47,8 +47,7 @@ const filters = [
 
 function buildViewerForFilter(filterKey, sample) {
   const steps = [
-    { label: 'Step 0', src: '/' + sample.step0.replace('docs/public/', ''), caption: 'Step 0: 台形選択とクロップ後。' },
-    { label: 'Step 1', src: '/' + sample.step1.replace('docs/public/', ''), caption: 'Step 1: A4 比率に近い文書だけ、画素数をほぼ維持したまま紙比率へ正規化。' },
+    { label: '元画像', src: '/' + sample.step1.replace('docs/public/', ''), caption: '元画像: 台形補正・A4比率正規化済み。' },
   ];
 
   if (filterKey === 'magic') {
@@ -94,14 +93,14 @@ function buildViewerForFilter(filterKey, sample) {
     <section class="algo-section filter-section" id="perspective" data-filter-section="perspective">
       <div class="section-heading">
         <h2>台形選択</h2>
-        <p>撮影画像から紙の四隅を検出し、射影変換で正面ビューにそろえる。A4 に近い比率の文書は、その後に紙比率へ正規化してからフィルタを適用する。</p>
+        <p>Step 0 で撮影画像から紙の四隅を検出し、射影変換で正面ビューにクロップする。Step 1 では、クロップ結果が A4 に近い比率の場合のみ、画素数をほぼ維持したまま正確な A4 比率へ正規化する。この Step 1 の出力が各フィルタの入力となる。</p>
       </div>
 
       <div class="example-stack">
         {samples.map((sample) => {
           const viewerId = `perspective-${sample.id}`;
           const viewer = [
-            { label: 'オリジナル', src: '/' + sample.source.replace('docs/public/', ''), caption: 'オリジナル: カメラ撮影そのままの入力画像。' },
+            { label: '加工前', src: '/' + sample.source.replace('docs/public/', ''), caption: '加工前: カメラ撮影そのままの入力画像。' },
             { label: 'Step 0', src: '/' + sample.step0.replace('docs/public/', ''), caption: 'Step 0: 紙領域を検出し、正面に射影変換した状態。' },
             { label: 'Step 1', src: '/' + sample.step1.replace('docs/public/', ''), caption: 'Step 1: A4 に近い文書だけ、画素数をほぼ維持したまま紙比率へ正規化。' },
           ];
