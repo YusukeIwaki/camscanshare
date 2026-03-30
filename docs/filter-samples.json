@@ -159,5 +159,37 @@
       "whiteboard": "docs/public/algorithm/filters/whiteboard/tax.png",
       "vivid": "docs/public/algorithm/filters/vivid/tax.png"
     }
+  },
+  {
+    "id": "whiteboard-facilitation",
+    "title": "暗所気味のホワイトボード落書き",
+    "description": "古い携帯写真らしい低解像度・周辺減光・黒縁つきのホワイトボード。色マーカーの細線が多い。",
+    "source": "docs/public/algorithm/whiteboard-samples/whiteboard-facilitation.JPG",
+    "step0": "docs/public/algorithm/steps/whiteboard-samples/whiteboard-facilitation-step0.png",
+    "step1": "docs/public/algorithm/steps/whiteboard-samples/whiteboard-facilitation-step1.png",
+    "magic_step2": "docs/public/algorithm/steps/whiteboard-samples/whiteboard-facilitation-step2.png",
+    "magic_step3": "docs/public/algorithm/steps/whiteboard-samples/whiteboard-facilitation-step3.png",
+    "filters": {
+      "sharpen": "docs/public/algorithm/filters/sharpen/whiteboard-facilitation.png",
+      "bw": "docs/public/algorithm/filters/bw/whiteboard-facilitation.png",
+      "whiteboard": "docs/public/algorithm/filters/whiteboard/whiteboard-facilitation.png",
+      "vivid": "docs/public/algorithm/filters/vivid/whiteboard-facilitation.png"
+    }
+  },
+  {
+    "id": "whiteboard-kazakoshi",
+    "title": "室内光の大きなホワイトボード",
+    "description": "室内の暖色照明下で撮られた大型ホワイトボード。青と赤のマーカーが主体で、フレームと背景家具も写り込む。",
+    "source": "docs/public/algorithm/whiteboard-samples/whiteboard-kazakoshi.jpg",
+    "step0": "docs/public/algorithm/steps/whiteboard-samples/whiteboard-kazakoshi-step0.png",
+    "step1": "docs/public/algorithm/steps/whiteboard-samples/whiteboard-kazakoshi-step1.png",
+    "magic_step2": "docs/public/algorithm/steps/whiteboard-samples/whiteboard-kazakoshi-step2.png",
+    "magic_step3": "docs/public/algorithm/steps/whiteboard-samples/whiteboard-kazakoshi-step3.png",
+    "filters": {
+      "sharpen": "docs/public/algorithm/filters/sharpen/whiteboard-kazakoshi.png",
+      "bw": "docs/public/algorithm/filters/bw/whiteboard-kazakoshi.png",
+      "whiteboard": "docs/public/algorithm/filters/whiteboard/whiteboard-kazakoshi.png",
+      "vivid": "docs/public/algorithm/filters/vivid/whiteboard-kazakoshi.png"
+    }
   }
 ]

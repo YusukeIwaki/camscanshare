@@ -20,8 +20,8 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--manifest",
-        default="docs/magic-filter-samples.json",
-        help="JSON manifest with source/step1/step2/step3 paths.",
+        default="docs/filter-samples.json",
+        help="JSON manifest with source/step1/magic_step2/magic_step3 paths.",
     )
     parser.add_argument(
         "--only",
@@ -39,8 +39,13 @@ def main() -> None:
 
     for entry in entries:
         step1_path = (repo_root / entry["step1"]).resolve()
-        step2_path = (repo_root / entry["step2"]).resolve()
-        step3_path = (repo_root / entry["step3"]).resolve()
+        step2_rel = entry.get("magic_step2") or entry.get("step2")
+        step3_rel = entry.get("magic_step3") or entry.get("step3")
+        if step2_rel is None or step3_rel is None:
+            raise KeyError(f'{entry["id"]}: missing magic_step2/magic_step3 in manifest entry')
+
+        step2_path = (repo_root / step2_rel).resolve()
+        step3_path = (repo_root / step3_rel).resolve()
 
         step1 = read_image(step1_path)
         step2, step3 = apply_magic_pipeline(step1)

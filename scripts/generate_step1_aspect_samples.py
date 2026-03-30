@@ -20,7 +20,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--manifest",
-        default="docs/magic-filter-samples.json",
+        default="docs/filter-samples.json",
         help="JSON manifest with step0/step1 paths.",
     )
     parser.add_argument(

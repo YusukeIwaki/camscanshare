@@ -17,8 +17,8 @@ FILTERS = {
         "pipeline": "document_bw",
     },
     "whiteboard": {
-        # brightness(1.3) contrast(1.6) saturate(0)
-        "ops": [("brightness", 1.3), ("contrast", 1.6), ("saturate", 0.0)],
+        # flat-field correction + board whitening + marker color preservation
+        "pipeline": "whiteboard",
     },
     "vivid": {
         # saturate(2) contrast(1.2)
@@ -850,6 +850,113 @@ def apply_magic_pipeline(cropped: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return step1_bgr, final_bgr
 
 
+def apply_whiteboard_pipeline(image: np.ndarray) -> np.ndarray:
+    rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+    lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)
+    luminance, a_channel, b_channel = cv2.split(lab)
+
+    illumination = estimate_illumination(luminance)
+    flattened_l = flat_field_correct(luminance, illumination)
+    stretched_l = auto_stretch_luminance(flattened_l)
+    denoised_l = cv2.medianBlur(stretched_l, 3)
+
+    chroma = compute_chroma(a_channel, b_channel)
+    accent_mask = build_accent_mask(denoised_l, a_channel, b_channel)
+    _, medium_chroma_mask = cv2.threshold(chroma, 18, 255, cv2.THRESH_BINARY)
+    _, visible_mask = cv2.threshold(denoised_l, 42, 255, cv2.THRESH_BINARY)
+    accent_mask = cv2.bitwise_or(accent_mask, cv2.bitwise_and(medium_chroma_mask, visible_mask))
+    accent_mask = cv2.morphologyEx(
+        accent_mask,
+        cv2.MORPH_OPEN,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)),
+    )
+    accent_protect_mask = cv2.dilate(
+        accent_mask,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)),
+        iterations=1,
+    )
+    structure_mask = build_structure_mask(denoised_l)
+    _, sauvola_strong = build_sauvola_structure_masks(
+        apply_channel_contrast(denoised_l, 1.22),
+        window_size=35,
+        k=0.16,
+        dynamic_range=128.0,
+    )
+    structure_mask = cv2.bitwise_or(structure_mask, sauvola_strong)
+    structure_mask = cv2.bitwise_or(structure_mask, accent_protect_mask)
+    structure_mask = cv2.medianBlur(structure_mask, 3)
+    structure_mask = cv2.dilate(
+        structure_mask,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)),
+        iterations=1,
+    )
+
+    paper_mask = build_paper_mask(denoised_l, a_channel, b_channel)
+    bright_threshold = max(156, int(np.percentile(denoised_l, 58)))
+    _, bright_mask = cv2.threshold(denoised_l, bright_threshold, 255, cv2.THRESH_BINARY)
+    paper_mask = cv2.bitwise_or(paper_mask, bright_mask)
+    paper_mask = cv2.bitwise_and(paper_mask, cv2.bitwise_not(structure_mask))
+    paper_mask = cv2.bitwise_and(paper_mask, cv2.bitwise_not(accent_protect_mask))
+    paper_mask = cv2.morphologyEx(
+        paper_mask,
+        cv2.MORPH_CLOSE,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)),
+        iterations=2,
+    )
+
+    if int(cv2.countNonZero(paper_mask)) > 0:
+        mean_a = float(cv2.mean(a_channel, mask=paper_mask)[0])
+        mean_b = float(cv2.mean(b_channel, mask=paper_mask)[0])
+    else:
+        mean_a = 128.0
+        mean_b = 128.0
+
+    neutralized_a = np.clip(a_channel.astype(np.float32) - (mean_a - 128.0), 0, 255).astype(np.uint8)
+    neutralized_b = np.clip(b_channel.astype(np.float32) - (mean_b - 128.0), 0, 255).astype(np.uint8)
+
+    muted_a = compress_chroma(neutralized_a, 0.42)
+    muted_b = compress_chroma(neutralized_b, 0.42)
+    accent_a = compress_chroma(neutralized_a, 1.32)
+    accent_b = compress_chroma(neutralized_b, 1.32)
+
+    output_l = blend_toward_value(denoised_l, paper_mask, 250.0, 0.50)
+    output_l = cv2.addWeighted(output_l, 0.68, denoised_l, 0.32, 0.0)
+
+    output_l32 = output_l.astype(np.float32)
+    strong_idx = sauvola_strong > 0
+    output_l32[strong_idx] = np.minimum(
+        output_l32[strong_idx],
+        denoised_l[strong_idx].astype(np.float32) * 0.84,
+    )
+    accent_idx = accent_protect_mask > 0
+    output_l32[accent_idx] = np.minimum(
+        output_l32[accent_idx],
+        denoised_l[accent_idx].astype(np.float32) * 0.92,
+    )
+    output_l = np.clip(output_l32, 0, 255).astype(np.uint8)
+
+    output_a = muted_a.copy()
+    output_b = muted_b.copy()
+    output_a[accent_mask > 0] = accent_a[accent_mask > 0]
+    output_b[accent_mask > 0] = accent_b[accent_mask > 0]
+    output_a[paper_mask > 0] = 128
+    output_b[paper_mask > 0] = 128
+
+    final_lab = cv2.merge([output_l, output_a, output_b])
+    final_rgb = cv2.cvtColor(final_lab, cv2.COLOR_LAB2RGB)
+    final_bgr = cv2.cvtColor(final_rgb, cv2.COLOR_RGB2BGR)
+
+    hsv = cv2.cvtColor(final_bgr, cv2.COLOR_BGR2HSV).astype(np.float32)
+    saturation = hsv[:, :, 1]
+    value = hsv[:, :, 2]
+    vivid_idx = accent_mask > 0
+    saturation[vivid_idx] = np.minimum(saturation[vivid_idx] * 1.38 + 8.0, 255.0)
+    value[vivid_idx] = np.minimum(value[vivid_idx] * 1.05 + 2.0, 255.0)
+    hsv[:, :, 1] = saturation
+    hsv[:, :, 2] = value
+    return cv2.cvtColor(np.clip(hsv, 0, 255).astype(np.uint8), cv2.COLOR_HSV2BGR)
+
+
 def apply_brightness(image: np.ndarray, value: float) -> np.ndarray:
     offset = 255.0 * (value - 1.0)
     result = image.astype(np.float32) + offset
@@ -913,6 +1020,8 @@ def apply_filter(image: np.ndarray, filter_key: str) -> np.ndarray:
     spec = FILTERS[filter_key]
     if spec.get("pipeline") == "document_bw":
         return apply_document_bw_pipeline(image)
+    if spec.get("pipeline") == "whiteboard":
+        return apply_whiteboard_pipeline(image)
     result = image.copy()
     for op_name, op_value in spec["ops"]:
         result = OP_DISPATCH[op_name](result, op_value)

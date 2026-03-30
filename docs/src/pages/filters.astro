@@ -32,9 +32,9 @@ const filters = [
   {
     key: 'whiteboard',
     name: 'ホワイトボード',
-    description: '高明度 + 高コントラスト + 完全彩度除去。ホワイトボード撮影を白黒はっきりにする。',
-    formula: 'brightness(1.3) * contrast(1.6) * saturate(0)',
-    detail: '明るさ 1.3 倍とコントラスト 1.6 倍で背景を飛ばし、saturate(0) で完全モノクロ化。ホワイトボード上のマーカー線がくっきり読める状態にする。',
+    description: '照明ムラ補正 + 背景白化 + マーカー色保持。ホワイトボード面を白く整えつつ、色ペンの線を残す。',
+    formula: 'Flat-field correction → board mask → stronger whitening → accent color preservation',
+    detail: 'Lab の L チャンネルで照明ムラを平坦化し、明るい低彩度領域をホワイトボード面として抽出して強めに白化する。構造マスクと色アクセントマスクでペン線を保護し、背景だけをほぼ無彩色へ寄せる。',
   },
   {
     key: 'vivid',
