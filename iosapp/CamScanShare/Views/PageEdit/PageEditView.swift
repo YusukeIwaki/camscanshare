@@ -120,7 +120,11 @@ struct PageEditView: View {
                 if let image = ImageStorageService.loadImage(fileName: page.originalImageFileName),
                     let editState,
                     let filtered = ImageFilterService.applyFilter(
-                        editState.filterPreset, to: image, rotation: editState.rotationDegrees)
+                        editState.filterPreset,
+                        to: image,
+                        rotation: editState.rotationDegrees,
+                        intent: .preview
+                    )
                 {
                     Image(uiImage: filtered)
                         .resizable()

@@ -27,7 +27,11 @@ enum PDFService {
                 else { continue }
 
                 guard let filteredImage = ImageFilterService.applyFilter(
-                    page.filterPreset, to: originalImage, rotation: page.rotationDegrees)
+                    page.filterPreset,
+                    to: originalImage,
+                    rotation: page.rotationDegrees,
+                    intent: .export
+                )
                 else { continue }
 
                 pdfContext.beginPage()
