@@ -35,6 +35,7 @@ import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.automirrored.filled.RotateLeft
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -250,12 +251,13 @@ private fun PagePreview(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
-        val previewBitmap = rememberPreviewBitmap(
+        val previewState = rememberPreviewBitmap(
             imagePath = imagePath,
             rotationDegrees = rotationDegrees,
             renderPlan = renderPlan,
             maxDimension = 1600,
         )
+        val previewBitmap = previewState.bitmap
 
         if (previewBitmap != null) {
             val colorFilter = remember(renderPlan) {
@@ -292,6 +294,35 @@ private fun PagePreview(
                     canvas.nativeCanvas.scale(scale, scale)
                     canvas.nativeCanvas.drawBitmap(drawBitmap, 0f, 0f, paint)
                     canvas.nativeCanvas.restore()
+                }
+            }
+        } else {
+            Box(
+                modifier = Modifier
+                    .padding(24.dp)
+                    .fillMaxWidth(0.8f)
+                    .aspectRatio(210f / 297f)
+                    .shadow(8.dp, RoundedCornerShape(4.dp))
+                    .clip(RoundedCornerShape(4.dp))
+                    .background(Color.White)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(4.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                if (previewState.isLoading) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        CircularProgressIndicator(
+                            strokeWidth = 3.dp,
+                            modifier = Modifier.size(32.dp),
+                        )
+                        Text(
+                            "フィルタを適用中…",
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = MaterialTheme.typography.bodyMedium,
+                        )
+                    }
                 }
             }
         }

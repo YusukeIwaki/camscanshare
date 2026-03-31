@@ -16,9 +16,9 @@ object FilterRenderPlanner {
         }
 
         return when (selectedFilterKey) {
-            "magic" -> FilterRenderPlan(
+            "magic", "bw", "whiteboard" -> FilterRenderPlan(
                 selectedFilterKey = selectedFilterKey,
-                bitmapFilterKey = "magic",
+                bitmapFilterKey = selectedFilterKey,
             )
             "original" -> FilterRenderPlan(selectedFilterKey = selectedFilterKey)
             else -> FilterRenderPlan(

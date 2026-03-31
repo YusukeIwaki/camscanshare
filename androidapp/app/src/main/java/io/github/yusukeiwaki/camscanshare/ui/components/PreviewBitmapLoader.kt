@@ -17,13 +17,18 @@ import java.io.File
 import kotlin.math.max
 import kotlin.math.roundToInt
 
+data class PreviewBitmapState(
+    val bitmap: Bitmap?,
+    val isLoading: Boolean,
+)
+
 @Composable
 fun rememberPreviewBitmap(
     imagePath: String,
     rotationDegrees: Float,
     renderPlan: FilterRenderPlan,
     maxDimension: Int,
-): Bitmap? {
+): PreviewBitmapState {
     val cacheBitmapFilterKey = remember(renderPlan.bitmapFilterKey) {
         renderPlan.bitmapFilterKey ?: "base"
     }
@@ -33,9 +38,11 @@ fun rememberPreviewBitmap(
     }
     val initial = remember(cacheKey) { PreviewBitmapCache.get(cacheKey) }
     var bitmap by remember(cacheKey) { mutableStateOf(initial) }
+    var isLoading by remember(cacheKey) { mutableStateOf(initial == null) }
 
     LaunchedEffect(cacheKey) {
         bitmap = initial
+        isLoading = bitmap == null
         if (bitmap != null) return@LaunchedEffect
         bitmap = PreviewBitmapLoader.load(
             cacheKey = cacheKey,
@@ -44,8 +51,9 @@ fun rememberPreviewBitmap(
             bitmapFilterKey = renderPlan.bitmapFilterKey,
             maxDimension = maxDimension,
         )
+        isLoading = false
     }
-    return bitmap
+    return PreviewBitmapState(bitmap = bitmap, isLoading = isLoading)
 }
 
 fun previewColorMatrix(filterKey: String?) = filterKey?.let { PreviewBitmapLoader.imageProcessor.getColorMatrix(it) }

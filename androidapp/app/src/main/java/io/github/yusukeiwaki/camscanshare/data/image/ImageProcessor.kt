@@ -14,6 +14,7 @@ import org.opencv.core.CvType
 import org.opencv.core.Mat
 import org.opencv.core.Scalar
 import org.opencv.core.Size
+import org.opencv.core.TermCriteria
 import org.opencv.imgproc.Imgproc
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -42,11 +43,16 @@ class ImageProcessor @Inject constructor() {
     }
 
     /**
-     * Apply a filter to a bitmap. "magic" uses OpenCV flat-field correction;
-     * other filters use ColorMatrix.
+     * Apply a filter to a bitmap. "magic", "bw", and "whiteboard" use
+     * OpenCV pipelines matching the docs evaluation logic; lightweight color
+     * presets continue to use ColorMatrix.
      */
     fun applyFilter(source: Bitmap, filterKey: String): Bitmap {
-        if (filterKey == "magic") return applyMagicFilter(source)
+        when (filterKey) {
+            "magic" -> return applyMagicFilter(source)
+            "bw" -> return applyDocumentBwFilter(source)
+            "whiteboard" -> return applyWhiteboardFilter(source)
+        }
 
         val colorMatrix = getColorMatrix(filterKey) ?: return source
         val result = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
@@ -59,18 +65,15 @@ class ImageProcessor @Inject constructor() {
     }
 
     /**
-     * Get the ColorMatrix for a given filter key. Returns null for "original" and "magic".
-     * "magic" is handled separately via OpenCV in applyFilter/applyMagicFilter.
+     * Get the ColorMatrix for a given filter key. Returns null for filters
+     * handled by the OpenCV pipelines.
      */
     fun getColorMatrix(filterKey: String): ColorMatrix? = when (filterKey) {
         "original" -> null
-        "magic" -> null // handled by OpenCV
+        "magic" -> null
         "sharpen" -> contrastMatrix(1.4f).apply { postConcat(brightnessMatrix(1.05f)) }
-        "bw" -> grayscaleMatrix().apply { postConcat(contrastMatrix(1.3f)) }
-        "whiteboard" -> brightnessMatrix(1.3f).apply {
-            postConcat(contrastMatrix(1.6f))
-            postConcat(saturationMatrix(0f))
-        }
+        "bw" -> null
+        "whiteboard" -> null
         "vivid" -> saturationMatrix(2f).apply { postConcat(contrastMatrix(1.2f)) }
         else -> null
     }
@@ -181,6 +184,287 @@ class ImageProcessor @Inject constructor() {
         resultLab.release()
         resultRgb.release()
         resultRgba.release()
+
+        return output
+    }
+
+    private fun applyDocumentBwFilter(source: Bitmap): Bitmap {
+        val rgba = Mat()
+        Utils.bitmapToMat(source, rgba)
+        val rgb = Mat()
+        Imgproc.cvtColor(rgba, rgb, Imgproc.COLOR_RGBA2RGB)
+
+        val originalWidth = rgb.width()
+        val originalHeight = rgb.height()
+        val upscale = maxOf(originalWidth, originalHeight) < 1400
+        val workingRgb = Mat()
+        if (upscale) {
+            Imgproc.resize(
+                rgb,
+                workingRgb,
+                Size((originalWidth * 2).toDouble(), (originalHeight * 2).toDouble()),
+                0.0,
+                0.0,
+                Imgproc.INTER_CUBIC,
+            )
+        } else {
+            rgb.copyTo(workingRgb)
+        }
+
+        val lab = Mat()
+        Imgproc.cvtColor(workingRgb, lab, Imgproc.COLOR_RGB2Lab)
+        val channels = ArrayList<Mat>(3)
+        Core.split(lab, channels)
+        val luminance = channels[0]
+        val aChannel = channels[1]
+        val bChannel = channels[2]
+
+        val illumination = estimateIllumination(luminance)
+        val flattenedL = flatFieldCorrect(luminance, illumination)
+        val stretchedL = autoStretchLuminance(flattenedL)
+        val denoisedL = Mat()
+        Imgproc.medianBlur(stretchedL, denoisedL, 3)
+        val emphasizedL = applyChannelContrast(denoisedL, 1.48)
+
+        val paperMask = buildPaperMask(denoisedL, aChannel, bChannel)
+        val (softStructure0, strongStructure0) = buildSauvolaStructureMasks(emphasizedL)
+
+        val darkMask = Mat()
+        val darkThreshold = maxOf(70.0, percentileOfMat(denoisedL, 0.12))
+        Imgproc.threshold(denoisedL, darkMask, darkThreshold, 255.0, Imgproc.THRESH_BINARY_INV)
+
+        val strongStructure = Mat()
+        Core.bitwise_or(strongStructure0, darkMask, strongStructure)
+        val softStructure = softStructure0.clone()
+
+        val kernel3 = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(3.0, 3.0))
+        Imgproc.dilate(softStructure, softStructure, kernel3, org.opencv.core.Point(-1.0, -1.0), 1)
+        Imgproc.dilate(strongStructure, strongStructure, kernel3, org.opencv.core.Point(-1.0, -1.0), 1)
+
+        val structureMask = Mat()
+        Core.bitwise_or(softStructure, strongStructure, structureMask)
+        Imgproc.medianBlur(structureMask, structureMask, 3)
+
+        val invertedStructureMask = invertMask(structureMask)
+        Core.bitwise_and(paperMask, invertedStructureMask, paperMask)
+        val kernel5 = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(5.0, 5.0))
+        Imgproc.morphologyEx(
+            paperMask,
+            paperMask,
+            Imgproc.MORPH_CLOSE,
+            kernel5,
+            org.opencv.core.Point(-1.0, -1.0),
+            2,
+        )
+
+        val tonedL0 = blendTowardValue(emphasizedL, paperMask, 246.0, 0.44)
+        val tonedL = maskedMinScaled(tonedL0, emphasizedL, structureMask, 0.92)
+
+        val brightBackground = Mat()
+        Imgproc.threshold(tonedL, brightBackground, 182.0, 255.0, Imgproc.THRESH_BINARY)
+        Core.bitwise_and(brightBackground, invertedStructureMask, brightBackground)
+        val quantizeSource = blendTowardValue(tonedL, brightBackground, 236.0, 0.32)
+        Imgproc.GaussianBlur(quantizeSource, quantizeSource, Size(3.0, 3.0), 0.0)
+
+        val toneCount = estimateBwToneCount(quantizeSource)
+        val sample = buildQuantizationSample(quantizeSource)
+        val levels = fitQuantizationLevels(sample, toneCount)
+        val quantized = quantizeWithLevels(quantizeSource, levels)
+        applyPaperFloor(quantized, paperMask, levels, toneCount)
+
+        val bwRgb = Mat()
+        Core.merge(listOf(quantized, quantized, quantized), bwRgb)
+
+        val outputRgb = Mat()
+        if (upscale) {
+            Imgproc.resize(bwRgb, outputRgb, Size(originalWidth.toDouble(), originalHeight.toDouble()), 0.0, 0.0, Imgproc.INTER_AREA)
+        } else {
+            bwRgb.copyTo(outputRgb)
+        }
+
+        val output = bitmapFromRgb(outputRgb, source.width, source.height)
+
+        rgba.release()
+        rgb.release()
+        workingRgb.release()
+        lab.release()
+        luminance.release()
+        aChannel.release()
+        bChannel.release()
+        illumination.release()
+        flattenedL.release()
+        stretchedL.release()
+        denoisedL.release()
+        emphasizedL.release()
+        paperMask.release()
+        softStructure0.release()
+        strongStructure0.release()
+        darkMask.release()
+        strongStructure.release()
+        softStructure.release()
+        kernel3.release()
+        structureMask.release()
+        invertedStructureMask.release()
+        kernel5.release()
+        tonedL0.release()
+        tonedL.release()
+        brightBackground.release()
+        quantizeSource.release()
+        quantized.release()
+        bwRgb.release()
+        outputRgb.release()
+
+        return output
+    }
+
+    private fun applyWhiteboardFilter(source: Bitmap): Bitmap {
+        val rgba = Mat()
+        Utils.bitmapToMat(source, rgba)
+        val rgb = Mat()
+        Imgproc.cvtColor(rgba, rgb, Imgproc.COLOR_RGBA2RGB)
+
+        val lab = Mat()
+        Imgproc.cvtColor(rgb, lab, Imgproc.COLOR_RGB2Lab)
+        val channels = ArrayList<Mat>(3)
+        Core.split(lab, channels)
+        val luminance = channels[0]
+        val aChannel = channels[1]
+        val bChannel = channels[2]
+
+        val illumination = estimateIllumination(luminance)
+        val flattenedL = flatFieldCorrect(luminance, illumination)
+        val stretchedL = autoStretchLuminance(flattenedL)
+        val denoisedL = Mat()
+        Imgproc.medianBlur(stretchedL, denoisedL, 3)
+
+        val chroma = computeChroma(aChannel, bChannel)
+        val accentMask0 = buildAccentMask(denoisedL, aChannel, bChannel)
+        val mediumChromaMask = Mat()
+        Imgproc.threshold(chroma, mediumChromaMask, 18.0, 255.0, Imgproc.THRESH_BINARY)
+        val visibleMask = Mat()
+        Imgproc.threshold(denoisedL, visibleMask, 42.0, 255.0, Imgproc.THRESH_BINARY)
+        val extraAccentMask = Mat()
+        Core.bitwise_and(mediumChromaMask, visibleMask, extraAccentMask)
+        val accentMask = Mat()
+        Core.bitwise_or(accentMask0, extraAccentMask, accentMask)
+        val accentKernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(3.0, 3.0))
+        Imgproc.morphologyEx(accentMask, accentMask, Imgproc.MORPH_OPEN, accentKernel)
+        val accentProtectMask = Mat()
+        Imgproc.dilate(accentMask, accentProtectMask, accentKernel, org.opencv.core.Point(-1.0, -1.0), 1)
+
+        val structureMask0 = buildStructureMask(denoisedL)
+        val contrastedL = applyChannelContrast(denoisedL, 1.22)
+        val (_, sauvolaStrong) = buildSauvolaStructureMasks(
+            contrastedL,
+            windowSize = 35,
+            k = 0.16,
+            dynamicRange = 128.0,
+        )
+        val structureMask = Mat()
+        Core.bitwise_or(structureMask0, sauvolaStrong, structureMask)
+        Core.bitwise_or(structureMask, accentProtectMask, structureMask)
+        Imgproc.medianBlur(structureMask, structureMask, 3)
+        Imgproc.dilate(structureMask, structureMask, accentKernel, org.opencv.core.Point(-1.0, -1.0), 1)
+
+        val paperMask = buildPaperMask(denoisedL, aChannel, bChannel)
+        val brightMask = Mat()
+        val brightThreshold = maxOf(156.0, percentileOfMat(denoisedL, 0.58))
+        Imgproc.threshold(denoisedL, brightMask, brightThreshold, 255.0, Imgproc.THRESH_BINARY)
+        Core.bitwise_or(paperMask, brightMask, paperMask)
+        val invertedStructureMask = invertMask(structureMask)
+        val invertedAccentProtectMask = invertMask(accentProtectMask)
+        Core.bitwise_and(paperMask, invertedStructureMask, paperMask)
+        Core.bitwise_and(paperMask, invertedAccentProtectMask, paperMask)
+        val kernel5 = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(5.0, 5.0))
+        Imgproc.morphologyEx(
+            paperMask,
+            paperMask,
+            Imgproc.MORPH_CLOSE,
+            kernel5,
+            org.opencv.core.Point(-1.0, -1.0),
+            2,
+        )
+
+        val paperBias = estimatePaperBias(aChannel, bChannel, paperMask)
+        val neutralizedA = shiftChannel(aChannel, paperBias.first - 128.0)
+        val neutralizedB = shiftChannel(bChannel, paperBias.second - 128.0)
+
+        val mutedA = compressChroma(neutralizedA, 0.42)
+        val mutedB = compressChroma(neutralizedB, 0.42)
+        val accentA = compressChroma(neutralizedA, 1.32)
+        val accentB = compressChroma(neutralizedB, 1.32)
+
+        val outputL0 = blendTowardValue(denoisedL, paperMask, 250.0, 0.50)
+        val outputL1 = Mat()
+        Core.addWeighted(outputL0, 0.68, denoisedL, 0.32, 0.0, outputL1)
+        val outputL2 = maskedMinScaled(outputL1, denoisedL, sauvolaStrong, 0.84)
+        val outputL = maskedMinScaled(outputL2, denoisedL, accentProtectMask, 0.92)
+
+        val outputA = Mat(mutedA.size(), mutedA.type())
+        val outputB = Mat(mutedB.size(), mutedB.type())
+        mutedA.copyTo(outputA)
+        mutedB.copyTo(outputB)
+        accentA.copyTo(outputA, accentMask)
+        accentB.copyTo(outputB, accentMask)
+        outputA.setTo(Scalar.all(128.0), paperMask)
+        outputB.setTo(Scalar.all(128.0), paperMask)
+
+        val finalLab = Mat()
+        Core.merge(listOf(outputL, outputA, outputB), finalLab)
+        val finalRgb = Mat()
+        Imgproc.cvtColor(finalLab, finalRgb, Imgproc.COLOR_Lab2RGB)
+        val finalBgr = Mat()
+        Imgproc.cvtColor(finalRgb, finalBgr, Imgproc.COLOR_RGB2BGR)
+        val boostedBgr = boostWhiteboardAccentColors(finalBgr, accentMask)
+        val boostedRgb = Mat()
+        Imgproc.cvtColor(boostedBgr, boostedRgb, Imgproc.COLOR_BGR2RGB)
+
+        val output = bitmapFromRgb(boostedRgb, source.width, source.height)
+
+        rgba.release()
+        rgb.release()
+        lab.release()
+        luminance.release()
+        aChannel.release()
+        bChannel.release()
+        illumination.release()
+        flattenedL.release()
+        stretchedL.release()
+        denoisedL.release()
+        chroma.release()
+        accentMask0.release()
+        mediumChromaMask.release()
+        visibleMask.release()
+        extraAccentMask.release()
+        accentMask.release()
+        accentKernel.release()
+        accentProtectMask.release()
+        structureMask0.release()
+        contrastedL.release()
+        sauvolaStrong.release()
+        structureMask.release()
+        paperMask.release()
+        brightMask.release()
+        invertedStructureMask.release()
+        invertedAccentProtectMask.release()
+        kernel5.release()
+        neutralizedA.release()
+        neutralizedB.release()
+        mutedA.release()
+        mutedB.release()
+        accentA.release()
+        accentB.release()
+        outputL0.release()
+        outputL1.release()
+        outputL2.release()
+        outputL.release()
+        outputA.release()
+        outputB.release()
+        finalLab.release()
+        finalRgb.release()
+        finalBgr.release()
+        boostedBgr.release()
+        boostedRgb.release()
 
         return output
     }
@@ -482,6 +766,338 @@ class ImageProcessor @Inject constructor() {
         blended32.release()
 
         return blended
+    }
+
+    private fun applyChannelContrast(channel: Mat, value: Double): Mat {
+        val channel32 = Mat()
+        channel.convertTo(channel32, CvType.CV_32F)
+        Core.multiply(channel32, Scalar.all(value), channel32)
+        Core.add(channel32, Scalar.all(128.0 * (1.0 - value)), channel32)
+
+        val contrasted = Mat()
+        channel32.convertTo(contrasted, CvType.CV_8U)
+        channel32.release()
+        return contrasted
+    }
+
+    private fun computeLocalMeanStd(
+        luminance: Mat,
+        windowSize: Int = 31,
+    ): Pair<Mat, Mat> {
+        val source = Mat()
+        luminance.convertTo(source, CvType.CV_32F)
+
+        val mean = Mat()
+        Imgproc.boxFilter(
+            source,
+            mean,
+            CvType.CV_32F,
+            Size(windowSize.toDouble(), windowSize.toDouble()),
+            org.opencv.core.Point(-1.0, -1.0),
+            true,
+            Core.BORDER_REPLICATE,
+        )
+
+        val sourceSq = Mat()
+        Core.multiply(source, source, sourceSq)
+        val sqMean = Mat()
+        Imgproc.boxFilter(
+            sourceSq,
+            sqMean,
+            CvType.CV_32F,
+            Size(windowSize.toDouble(), windowSize.toDouble()),
+            org.opencv.core.Point(-1.0, -1.0),
+            true,
+            Core.BORDER_REPLICATE,
+        )
+
+        val meanSq = Mat()
+        Core.multiply(mean, mean, meanSq)
+        val variance = Mat()
+        Core.subtract(sqMean, meanSq, variance)
+        val zero = Mat(variance.size(), variance.type(), Scalar.all(0.0))
+        Core.max(variance, zero, variance)
+
+        val stddev = Mat()
+        Core.sqrt(variance, stddev)
+
+        source.release()
+        sourceSq.release()
+        sqMean.release()
+        meanSq.release()
+        variance.release()
+        zero.release()
+
+        return mean to stddev
+    }
+
+    private fun buildSauvolaStructureMasks(
+        luminance: Mat,
+        windowSize: Int = 31,
+        k: Double = 0.18,
+        dynamicRange: Double = 128.0,
+    ): Pair<Mat, Mat> {
+        val source = Mat()
+        luminance.convertTo(source, CvType.CV_32F)
+        val (mean, stddev) = computeLocalMeanStd(luminance, windowSize)
+
+        val normalizedStddev = Mat()
+        Core.multiply(stddev, Scalar.all(1.0 / dynamicRange), normalizedStddev)
+        Core.add(normalizedStddev, Scalar.all(-1.0), normalizedStddev)
+        Core.multiply(normalizedStddev, Scalar.all(k), normalizedStddev)
+        Core.add(normalizedStddev, Scalar.all(1.0), normalizedStddev)
+
+        val threshold = Mat()
+        Core.multiply(mean, normalizedStddev, threshold)
+
+        val delta = Mat()
+        Core.subtract(mean, source, delta)
+
+        val candidate = Mat()
+        Core.compare(source, threshold, candidate, Core.CMP_LE)
+
+        val stdSoft = Mat()
+        Core.multiply(stddev, Scalar.all(0.22), stdSoft)
+        val softFloor = Mat(stddev.size(), CvType.CV_32F, Scalar.all(10.0))
+        val softThreshold = Mat()
+        Core.max(stdSoft, softFloor, softThreshold)
+
+        val stdStrong = Mat()
+        Core.multiply(stddev, Scalar.all(0.40), stdStrong)
+        val strongFloor = Mat(stddev.size(), CvType.CV_32F, Scalar.all(22.0))
+        val strongThreshold = Mat()
+        Core.max(stdStrong, strongFloor, strongThreshold)
+
+        val softDeltaMask = Mat()
+        Core.compare(delta, softThreshold, softDeltaMask, Core.CMP_GE)
+        val strongDeltaMask = Mat()
+        Core.compare(delta, strongThreshold, strongDeltaMask, Core.CMP_GE)
+
+        val soft = Mat()
+        val strong = Mat()
+        Core.bitwise_and(candidate, softDeltaMask, soft)
+        Core.bitwise_and(candidate, strongDeltaMask, strong)
+
+        source.release()
+        mean.release()
+        stddev.release()
+        normalizedStddev.release()
+        threshold.release()
+        delta.release()
+        candidate.release()
+        stdSoft.release()
+        softFloor.release()
+        softThreshold.release()
+        stdStrong.release()
+        strongFloor.release()
+        strongThreshold.release()
+        softDeltaMask.release()
+        strongDeltaMask.release()
+
+        return soft to strong
+    }
+
+    private fun estimateBwToneCount(luminance: Mat): Int {
+        val q10 = percentileOfMat(luminance, 0.10)
+        val q50 = percentileOfMat(luminance, 0.50)
+        val lowTail = q50 - q10
+
+        val values = ByteArray((luminance.total() * luminance.channels()).toInt())
+        luminance.get(0, 0, values)
+        var midCount = 0
+        for (value in values) {
+            val intValue = value.toInt() and 0xFF
+            if (intValue in 96 until 220) midCount++
+        }
+        val midRatio = midCount.toDouble() / values.size.toDouble()
+
+        return when {
+            q10 >= 232.0 && lowTail < 12.0 -> 2
+            q10 >= 185.0 && lowTail < 60.0 && midRatio < 0.12 -> 3
+            else -> 4
+        }
+    }
+
+    private fun buildQuantizationSample(luminance: Mat): FloatArray {
+        val values = ByteArray((luminance.total() * luminance.channels()).toInt())
+        luminance.get(0, 0, values)
+
+        val darker = ArrayList<Int>()
+        val brighter = ArrayList<Int>()
+        for (value in values) {
+            val intValue = value.toInt() and 0xFF
+            if (intValue < 224) darker.add(intValue) else brighter.add(intValue)
+        }
+
+        val maxBrighter = minOf(brighter.size, maxOf(darker.size * 2, 12000))
+        val sampledBrighter = if (brighter.size > maxBrighter && maxBrighter > 0) {
+            val sorted = brighter.sorted()
+            IntArray(maxBrighter) { index ->
+                val sampleIndex = ((sorted.size - 1).toDouble() * index / (maxBrighter - 1).coerceAtLeast(1)).toInt()
+                sorted[sampleIndex]
+            }.toList()
+        } else {
+            brighter
+        }
+
+        val merged = if (darker.isNotEmpty()) darker + sampledBrighter else values.map { it.toInt() and 0xFF }
+        val capped = if (merged.size > 50000) {
+            val sorted = merged.sorted()
+            IntArray(50000) { index ->
+                val sampleIndex = ((sorted.size - 1).toDouble() * index / 49999.0).toInt()
+                sorted[sampleIndex]
+            }.toList()
+        } else {
+            merged
+        }
+
+        return FloatArray(capped.size) { index -> capped[index].toFloat() }
+    }
+
+    private fun fitQuantizationLevels(sample: FloatArray, toneCount: Int): IntArray {
+        if (toneCount == 2) {
+            val sampleMat = Mat(sample.size, 1, CvType.CV_8U)
+            val sampleBytes = ByteArray(sample.size) { index -> sample[index].toInt().toByte() }
+            sampleMat.put(0, 0, sampleBytes)
+            val tmp = Mat()
+            val threshold = Imgproc.threshold(sampleMat, tmp, 0.0, 255.0, Imgproc.THRESH_BINARY + Imgproc.THRESH_OTSU)
+            val darkLevel = threshold.times(0.30).toInt().coerceIn(16, 48)
+            sampleMat.release()
+            tmp.release()
+            return intArrayOf(darkLevel, 244)
+        }
+
+        val sampleMat = Mat(sample.size, 1, CvType.CV_32F)
+        sampleMat.put(0, 0, sample)
+        val labels = Mat()
+        val centers = Mat()
+        val criteria = TermCriteria(TermCriteria.EPS + TermCriteria.MAX_ITER, 32, 0.2)
+        Core.kmeans(sampleMat, toneCount, labels, criteria, 4, Core.KMEANS_PP_CENTERS, centers)
+
+        val ordered = IntArray(toneCount) { index -> centers.get(index, 0)[0].toInt().coerceIn(0, 255) }.sortedArray()
+        if (toneCount == 3) {
+            ordered[0] = ordered[0].coerceIn(16, 52)
+            ordered[1] = ordered[1].coerceIn(112, 188)
+            ordered[2] = maxOf(236, ordered[2])
+        } else {
+            ordered[0] = ordered[0].coerceIn(16, 56)
+            ordered[1] = ordered[1].coerceIn(72, 132)
+            ordered[2] = ordered[2].coerceIn(136, 196)
+            ordered[3] = maxOf(236, ordered[3])
+        }
+
+        for (index in 1 until ordered.size) {
+            if (ordered[index] <= ordered[index - 1]) {
+                ordered[index] = minOf(244, ordered[index - 1] + 8)
+            }
+        }
+
+        sampleMat.release()
+        labels.release()
+        centers.release()
+
+        return ordered
+    }
+
+    private fun quantizeWithLevels(luminance: Mat, levels: IntArray): Mat {
+        val thresholds = IntArray(levels.size - 1) { index -> ((levels[index] + levels[index + 1]) / 2.0).toInt() }
+        val values = ByteArray((luminance.total() * luminance.channels()).toInt())
+        luminance.get(0, 0, values)
+        val quantized = ByteArray(values.size)
+
+        for (index in values.indices) {
+            val value = values[index].toInt() and 0xFF
+            var levelIndex = 0
+            while (levelIndex < thresholds.size && value >= thresholds[levelIndex]) {
+                levelIndex++
+            }
+            quantized[index] = levels[levelIndex].toByte()
+        }
+
+        val result = Mat(luminance.size(), CvType.CV_8U)
+        result.put(0, 0, quantized)
+        return result
+    }
+
+    private fun applyPaperFloor(
+        quantized: Mat,
+        paperMask: Mat,
+        levels: IntArray,
+        toneCount: Int,
+    ) {
+        val quantizedBytes = ByteArray((quantized.total() * quantized.channels()).toInt())
+        val maskBytes = ByteArray((paperMask.total() * paperMask.channels()).toInt())
+        quantized.get(0, 0, quantizedBytes)
+        paperMask.get(0, 0, maskBytes)
+
+        val paperFloor = if (toneCount >= 3) levels[levels.size - 2] else levels.last()
+        for (index in quantizedBytes.indices) {
+            if ((maskBytes[index].toInt() and 0xFF) == 0) continue
+            val current = quantizedBytes[index].toInt() and 0xFF
+            val updated = if (toneCount >= 3) maxOf(current, paperFloor) else paperFloor
+            quantizedBytes[index] = updated.toByte()
+        }
+        quantized.put(0, 0, quantizedBytes)
+    }
+
+    private fun maskedMinScaled(
+        base: Mat,
+        reference: Mat,
+        mask: Mat,
+        scale: Double,
+    ): Mat {
+        val baseBytes = ByteArray((base.total() * base.channels()).toInt())
+        val refBytes = ByteArray((reference.total() * reference.channels()).toInt())
+        val maskBytes = ByteArray((mask.total() * mask.channels()).toInt())
+        base.get(0, 0, baseBytes)
+        reference.get(0, 0, refBytes)
+        mask.get(0, 0, maskBytes)
+
+        val outBytes = baseBytes.copyOf()
+        for (index in outBytes.indices) {
+            if ((maskBytes[index].toInt() and 0xFF) == 0) continue
+            val baseValue = outBytes[index].toInt() and 0xFF
+            val scaledRef = ((refBytes[index].toInt() and 0xFF) * scale).toInt().coerceIn(0, 255)
+            outBytes[index] = minOf(baseValue, scaledRef).toByte()
+        }
+
+        val output = Mat(base.size(), CvType.CV_8U)
+        output.put(0, 0, outBytes)
+        return output
+    }
+
+    private fun boostWhiteboardAccentColors(bgr: Mat, accentMask: Mat): Mat {
+        val hsv = Mat()
+        Imgproc.cvtColor(bgr, hsv, Imgproc.COLOR_BGR2HSV)
+
+        val hsvBytes = ByteArray((hsv.total() * hsv.channels()).toInt())
+        val maskBytes = ByteArray((accentMask.total() * accentMask.channels()).toInt())
+        hsv.get(0, 0, hsvBytes)
+        accentMask.get(0, 0, maskBytes)
+
+        for (index in maskBytes.indices) {
+            if ((maskBytes[index].toInt() and 0xFF) == 0) continue
+            val base = index * 3
+            val saturation = hsvBytes[base + 1].toInt() and 0xFF
+            val value = hsvBytes[base + 2].toInt() and 0xFF
+            hsvBytes[base + 1] = minOf((saturation * 1.38 + 8.0).toInt(), 255).toByte()
+            hsvBytes[base + 2] = minOf((value * 1.05 + 2.0).toInt(), 255).toByte()
+        }
+
+        hsv.put(0, 0, hsvBytes)
+        val boosted = Mat()
+        Imgproc.cvtColor(hsv, boosted, Imgproc.COLOR_HSV2BGR)
+        hsv.release()
+        return boosted
+    }
+
+    private fun bitmapFromRgb(rgb: Mat, width: Int, height: Int): Bitmap {
+        val rgba = Mat()
+        Imgproc.cvtColor(rgb, rgba, Imgproc.COLOR_RGB2RGBA)
+        val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        Utils.matToBitmap(rgba, output)
+        rgba.release()
+        return output
     }
 
     companion object {

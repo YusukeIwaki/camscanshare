@@ -50,10 +50,12 @@ class ImageProcessorTest {
     }
 
     @Test
-    fun `magic filter is handled outside ColorMatrix`() {
-        val colorMatrixFilters = setOf("sharpen", "bw", "whiteboard", "vivid")
+    fun `bitmap pipeline filters are handled outside ColorMatrix`() {
+        val colorMatrixFilters = setOf("sharpen", "vivid")
 
         assertTrue("magic should be handled by the OpenCV pipeline", "magic" !in colorMatrixFilters)
+        assertTrue("bw should be handled by the OpenCV pipeline", "bw" !in colorMatrixFilters)
+        assertTrue("whiteboard should be handled by the OpenCV pipeline", "whiteboard" !in colorMatrixFilters)
     }
 
     @Test

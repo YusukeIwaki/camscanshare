@@ -36,6 +36,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -344,12 +345,13 @@ private fun PageCard(
         val renderPlan = remember(page.filterName) {
             FilterRenderPlanner.planPreview(selectedFilterKey = page.filterName)
         }
-        val previewBitmap = rememberPreviewBitmap(
+        val previewState = rememberPreviewBitmap(
             imagePath = imagePath,
             rotationDegrees = page.rotationDegrees.toFloat(),
             renderPlan = renderPlan,
             maxDimension = 768,
         )
+        val previewBitmap = previewState.bitmap
         val cardAspectRatio = remember(previewBitmap) {
             if (previewBitmap != null) computePageAspectRatio(previewBitmap.width, previewBitmap.height)
             else 1f
@@ -403,7 +405,14 @@ private fun PageCard(
                     modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
                     contentAlignment = Alignment.Center,
                 ) {
-                    Text("$pageNumber", style = MaterialTheme.typography.titleLarge)
+                    if (previewState.isLoading) {
+                        CircularProgressIndicator(
+                            strokeWidth = 2.5.dp,
+                            modifier = Modifier.size(28.dp),
+                        )
+                    } else {
+                        Text("$pageNumber", style = MaterialTheme.typography.titleLarge)
+                    }
                 }
             }
         }

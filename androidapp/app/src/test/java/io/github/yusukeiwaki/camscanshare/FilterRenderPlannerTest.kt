@@ -17,12 +17,21 @@ class FilterRenderPlannerTest {
     }
 
     @Test
-    fun `non magic preview is rendered from original via color matrix only`() {
+    fun `bw preview is rendered from original via bitmap filter`() {
         val plan = FilterRenderPlanner.planPreview(selectedFilterKey = "bw")
 
         assertEquals("bw", plan.selectedFilterKey)
-        assertNull(plan.bitmapFilterKey)
-        assertEquals("bw", plan.colorMatrixFilterKey)
+        assertEquals("bw", plan.bitmapFilterKey)
+        assertNull(plan.colorMatrixFilterKey)
+    }
+
+    @Test
+    fun `whiteboard preview is rendered from original via bitmap filter`() {
+        val plan = FilterRenderPlanner.planPreview(selectedFilterKey = "whiteboard")
+
+        assertEquals("whiteboard", plan.selectedFilterKey)
+        assertEquals("whiteboard", plan.bitmapFilterKey)
+        assertNull(plan.colorMatrixFilterKey)
     }
 
     @Test

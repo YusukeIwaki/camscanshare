@@ -23,7 +23,7 @@ enum class ImageFilter(
 }
 
 /**
- * Create a ColorMatrixColorFilter matching the CSS filter effects from the design spec.
+ * Create a ColorMatrixColorFilter for lightweight preview-only filters.
  */
 fun ImageFilter.toColorMatrixFilter(): ColorMatrixColorFilter? {
     val matrix = when (this) {
@@ -34,26 +34,9 @@ fun ImageFilter.toColorMatrixFilter(): ColorMatrixColorFilter? {
             contrastMatrix(1.4f).apply { postConcat(brightnessMatrix(1.05f)) }
         }
 
-        ImageFilter.BW -> {
-            // grayscale(1) contrast(1.3)
-            grayscaleMatrix().apply { postConcat(contrastMatrix(1.3f)) }
-        }
-
-        ImageFilter.MAGIC -> {
-            // brightness(1.4) contrast(2) saturate(0.3)
-            brightnessMatrix(1.4f).apply {
-                postConcat(contrastMatrix(2.0f))
-                postConcat(saturationMatrix(0.3f))
-            }
-        }
-
-        ImageFilter.WHITEBOARD -> {
-            // brightness(1.3) contrast(1.6) saturate(0)
-            brightnessMatrix(1.3f).apply {
-                postConcat(contrastMatrix(1.6f))
-                postConcat(saturationMatrix(0f))
-            }
-        }
+        ImageFilter.BW -> return null
+        ImageFilter.MAGIC -> return null
+        ImageFilter.WHITEBOARD -> return null
 
         ImageFilter.VIVID -> {
             // saturate(2) contrast(1.2)
