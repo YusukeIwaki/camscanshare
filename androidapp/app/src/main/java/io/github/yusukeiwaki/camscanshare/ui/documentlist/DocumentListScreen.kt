@@ -1,6 +1,7 @@
 package io.github.yusukeiwaki.camscanshare.ui.documentlist
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
@@ -14,12 +15,18 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -29,15 +36,11 @@ import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Description
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
@@ -59,7 +62,6 @@ import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DocumentListScreen(
     onDocumentClick: (Long) -> Unit,
@@ -67,78 +69,33 @@ fun DocumentListScreen(
     viewModel: DocumentListViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val bottomInset = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
+    val selectionBarHeight = 56.dp
+    val listTopPadding by animateDpAsState(
+        targetValue = if (uiState.isSelectionMode) selectionBarHeight else 0.dp,
+        animationSpec = tween(250),
+        label = "documentListTopPadding",
+    )
 
-    Scaffold(
-        topBar = {
-            Box {
-                // Normal top bar
-                TopAppBar(
-                    title = {
-                        Text(
-                            "CamScanShare",
-                            fontWeight = FontWeight.Bold,
-                        )
-                    },
-                    colors = TopAppBarDefaults.topAppBarColors(
-                        containerColor = MaterialTheme.colorScheme.surface,
-                    ),
-                )
-                // Selection mode bar
-                AnimatedVisibility(
-                    visible = uiState.isSelectionMode,
-                    enter = slideInVertically(
-                        initialOffsetY = { -it },
-                        animationSpec = tween(250),
-                    ),
-                    exit = slideOutVertically(
-                        targetOffsetY = { -it },
-                        animationSpec = tween(250),
-                    ),
-                ) {
-                    TopAppBar(
-                        navigationIcon = {
-                            IconButton(onClick = { viewModel.onExitSelectionMode() }) {
-                                Icon(Icons.Default.Close, contentDescription = "選択解除")
-                            }
-                        },
-                        title = {
-                            Text("${uiState.selectedIds.size}件選択中")
-                        },
-                        actions = {
-                            IconButton(onClick = { viewModel.onDeleteSelectedClick() }) {
-                                Icon(Icons.Default.Delete, contentDescription = "削除")
-                            }
-                        },
-                        colors = TopAppBarDefaults.topAppBarColors(
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            titleContentColor = MaterialTheme.colorScheme.onPrimary,
-                            navigationIconContentColor = MaterialTheme.colorScheme.onPrimary,
-                            actionIconContentColor = MaterialTheme.colorScheme.onPrimary,
-                        ),
-                    )
-                }
-            }
-        },
-        floatingActionButton = {
-            if (!uiState.isSelectionMode) {
-                FloatingActionButton(
-                    onClick = onNewScanClick,
-                    containerColor = MaterialTheme.colorScheme.primary,
-                    contentColor = MaterialTheme.colorScheme.onPrimary,
-                    shape = RoundedCornerShape(16.dp),
-                ) {
-                    Icon(Icons.Default.CameraAlt, contentDescription = "新規スキャン")
-                }
-            }
-        },
-    ) { innerPadding ->
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.surface),
+    ) {
         if (uiState.documents.isEmpty()) {
-            EmptyState(modifier = Modifier.fillMaxSize().padding(innerPadding))
+            EmptyState(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .windowInsetsPadding(WindowInsets.navigationBars)
+                    .statusBarsPadding(),
+            )
         } else {
             DocumentList(
                 documents = uiState.documents,
                 selectedIds = uiState.selectedIds,
                 isSelectionMode = uiState.isSelectionMode,
+                topContentPadding = listTopPadding,
+                bottomContentPadding = bottomInset,
                 onDocumentClick = { doc ->
                     if (uiState.isSelectionMode) {
                         viewModel.onDocumentSelectToggle(doc.id)
@@ -149,8 +106,46 @@ fun DocumentListScreen(
                 onDocumentLongPress = { doc ->
                     viewModel.onDocumentLongPress(doc.id)
                 },
-                modifier = Modifier.padding(innerPadding),
+                modifier = Modifier
+                    .fillMaxSize()
+                    .statusBarsPadding(),
             )
+        }
+
+        AnimatedVisibility(
+            visible = uiState.isSelectionMode,
+            enter = slideInVertically(
+                initialOffsetY = { -it },
+                animationSpec = tween(250),
+            ),
+            exit = slideOutVertically(
+                targetOffsetY = { -it },
+                animationSpec = tween(250),
+            ),
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .statusBarsPadding(),
+        ) {
+            SelectionModeBar(
+                selectedCount = uiState.selectedIds.size,
+                onClose = { viewModel.onExitSelectionMode() },
+                onDelete = { viewModel.onDeleteSelectedClick() },
+            )
+        }
+
+        if (!uiState.isSelectionMode) {
+            FloatingActionButton(
+                onClick = onNewScanClick,
+                containerColor = MaterialTheme.colorScheme.primary,
+                contentColor = MaterialTheme.colorScheme.onPrimary,
+                shape = RoundedCornerShape(16.dp),
+                modifier = Modifier
+                    .align(Alignment.BottomEnd)
+                    .navigationBarsPadding()
+                    .padding(end = 24.dp, bottom = 24.dp),
+            ) {
+                Icon(Icons.Default.CameraAlt, contentDescription = "新規スキャン")
+            }
         }
     }
 
@@ -200,6 +195,8 @@ private fun DocumentList(
     documents: List<DocumentSummaryTuple>,
     selectedIds: Set<Long>,
     isSelectionMode: Boolean,
+    topContentPadding: androidx.compose.ui.unit.Dp,
+    bottomContentPadding: androidx.compose.ui.unit.Dp,
     onDocumentClick: (DocumentSummaryTuple) -> Unit,
     onDocumentLongPress: (DocumentSummaryTuple) -> Unit,
     modifier: Modifier = Modifier,
@@ -208,7 +205,10 @@ private fun DocumentList(
 
     LazyColumn(
         modifier = modifier.fillMaxSize(),
-        contentPadding = PaddingValues(vertical = 4.dp),
+        contentPadding = PaddingValues(
+            top = topContentPadding + 8.dp,
+            bottom = bottomContentPadding + 8.dp,
+        ),
     ) {
         items(documents, key = { it.id }) { doc ->
             val isSelected = selectedIds.contains(doc.id)
@@ -227,6 +227,44 @@ private fun DocumentList(
                             onDocumentLongPress(doc)
                         },
                     ),
+            )
+        }
+    }
+}
+
+@Composable
+private fun SelectionModeBar(
+    selectedCount: Int,
+    onClose: () -> Unit,
+    onDelete: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(56.dp)
+            .background(MaterialTheme.colorScheme.primary)
+            .padding(horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        IconButton(onClick = onClose) {
+            Icon(
+                Icons.Default.Close,
+                contentDescription = "選択解除",
+                tint = MaterialTheme.colorScheme.onPrimary,
+            )
+        }
+        Text(
+            text = "${selectedCount}件選択中",
+            color = MaterialTheme.colorScheme.onPrimary,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier.weight(1f),
+        )
+        IconButton(onClick = onDelete) {
+            Icon(
+                Icons.Default.Delete,
+                contentDescription = "削除",
+                tint = MaterialTheme.colorScheme.onPrimary,
             )
         }
     }
