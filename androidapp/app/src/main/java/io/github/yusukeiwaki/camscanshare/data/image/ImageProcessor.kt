@@ -84,7 +84,7 @@ class ImageProcessor @Inject constructor() {
      * 1. Flatten illumination on Lab-L
      * 2. Auto-select black/white points from the luminance histogram
      * 3. Neutralize paper color cast
-     * 4. Desaturate neutral content while preserving strong accent colors
+     * 4. Whiten only truly neutral paper while preserving color-rich regions
      */
     private fun applyMagicFilter(source: Bitmap): Bitmap {
         val mat = Mat()
@@ -127,31 +127,70 @@ class ImageProcessor @Inject constructor() {
         val neutralizedA = shiftChannel(aChannel, paperBias.first - 128.0)
         val neutralizedB = shiftChannel(bChannel, paperBias.second - 128.0)
 
-        val mutedA = compressChroma(neutralizedA, 0.18)
-        val mutedB = compressChroma(neutralizedB, 0.18)
-        val accentA = compressChroma(neutralizedA, 0.85)
-        val accentB = compressChroma(neutralizedB, 0.85)
+        val neutralReferenceLab = Mat()
+        Core.merge(listOf(denoisedL, neutralizedA, neutralizedB), neutralReferenceLab)
+        val neutralReferenceBgr = Mat()
+        Imgproc.cvtColor(neutralReferenceLab, neutralReferenceBgr, Imgproc.COLOR_Lab2BGR)
+        val referenceSaturation = saturationChannelFromBgr(neutralReferenceBgr)
+        val visibleMask = buildVisibleMask(denoisedL)
+        val colorRichness = estimateColorRichness(referenceSaturation, visibleMask)
+        val paperColorMask = buildPaperColorMask(
+            referenceSaturation,
+            denoisedL,
+            paperMask,
+            accentMask,
+            colorRichness,
+        )
+
+        val mutedFactor = 0.18 + 0.18 * colorRichness
+        val paperColorFactor = 0.42 + 0.30 * colorRichness
+        val accentFactor = minOf(1.0, 0.86 + 0.10 * colorRichness)
+
+        val mutedA = compressChroma(neutralizedA, mutedFactor)
+        val mutedB = compressChroma(neutralizedB, mutedFactor)
+        val paperColorA = compressChroma(neutralizedA, paperColorFactor)
+        val paperColorB = compressChroma(neutralizedB, paperColorFactor)
+        val accentA = compressChroma(neutralizedA, accentFactor)
+        val accentB = compressChroma(neutralizedB, accentFactor)
 
         val outputL = blendTowardValue(denoisedL, paperMask, 244.0, 0.34)
         val blendedL = Mat()
         Core.addWeighted(outputL, 0.58, denoisedL, 0.42, 0.0, blendedL)
+        val preserveLMix = 0.24 + 0.18 * colorRichness
+        val preservedL = blendMaskedTowardReference(blendedL, denoisedL, paperColorMask, preserveLMix)
         val outputA = Mat(mutedA.size(), mutedA.type())
         val outputB = Mat(mutedB.size(), mutedB.type())
         mutedA.copyTo(outputA)
         mutedB.copyTo(outputB)
+        paperColorA.copyTo(outputA, paperColorMask)
+        paperColorB.copyTo(outputB, paperColorMask)
         accentA.copyTo(outputA, accentMask)
         accentB.copyTo(outputB, accentMask)
-        outputA.setTo(Scalar.all(128.0), paperMask)
-        outputB.setTo(Scalar.all(128.0), paperMask)
+        val nonPaperColorMask = invertMask(paperColorMask)
+        val nonAccentMask = invertMask(accentMask)
+        val paperNeutralizeMask = Mat()
+        Core.bitwise_and(paperMask, nonPaperColorMask, paperNeutralizeMask)
+        Core.bitwise_and(paperNeutralizeMask, nonAccentMask, paperNeutralizeMask)
+        outputA.setTo(Scalar.all(128.0), paperNeutralizeMask)
+        outputB.setTo(Scalar.all(128.0), paperNeutralizeMask)
 
         val resultLab = Mat()
-        Core.merge(listOf(blendedL, outputA, outputB), resultLab)
+        Core.merge(listOf(preservedL, outputA, outputB), resultLab)
 
-        val resultRgb = Mat()
-        Imgproc.cvtColor(resultLab, resultRgb, Imgproc.COLOR_Lab2RGB)
+        val resultBgr = Mat()
+        Imgproc.cvtColor(resultLab, resultBgr, Imgproc.COLOR_Lab2BGR)
+        val restoredBgr = restoreContentSaturation(
+            resultBgr,
+            denoisedL,
+            neutralizedA,
+            neutralizedB,
+            paperMask,
+            accentMask,
+            paperColorMask,
+        )
 
         val resultRgba = Mat()
-        Imgproc.cvtColor(resultRgb, resultRgba, Imgproc.COLOR_RGB2RGBA)
+        Imgproc.cvtColor(restoredBgr, resultRgba, Imgproc.COLOR_BGR2RGBA)
 
         val output = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
         Utils.matToBitmap(resultRgba, output)
@@ -173,16 +212,28 @@ class ImageProcessor @Inject constructor() {
         accentMask.release()
         neutralizedA.release()
         neutralizedB.release()
+        neutralReferenceLab.release()
+        neutralReferenceBgr.release()
+        referenceSaturation.release()
+        visibleMask.release()
+        paperColorMask.release()
         mutedA.release()
         mutedB.release()
+        paperColorA.release()
+        paperColorB.release()
         accentA.release()
         accentB.release()
         outputL.release()
         blendedL.release()
+        preservedL.release()
         outputA.release()
         outputB.release()
+        nonPaperColorMask.release()
+        nonAccentMask.release()
+        paperNeutralizeMask.release()
         resultLab.release()
-        resultRgb.release()
+        resultBgr.release()
+        restoredBgr.release()
         resultRgba.release()
 
         return output
@@ -766,6 +817,199 @@ class ImageProcessor @Inject constructor() {
         blended32.release()
 
         return blended
+    }
+
+    private fun buildVisibleMask(luminance: Mat): Mat {
+        val visibleMask = Mat()
+        Imgproc.threshold(luminance, visibleMask, 48.0, 255.0, Imgproc.THRESH_BINARY)
+        return visibleMask
+    }
+
+    private fun saturationChannelFromBgr(bgr: Mat): Mat {
+        val hsv = Mat()
+        Imgproc.cvtColor(bgr, hsv, Imgproc.COLOR_BGR2HSV)
+        val channels = ArrayList<Mat>(3)
+        Core.split(hsv, channels)
+        val saturation = channels[1].clone()
+
+        hsv.release()
+        channels.forEach { it.release() }
+
+        return saturation
+    }
+
+    private fun estimateColorRichness(referenceSaturation: Mat, visibleMask: Mat): Double {
+        val saturationBytes = ByteArray((referenceSaturation.total() * referenceSaturation.channels()).toInt())
+        val maskBytes = ByteArray((visibleMask.total() * visibleMask.channels()).toInt())
+        referenceSaturation.get(0, 0, saturationBytes)
+        visibleMask.get(0, 0, maskBytes)
+
+        var visibleCount = 0
+        var colorCount = 0
+        for (index in saturationBytes.indices) {
+            if ((maskBytes[index].toInt() and 0xFF) == 0) continue
+            visibleCount++
+            if ((saturationBytes[index].toInt() and 0xFF) > 18) {
+                colorCount++
+            }
+        }
+        if (visibleCount == 0) return 0.0
+
+        val colorDensity = colorCount.toDouble() / visibleCount.toDouble()
+        return ((colorDensity - 0.025) / 0.14).coerceIn(0.0, 1.0)
+    }
+
+    private fun buildPaperColorMask(
+        referenceSaturation: Mat,
+        luminance: Mat,
+        paperMask: Mat,
+        accentMask: Mat,
+        colorRichness: Double,
+    ): Mat {
+        val saturationMask = Mat()
+        Imgproc.threshold(
+            referenceSaturation,
+            saturationMask,
+            22.0 - 8.0 * colorRichness,
+            255.0,
+            Imgproc.THRESH_BINARY,
+        )
+        val visibleMask = buildVisibleMask(luminance)
+        val mediumColorMask = Mat()
+        Core.bitwise_and(saturationMask, visibleMask, mediumColorMask)
+        Core.bitwise_and(mediumColorMask, paperMask, mediumColorMask)
+
+        val paperColorMask = Mat()
+        Core.bitwise_or(mediumColorMask, accentMask, paperColorMask)
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(3.0, 3.0))
+        Imgproc.morphologyEx(paperColorMask, paperColorMask, Imgproc.MORPH_OPEN, kernel)
+
+        saturationMask.release()
+        visibleMask.release()
+        mediumColorMask.release()
+        kernel.release()
+
+        return paperColorMask
+    }
+
+    private fun blendMaskedTowardReference(base: Mat, reference: Mat, mask: Mat, referenceWeight: Double): Mat {
+        val baseBytes = ByteArray((base.total() * base.channels()).toInt())
+        val referenceBytes = ByteArray((reference.total() * reference.channels()).toInt())
+        val maskBytes = ByteArray((mask.total() * mask.channels()).toInt())
+        base.get(0, 0, baseBytes)
+        reference.get(0, 0, referenceBytes)
+        mask.get(0, 0, maskBytes)
+
+        val outputBytes = baseBytes.copyOf()
+        for (index in outputBytes.indices) {
+            if ((maskBytes[index].toInt() and 0xFF) == 0) continue
+            val baseValue = outputBytes[index].toInt() and 0xFF
+            val referenceValue = referenceBytes[index].toInt() and 0xFF
+            outputBytes[index] = (
+                baseValue * (1.0 - referenceWeight) + referenceValue * referenceWeight
+            ).toInt().coerceIn(0, 255).toByte()
+        }
+
+        val output = Mat(base.size(), CvType.CV_8U)
+        output.put(0, 0, outputBytes)
+        return output
+    }
+
+    private fun restoreContentSaturation(
+        finalBgr: Mat,
+        luminance: Mat,
+        neutralizedA: Mat,
+        neutralizedB: Mat,
+        paperMask: Mat,
+        accentMask: Mat,
+        paperColorMask: Mat,
+    ): Mat {
+        val neutralReferenceLab = Mat()
+        Core.merge(listOf(luminance, neutralizedA, neutralizedB), neutralReferenceLab)
+        val neutralReferenceBgr = Mat()
+        Imgproc.cvtColor(neutralReferenceLab, neutralReferenceBgr, Imgproc.COLOR_Lab2BGR)
+
+        val finalHsv = Mat()
+        Imgproc.cvtColor(finalBgr, finalHsv, Imgproc.COLOR_BGR2HSV)
+        val referenceHsv = Mat()
+        Imgproc.cvtColor(neutralReferenceBgr, referenceHsv, Imgproc.COLOR_BGR2HSV)
+
+        val finalBytes = ByteArray((finalHsv.total() * finalHsv.channels()).toInt())
+        val referenceBytes = ByteArray((referenceHsv.total() * referenceHsv.channels()).toInt())
+        val luminanceBytes = ByteArray((luminance.total() * luminance.channels()).toInt())
+        val paperBytes = ByteArray((paperMask.total() * paperMask.channels()).toInt())
+        val accentBytes = ByteArray((accentMask.total() * accentMask.channels()).toInt())
+        val paperColorBytes = ByteArray((paperColorMask.total() * paperColorMask.channels()).toInt())
+        finalHsv.get(0, 0, finalBytes)
+        referenceHsv.get(0, 0, referenceBytes)
+        luminance.get(0, 0, luminanceBytes)
+        paperMask.get(0, 0, paperBytes)
+        accentMask.get(0, 0, accentBytes)
+        paperColorMask.get(0, 0, paperColorBytes)
+
+        var visibleCount = 0
+        var colorCount = 0
+        for (index in luminanceBytes.indices) {
+            val luminanceValue = luminanceBytes[index].toInt() and 0xFF
+            if (luminanceValue <= 48) continue
+            visibleCount++
+            val saturation = referenceBytes[index * 3 + 1].toInt() and 0xFF
+            if (saturation > 18) {
+                colorCount++
+            }
+        }
+        val colorRichness = if (visibleCount == 0) {
+            0.0
+        } else {
+            ((colorCount.toDouble() / visibleCount.toDouble()) - 0.025) / 0.14
+        }.coerceIn(0.0, 1.0)
+
+        for (index in luminanceBytes.indices) {
+            val luminanceValue = luminanceBytes[index].toInt() and 0xFF
+            if (luminanceValue <= 48) continue
+
+            val paperColorValue = paperColorBytes[index].toInt() and 0xFF
+            val restorePixel = (paperBytes[index].toInt() and 0xFF) == 0 || paperColorValue > 0
+            if (!restorePixel) continue
+
+            val hsvBase = index * 3
+            val referenceSaturation = referenceBytes[hsvBase + 1].toInt() and 0xFF
+            if (referenceSaturation <= 10) continue
+
+            val preserveWeight = ((referenceSaturation - 10.0) / 34.0).coerceIn(0.0, 1.0)
+            var saturationFloor = referenceSaturation * (
+                0.40 + 0.24 * preserveWeight + 0.24 * colorRichness
+            )
+            if ((accentBytes[index].toInt() and 0xFF) > 0) {
+                saturationFloor = maxOf(
+                    saturationFloor,
+                    referenceSaturation * (0.74 + 0.18 * colorRichness),
+                )
+            }
+            if (paperColorValue > 0) {
+                saturationFloor = maxOf(
+                    saturationFloor,
+                    referenceSaturation * (0.50 + 0.18 * colorRichness),
+                )
+            }
+
+            val currentSaturation = finalBytes[hsvBase + 1].toInt() and 0xFF
+            finalBytes[hsvBase + 1] = maxOf(
+                currentSaturation,
+                saturationFloor.toInt().coerceIn(0, 255),
+            ).toByte()
+        }
+
+        finalHsv.put(0, 0, finalBytes)
+        val restored = Mat()
+        Imgproc.cvtColor(finalHsv, restored, Imgproc.COLOR_HSV2BGR)
+
+        neutralReferenceLab.release()
+        neutralReferenceBgr.release()
+        finalHsv.release()
+        referenceHsv.release()
+
+        return restored
     }
 
     private fun applyChannelContrast(channel: Mat, value: Double): Mat {

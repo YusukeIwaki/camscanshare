@@ -67,22 +67,8 @@ enum ImageFilterService {
             return applyDocumentBWPipeline(to: working) ?? image
 
         case .magic:
-            let blur = CIFilter.gaussianBlur()
-            blur.inputImage = image
-            blur.radius = Float(min(image.extent.width, image.extent.height) * 0.05)
-            guard let blurred = blur.outputImage else { return image }
-
-            let divide = CIFilter.divideBlendMode()
-            divide.inputImage = image
-            divide.backgroundImage = blurred
-            guard let divided = divide.outputImage else { return image }
-
-            let contrast = CIFilter.colorControls()
-            contrast.inputImage = divided.cropped(to: image.extent)
-            contrast.contrast = 1.5
-            contrast.brightness = 0.05
-            contrast.saturation = 0.3
-            return contrast.outputImage ?? image
+            let working = downscaleIfNeeded(image, maxDimension: 1800, intent: intent)
+            return applyMagicPipeline(to: working) ?? image
 
         case .whiteboard:
             let working = downscaleIfNeeded(image, maxDimension: 1800, intent: intent)
@@ -199,6 +185,134 @@ enum ImageFilterService {
         }
 
         return outputImage
+    }
+
+    private static func applyMagicPipeline(to image: CIImage) -> CIImage? {
+        guard let lab = extractLabPlanes(from: image) else { return nil }
+
+        let luminance = lab.l
+        let illumination = estimateIllumination(luminance, width: lab.width, height: lab.height)
+        let flattenedL = flatFieldCorrect(luminance, illumination: illumination)
+        let stretchedL = autoStretchLuminance(flattenedL)
+        let denoisedL = medianBlur3(stretchedL, width: lab.width, height: lab.height)
+
+        var paperMask = buildPaperMask(
+            luminance: denoisedL,
+            aChannel: lab.a,
+            bChannel: lab.b,
+            width: lab.width,
+            height: lab.height
+        )
+        let structureMask = buildStructureMask(denoisedL, width: lab.width, height: lab.height)
+        paperMask = bitwiseAnd(paperMask, bitwiseNot(structureMask))
+        paperMask = morphologyClose(paperMask, radius: 2, iterations: 2, width: lab.width, height: lab.height)
+
+        let accentMask = buildAccentMask(
+            luminance: denoisedL,
+            aChannel: lab.a,
+            bChannel: lab.b,
+            width: lab.width,
+            height: lab.height
+        )
+
+        let meanA = meanMaskedValue(lab.a, mask: paperMask) ?? 128.0
+        let meanB = meanMaskedValue(lab.b, mask: paperMask) ?? 128.0
+        let neutralizedA = neutralizeColorChannel(lab.a, paperMean: meanA)
+        let neutralizedB = neutralizeColorChannel(lab.b, paperMean: meanB)
+
+        guard let neutralReferenceImage = makeCIImageFromLab(
+            l: denoisedL,
+            a: neutralizedA,
+            b: neutralizedB,
+            width: lab.width,
+            height: lab.height
+        ) else { return nil }
+        let neutralReferenceRGB = extractRGBPlanes(from: neutralReferenceImage)
+        let referenceSaturation = computeSaturation(
+            red: neutralReferenceRGB.red,
+            green: neutralReferenceRGB.green,
+            blue: neutralReferenceRGB.blue
+        )
+        let visibleMask = thresholdMask(denoisedL, threshold: 48, inverse: false)
+        let colorRichness = estimateColorRichness(referenceSaturation, visibleMask: visibleMask)
+        let paperColorMask = buildPaperColorMask(
+            referenceSaturation: referenceSaturation,
+            luminance: denoisedL,
+            paperMask: paperMask,
+            accentMask: accentMask,
+            colorRichness: colorRichness,
+            width: lab.width,
+            height: lab.height
+        )
+
+        let mutedFactor = Float(0.18 + 0.18 * colorRichness)
+        let paperColorFactor = Float(0.42 + 0.30 * colorRichness)
+        let accentFactor = Float(min(1.0, 0.86 + 0.10 * colorRichness))
+        let mutedA = compressChroma(neutralizedA, factor: mutedFactor)
+        let mutedB = compressChroma(neutralizedB, factor: mutedFactor)
+        let paperColorA = compressChroma(neutralizedA, factor: paperColorFactor)
+        let paperColorB = compressChroma(neutralizedB, factor: paperColorFactor)
+        let accentA = compressChroma(neutralizedA, factor: accentFactor)
+        let accentB = compressChroma(neutralizedB, factor: accentFactor)
+
+        var outputL = blendTowardValue(denoisedL, mask: paperMask, target: 244.0, strength: 0.34)
+        outputL = weightedBlend(outputL, denoisedL, weightA: 0.58, weightB: 0.42)
+        outputL = blendMaskedTowardReference(
+            outputL,
+            reference: denoisedL,
+            mask: paperColorMask,
+            referenceWeight: Float(0.24 + 0.18 * colorRichness)
+        )
+
+        var outputA = mutedA
+        var outputB = mutedB
+        for index in outputA.indices where paperColorMask[index] > 0 {
+            outputA[index] = paperColorA[index]
+            outputB[index] = paperColorB[index]
+        }
+        for index in outputA.indices where accentMask[index] > 0 {
+            outputA[index] = accentA[index]
+            outputB[index] = accentB[index]
+        }
+
+        let paperNeutralizeMask = bitwiseAnd(
+            bitwiseAnd(paperMask, bitwiseNot(paperColorMask)),
+            bitwiseNot(accentMask)
+        )
+        for index in outputA.indices where paperNeutralizeMask[index] > 0 {
+            outputA[index] = 128
+            outputB[index] = 128
+        }
+
+        guard let finalLabImage = makeCIImageFromLab(
+            l: outputL,
+            a: outputA,
+            b: outputB,
+            width: lab.width,
+            height: lab.height
+        ) else { return nil }
+
+        let finalRGB = extractRGBPlanes(from: finalLabImage)
+        let restoredRGB = restoreContentSaturation(
+            red: finalRGB.red,
+            green: finalRGB.green,
+            blue: finalRGB.blue,
+            referenceRed: neutralReferenceRGB.red,
+            referenceGreen: neutralReferenceRGB.green,
+            referenceBlue: neutralReferenceRGB.blue,
+            luminance: denoisedL,
+            paperMask: paperMask,
+            accentMask: accentMask,
+            paperColorMask: paperColorMask
+        )
+
+        return makeRGBImage(
+            red: restoredRGB.red,
+            green: restoredRGB.green,
+            blue: restoredRGB.blue,
+            width: lab.width,
+            height: lab.height
+        )
     }
 
     private static func applyWhiteboardPipeline(to image: CIImage) -> CIImage? {
@@ -737,6 +851,131 @@ enum ImageFilterService {
         }
     }
 
+    private static func blendMaskedTowardReference(
+        _ base: [UInt8],
+        reference: [UInt8],
+        mask: [UInt8],
+        referenceWeight: Float
+    ) -> [UInt8] {
+        var output = base
+        for index in output.indices where mask[index] > 0 {
+            output[index] = clampToUInt8(
+                Float(base[index]) * (1.0 - referenceWeight) + Float(reference[index]) * referenceWeight
+            )
+        }
+        return output
+    }
+
+    private static func computeSaturation(
+        red: [UInt8],
+        green: [UInt8],
+        blue: [UInt8]
+    ) -> [UInt8] {
+        zip(zip(red, green), blue).map { rg, blueValue in
+            let (redValue, greenValue) = rg
+            let (_, saturation, _) = rgbToHSV(red: redValue, green: greenValue, blue: blueValue)
+            return clampToUInt8(saturation * 255.0)
+        }
+    }
+
+    private static func estimateColorRichness(_ referenceSaturation: [UInt8], visibleMask: [UInt8]) -> Double {
+        var visibleCount = 0
+        var colorCount = 0
+        for index in referenceSaturation.indices where visibleMask[index] > 0 {
+            visibleCount += 1
+            if referenceSaturation[index] > 18 {
+                colorCount += 1
+            }
+        }
+        guard visibleCount > 0 else { return 0.0 }
+        let colorDensity = Double(colorCount) / Double(visibleCount)
+        return ((colorDensity - 0.025) / 0.14).clamped(to: 0.0...1.0)
+    }
+
+    private static func buildPaperColorMask(
+        referenceSaturation: [UInt8],
+        luminance: [UInt8],
+        paperMask: [UInt8],
+        accentMask: [UInt8],
+        colorRichness: Double,
+        width: Int,
+        height: Int
+    ) -> [UInt8] {
+        let saturationMask = thresholdMask(
+            referenceSaturation,
+            threshold: Int(round(22.0 - 8.0 * colorRichness)),
+            inverse: false
+        )
+        let visibleMask = thresholdMask(luminance, threshold: 48, inverse: false)
+        var paperColorMask = bitwiseAnd(bitwiseAnd(saturationMask, visibleMask), paperMask)
+        paperColorMask = bitwiseOr(paperColorMask, accentMask)
+        return morphologyOpen(paperColorMask, radius: 1, iterations: 1, width: width, height: height)
+    }
+
+    private static func restoreContentSaturation(
+        red: [UInt8],
+        green: [UInt8],
+        blue: [UInt8],
+        referenceRed: [UInt8],
+        referenceGreen: [UInt8],
+        referenceBlue: [UInt8],
+        luminance: [UInt8],
+        paperMask: [UInt8],
+        accentMask: [UInt8],
+        paperColorMask: [UInt8]
+    ) -> (red: [UInt8], green: [UInt8], blue: [UInt8]) {
+        let referenceSaturation = computeSaturation(
+            red: referenceRed,
+            green: referenceGreen,
+            blue: referenceBlue
+        )
+        let visibleMask = thresholdMask(luminance, threshold: 48, inverse: false)
+        let colorRichness = estimateColorRichness(referenceSaturation, visibleMask: visibleMask)
+
+        var outputRed = red
+        var outputGreen = green
+        var outputBlue = blue
+
+        for index in red.indices where luminance[index] > 48 {
+            let restorePixel = paperMask[index] == 0 || paperColorMask[index] > 0
+            guard restorePixel else { continue }
+
+            let referenceSaturationValue = Float(referenceSaturation[index])
+            guard referenceSaturationValue > 10.0 else { continue }
+
+            let preserveWeight = ((referenceSaturationValue - 10.0) / 34.0).clamped(to: 0.0...1.0)
+            var saturationFloor = referenceSaturationValue * Float(
+                0.40 + 0.24 * Double(preserveWeight) + 0.24 * colorRichness
+            )
+            if accentMask[index] > 0 {
+                saturationFloor = max(
+                    saturationFloor,
+                    referenceSaturationValue * Float(0.74 + 0.18 * colorRichness)
+                )
+            }
+            if paperColorMask[index] > 0 {
+                saturationFloor = max(
+                    saturationFloor,
+                    referenceSaturationValue * Float(0.50 + 0.18 * colorRichness)
+                )
+            }
+
+            var (hue, saturation, value) = rgbToHSV(
+                red: outputRed[index],
+                green: outputGreen[index],
+                blue: outputBlue[index]
+            )
+            let floor = (saturationFloor / 255.0).clamped(to: 0.0...1.0)
+            saturation = max(saturation, floor)
+            let restored = hsvToRGB(hue: hue, saturation: saturation, value: value)
+            outputRed[index] = restored.0
+            outputGreen[index] = restored.1
+            outputBlue[index] = restored.2
+        }
+
+        return (outputRed, outputGreen, outputBlue)
+    }
+
     private static func applyChannelContrast(_ channel: [UInt8], value: Float) -> [UInt8] {
         let offset = 128.0 * (1.0 - value)
         return channel.map { pixel in
@@ -1171,5 +1410,11 @@ enum ImageFilterService {
 
     private static func clampToUInt8(_ value: Float) -> UInt8 {
         UInt8(max(0, min(255, Int(round(value)))))
+    }
+}
+
+private extension Comparable {
+    func clamped(to limits: ClosedRange<Self>) -> Self {
+        min(max(self, limits.lowerBound), limits.upperBound)
     }
 }

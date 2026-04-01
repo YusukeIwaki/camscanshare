@@ -116,27 +116,11 @@ struct PageEditView: View {
             let editState = index < viewModel.editStates.count ? viewModel.editStates[index] : nil
             let pageAspectRatio = ImageStorageService.imageAspectRatio(fileName: page.originalImageFileName) ?? 1.0
 
-            Group {
-                if let image = ImageStorageService.loadImage(fileName: page.originalImageFileName),
-                    let editState,
-                    let filtered = ImageFilterService.applyFilter(
-                        editState.filterPreset,
-                        to: image,
-                        rotation: editState.rotationDegrees,
-                        intent: .preview
-                    )
-                {
-                    Image(uiImage: filtered)
-                        .resizable()
-                        .aspectRatio(contentMode: .fit)
-                        .clipShape(RoundedRectangle(cornerRadius: 4))
-                        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
-                } else {
-                    Rectangle()
-                        .fill(Color(.systemGray5))
-                        .aspectRatio(pageAspectRatio, contentMode: .fit)
-                }
-            }
+            AsyncPagePreview(
+                fileName: page.originalImageFileName,
+                editState: editState,
+                pageAspectRatio: pageAspectRatio
+            )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(24)
         }
@@ -283,5 +267,138 @@ struct PageEditView: View {
         case .whiteboard: 0.3
         case .vivid: 0.6
         }
+    }
+}
+
+private enum PagePreviewCache {
+    nonisolated(unsafe) static let imageCache = NSCache<NSString, UIImage>()
+}
+
+private struct AsyncPagePreview: View {
+    let fileName: String
+    let editState: PageEditState?
+    let pageAspectRatio: CGFloat
+
+    @State private var renderedImage: UIImage?
+    @State private var isLoading = false
+    @State private var activeRenderKey = ""
+
+    init(fileName: String, editState: PageEditState?, pageAspectRatio: CGFloat) {
+        self.fileName = fileName
+        self.editState = editState
+        self.pageAspectRatio = pageAspectRatio
+
+        let key = Self.makeRenderKey(fileName: fileName, editState: editState)
+        let cached = Self.cachedImage(for: key)
+        _renderedImage = State(initialValue: cached)
+        _isLoading = State(initialValue: editState != nil && cached == nil)
+        _activeRenderKey = State(initialValue: key)
+    }
+
+    private var renderKey: String {
+        Self.makeRenderKey(fileName: fileName, editState: editState)
+    }
+
+    var body: some View {
+        ZStack {
+            Rectangle()
+                .fill(Color(.systemGray5))
+                .aspectRatio(pageAspectRatio, contentMode: .fit)
+
+            if let renderedImage {
+                Image(uiImage: renderedImage)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+            }
+
+            if isLoading {
+                VStack(spacing: 12) {
+                    ProgressView()
+                        .controlSize(.regular)
+                    Text("フィルタを適用中…")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundStyle(.secondary)
+                }
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+            }
+        }
+        .clipShape(RoundedRectangle(cornerRadius: 4))
+        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
+        .onAppear {
+            syncStateFromCache(for: renderKey)
+        }
+        .onChange(of: renderKey) { _, newKey in
+            syncStateFromCache(for: newKey)
+        }
+        .task(id: renderKey) {
+            renderPreview()
+        }
+    }
+
+    @MainActor
+    private func renderPreview() {
+        guard let editState else {
+            renderedImage = nil
+            isLoading = false
+            activeRenderKey = renderKey
+            return
+        }
+
+        activeRenderKey = renderKey
+
+        if let cached = PagePreviewCache.imageCache.object(forKey: renderKey as NSString) {
+            renderedImage = cached
+            isLoading = false
+            return
+        }
+
+        renderedImage = nil
+        isLoading = true
+
+        let requestKey = renderKey
+        let fileName = fileName
+        let filterPreset = editState.filterPreset
+        let rotationDegrees = editState.rotationDegrees
+
+        DispatchQueue.global(qos: .userInitiated).async {
+            let image = ImageStorageService.loadImage(fileName: fileName)
+            let filtered = image.flatMap {
+                ImageFilterService.applyFilter(
+                    filterPreset,
+                    to: $0,
+                    rotation: rotationDegrees,
+                    intent: .preview
+                )
+            }
+
+            if let filtered {
+                PagePreviewCache.imageCache.setObject(filtered, forKey: requestKey as NSString)
+            }
+
+            DispatchQueue.main.async {
+                guard activeRenderKey == requestKey else { return }
+                renderedImage = filtered
+                isLoading = false
+            }
+        }
+    }
+
+    @MainActor
+    private func syncStateFromCache(for key: String) {
+        activeRenderKey = key
+        let cached = Self.cachedImage(for: key)
+        renderedImage = cached
+        isLoading = editState != nil && cached == nil
+    }
+
+    private static func makeRenderKey(fileName: String, editState: PageEditState?) -> String {
+        guard let editState else { return "\(fileName)|missing" }
+        return "\(fileName)|\(editState.filterPreset.rawValue)|\(editState.rotationDegrees)"
+    }
+
+    private static func cachedImage(for key: String) -> UIImage? {
+        PagePreviewCache.imageCache.object(forKey: key as NSString)
     }
 }

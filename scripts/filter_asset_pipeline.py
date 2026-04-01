@@ -603,6 +603,90 @@ def blend_toward_value(channel: np.ndarray, mask: np.ndarray, target: float, str
     return np.clip(blended, 0, 255).astype(np.uint8)
 
 
+def estimate_color_richness(reference_saturation: np.ndarray, visible_mask: np.ndarray) -> float:
+    visible_idx = visible_mask > 0
+    if not np.any(visible_idx):
+        return 0.0
+
+    color_density = float(np.mean(reference_saturation[visible_idx] > 18.0))
+    return float(np.clip((color_density - 0.025) / 0.14, 0.0, 1.0))
+
+
+def build_paper_color_mask(
+    reference_saturation: np.ndarray,
+    luminance: np.ndarray,
+    paper_mask: np.ndarray,
+    accent_mask: np.ndarray,
+    color_richness: float,
+) -> np.ndarray:
+    saturation_threshold = 22.0 - 8.0 * color_richness
+    medium_color_mask = (
+        (paper_mask > 0)
+        & (luminance > 48)
+        & (reference_saturation >= saturation_threshold)
+    )
+
+    if not np.any(medium_color_mask):
+        return accent_mask.copy()
+
+    paper_color_mask = medium_color_mask.astype(np.uint8) * 255
+    paper_color_mask = cv2.bitwise_or(paper_color_mask, accent_mask)
+    paper_color_mask = cv2.morphologyEx(
+        paper_color_mask,
+        cv2.MORPH_OPEN,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)),
+    )
+    return paper_color_mask
+
+
+def restore_content_saturation(
+    final_bgr: np.ndarray,
+    luminance: np.ndarray,
+    neutralized_a: np.ndarray,
+    neutralized_b: np.ndarray,
+    paper_mask: np.ndarray,
+    accent_mask: np.ndarray,
+    paper_color_mask: np.ndarray,
+) -> np.ndarray:
+    neutral_reference = cv2.cvtColor(
+        cv2.merge([luminance, neutralized_a, neutralized_b]),
+        cv2.COLOR_LAB2BGR,
+    )
+    final_hsv = cv2.cvtColor(final_bgr, cv2.COLOR_BGR2HSV).astype(np.float32)
+    reference_hsv = cv2.cvtColor(neutral_reference, cv2.COLOR_BGR2HSV).astype(np.float32)
+
+    final_saturation = final_hsv[:, :, 1]
+    reference_saturation = reference_hsv[:, :, 1]
+    visible_mask = luminance > 48
+    restore_mask = ((paper_mask == 0) | (paper_color_mask > 0)) & visible_mask
+    color_richness = estimate_color_richness(reference_saturation, visible_mask.astype(np.uint8) * 255)
+
+    preserve_weight = np.clip((reference_saturation - 10.0) / 34.0, 0.0, 1.0)
+    saturation_floor = reference_saturation * (
+        0.40 + 0.24 * preserve_weight + 0.24 * color_richness
+    )
+
+    accent_idx = accent_mask > 0
+    saturation_floor[accent_idx] = np.maximum(
+        saturation_floor[accent_idx],
+        reference_saturation[accent_idx] * (0.74 + 0.18 * color_richness),
+    )
+
+    paper_color_idx = paper_color_mask > 0
+    saturation_floor[paper_color_idx] = np.maximum(
+        saturation_floor[paper_color_idx],
+        reference_saturation[paper_color_idx] * (0.50 + 0.18 * color_richness),
+    )
+
+    restore_idx = restore_mask & (reference_saturation > 10.0)
+    final_saturation[restore_idx] = np.maximum(
+        final_saturation[restore_idx],
+        saturation_floor[restore_idx],
+    )
+    final_hsv[:, :, 1] = np.clip(final_saturation, 0, 255)
+    return cv2.cvtColor(final_hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
+
+
 def compute_local_mean_std(
     luminance: np.ndarray,
     window_size: int = 31,
@@ -830,23 +914,64 @@ def apply_magic_pipeline(cropped: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     neutralized_a = np.clip(a_channel.astype(np.float32) - (mean_a - 128.0), 0, 255).astype(np.uint8)
     neutralized_b = np.clip(b_channel.astype(np.float32) - (mean_b - 128.0), 0, 255).astype(np.uint8)
 
-    muted_a = compress_chroma(neutralized_a, 0.18)
-    muted_b = compress_chroma(neutralized_b, 0.18)
-    accent_a = compress_chroma(neutralized_a, 0.85)
-    accent_b = compress_chroma(neutralized_b, 0.85)
+    neutral_reference = cv2.cvtColor(
+        cv2.merge([denoised_l, neutralized_a, neutralized_b]),
+        cv2.COLOR_LAB2BGR,
+    )
+    reference_hsv = cv2.cvtColor(neutral_reference, cv2.COLOR_BGR2HSV).astype(np.float32)
+    reference_saturation = reference_hsv[:, :, 1]
+    color_richness = estimate_color_richness(reference_saturation, (denoised_l > 48).astype(np.uint8) * 255)
+    paper_color_mask = build_paper_color_mask(
+        reference_saturation,
+        denoised_l,
+        paper_mask,
+        accent_mask,
+        color_richness,
+    )
+
+    muted_factor = 0.18 + 0.18 * color_richness
+    paper_color_factor = 0.42 + 0.30 * color_richness
+    accent_factor = min(1.0, 0.86 + 0.10 * color_richness)
+
+    muted_a = compress_chroma(neutralized_a, muted_factor)
+    muted_b = compress_chroma(neutralized_b, muted_factor)
+    paper_color_a = compress_chroma(neutralized_a, paper_color_factor)
+    paper_color_b = compress_chroma(neutralized_b, paper_color_factor)
+    accent_a = compress_chroma(neutralized_a, accent_factor)
+    accent_b = compress_chroma(neutralized_b, accent_factor)
 
     output_l = blend_toward_value(denoised_l, paper_mask, 244.0, 0.34)
     output_l = cv2.addWeighted(output_l, 0.58, denoised_l, 0.42, 0.0)
+    paper_color_idx = paper_color_mask > 0
+    preserve_l_mix = 0.24 + 0.18 * color_richness
+    output_l[paper_color_idx] = np.clip(
+        output_l[paper_color_idx].astype(np.float32) * (1.0 - preserve_l_mix)
+        + denoised_l[paper_color_idx].astype(np.float32) * preserve_l_mix,
+        0,
+        255,
+    ).astype(np.uint8)
     output_a = muted_a.copy()
     output_b = muted_b.copy()
+    output_a[paper_color_idx] = paper_color_a[paper_color_idx]
+    output_b[paper_color_idx] = paper_color_b[paper_color_idx]
     output_a[accent_mask > 0] = accent_a[accent_mask > 0]
     output_b[accent_mask > 0] = accent_b[accent_mask > 0]
-    output_a[paper_mask > 0] = 128
-    output_b[paper_mask > 0] = 128
+    paper_neutralize_idx = (paper_mask > 0) & (paper_color_mask == 0) & (accent_mask == 0)
+    output_a[paper_neutralize_idx] = 128
+    output_b[paper_neutralize_idx] = 128
 
     final_lab = cv2.merge([output_l, output_a, output_b])
     final_rgb = cv2.cvtColor(final_lab, cv2.COLOR_LAB2RGB)
     final_bgr = cv2.cvtColor(final_rgb, cv2.COLOR_RGB2BGR)
+    final_bgr = restore_content_saturation(
+        final_bgr,
+        denoised_l,
+        neutralized_a,
+        neutralized_b,
+        paper_mask,
+        accent_mask,
+        paper_color_mask,
+    )
     return step1_bgr, final_bgr
 
 

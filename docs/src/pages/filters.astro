@@ -21,12 +21,12 @@ const filters = [
     key: 'magic',
     name: 'マジック',
     description: 'OpenCV による比率正規化・照明補正・自動トーン伸長・紙面白化・色保持を組み合わせた決定的パイプライン。既定フィルタ。',
-    formula: 'A4 ratio normalization → Flat-field correction → Auto RMODE → Paper whitening',
-    detail: 'A4 に近い比率の文書は、画素数をほぼ維持したまま正確な A4 比率へ寄せる（Step 1）。その後、Lab 色空間の L チャンネルをぼかし面で割り戻して照明ムラを除去し（Step 2）、ヒストグラムの黒白点で自動ストレッチし、紙領域は白化しつつアクセント色を保持する（Step 3）。',
+    formula: 'A4 ratio normalization → Flat-field correction → Auto RMODE → Paper whitening + color-aware saturation restore',
+    detail: 'A4 に近い比率の文書は、画素数をほぼ維持したまま正確な A4 比率へ寄せる（Step 1）。その後、Lab 色空間の L チャンネルをぼかし面で割り戻して照明ムラを除去し（Step 2）、ヒストグラムの黒白点で自動ストレッチする。最終段では紙領域だけを白化しつつ、紙色を中和した参照画像から彩度を一部戻す。色ペンや罫線だけでなく、色付きセルや色付き紙面が一定量ある資料では、その色面を白化しすぎずに残す。',
     steps: [
       { label: 'Step 1', description: 'A4比率補正: A4 に近い文書だけ、縦横をバランスよく伸縮して正確な紙比率へ寄せる。' },
       { label: 'Step 2', description: '照明ムラ補正: L_flat = L / blur(L) * mean(blur(L))' },
-      { label: 'Step 3', description: '自動トーン + 白化: L_stretch = clamp((L_flat - blackPoint) / (whitePoint - blackPoint))' },
+      { label: 'Step 3', description: '自動トーン + 白化 + 色保持: L_stretch = clamp((L_flat - blackPoint) / (whitePoint - blackPoint)) + color-aware saturation floor + color-paper protection' },
     ],
   },
   {
@@ -66,12 +66,14 @@ function buildViewerForFilter(filterKey, sample) {
 }
 ---
 
-<Layout title="CamScanShare - フィルタ解説">
+<Layout title="CamScanShare - フィルタ設計">
   <header class="algo-header">
     <div class="algo-header-inner">
       <div>
         <a href="/" class="algo-back">&larr; 画面設計ドキュメントへ戻る</a>
-        <h1>フィルタ解説</h1>
+        <span class="algo-sep"> / </span>
+        <a href="/image_lifecycle/" class="algo-back">画像ライフサイクル</a>
+        <h1>フィルタ設計</h1>
         <p class="algo-subtitle">
           各フィルタの処理パラメータとサンプル画像を掲載する。
           ここでアルゴリズムを検証・研究し、確定したパラメータをアプリに移植する。
@@ -239,6 +241,12 @@ function buildViewerForFilter(filterKey, sample) {
   }
 
   .algo-back:hover { color: #fff; }
+
+  .algo-sep {
+    display: inline-block;
+    margin: 0 6px 0 2px;
+    color: rgba(255, 255, 255, 0.72);
+  }
 
   .algo-header h1 {
     font-size: clamp(32px, 4vw, 54px);
