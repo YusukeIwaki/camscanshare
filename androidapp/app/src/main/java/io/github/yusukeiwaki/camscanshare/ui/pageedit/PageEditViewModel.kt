@@ -1,10 +1,11 @@
 package io.github.yusukeiwaki.camscanshare.ui.pageedit
 
+import android.graphics.Bitmap
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.yusukeiwaki.camscanshare.data.db.PageEntity
-import io.github.yusukeiwaki.camscanshare.data.image.FilterRenderPlanner
+import io.github.yusukeiwaki.camscanshare.data.preview.WorkingPreviewManager
 import io.github.yusukeiwaki.camscanshare.data.repository.DocumentRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -15,8 +16,10 @@ import javax.inject.Inject
 data class PageEditState(
     val pageId: Long = 0,
     val imagePath: String = "",
-    val filterKey: String = "magic",
+    val sourceImageAbsPath: String = "",
+    val filterKey: String = "original",
     val rotationDegrees: Int = 0,
+    val largePreviewAbsPath: String? = null,
 )
 
 data class PageEditUiState(
@@ -33,6 +36,7 @@ data class PageEditUiState(
 @HiltViewModel
 class PageEditViewModel @Inject constructor(
     private val repository: DocumentRepository,
+    private val workingPreviewManager: WorkingPreviewManager,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PageEditUiState())
@@ -47,14 +51,12 @@ class PageEditViewModel @Inject constructor(
         this.documentId = documentId
         this.initialPageIndex = initialPageIndex
 
-        // Observe pages from DB so retake updates are reflected automatically
         viewModelScope.launch {
             repository.observePages(documentId).collect { dbPages ->
                 val newPages = dbPages.map { it.toEditState() }
                 val current = _uiState.value
 
                 if (!current.isDirty) {
-                    // No local edits — accept DB state as-is
                     savedPages = newPages
                     _uiState.update {
                         it.copy(
@@ -67,12 +69,14 @@ class PageEditViewModel @Inject constructor(
                         )
                     }
                 } else {
-                    // User has local edits — only update imagePaths from DB (retake),
-                    // keep local filter/rotation edits intact
                     val mergedPages = current.pages.map { editPage ->
                         val dbPage = newPages.find { it.pageId == editPage.pageId }
                         if (dbPage != null) {
-                            editPage.copy(imagePath = dbPage.imagePath)
+                            editPage.copy(
+                                imagePath = dbPage.imagePath,
+                                sourceImageAbsPath = dbPage.sourceImageAbsPath,
+                                largePreviewAbsPath = dbPage.largePreviewAbsPath,
+                            )
                         } else {
                             editPage
                         }
@@ -98,9 +102,7 @@ class PageEditViewModel @Inject constructor(
         val updatedPages = current.pages.toMutableList().also {
             it[idx] = page.copy(rotationDegrees = newRotation)
         }
-        _uiState.update {
-            it.copy(pages = updatedPages, isDirty = isDirty(updatedPages))
-        }
+        _uiState.update { it.copy(pages = updatedPages, isDirty = isDirty(updatedPages)) }
     }
 
     fun onFilterSelected(filterKey: String) {
@@ -111,9 +113,7 @@ class PageEditViewModel @Inject constructor(
         val updatedPages = current.pages.toMutableList().also {
             it[idx] = it[idx].copy(filterKey = filterKey)
         }
-        _uiState.update {
-            it.copy(pages = updatedPages, isDirty = isDirty(updatedPages))
-        }
+        _uiState.update { it.copy(pages = updatedPages, isDirty = isDirty(updatedPages)) }
     }
 
     fun onFilterLongPressed(filterKey: String) {
@@ -146,11 +146,22 @@ class PageEditViewModel @Inject constructor(
         viewModelScope.launch {
             val pages = _uiState.value.pages
             pages.forEach { page ->
-                repository.updatePageFilter(
-                    page.pageId,
-                    FilterRenderPlanner.planPersistedFilter(page.filterKey),
-                )
-                repository.updatePageRotation(page.pageId, page.rotationDegrees)
+                val workingBitmap = getWorkingPreview(page)
+                if (workingBitmap != null) {
+                    try {
+                        repository.updatePageFilterAndLargePreview(
+                            pageId = page.pageId,
+                            filterName = page.filterKey,
+                            rotationDegrees = page.rotationDegrees,
+                            filteredBitmap = workingBitmap,
+                        )
+                    } finally {
+                        workingBitmap.recycle()
+                    }
+                } else {
+                    repository.updatePageFilter(page.pageId, page.filterKey)
+                    repository.updatePageRotation(page.pageId, page.rotationDegrees)
+                }
             }
             savedPages = pages
             _uiState.update { it.copy(isDirty = false, applied = true) }
@@ -184,8 +195,18 @@ class PageEditViewModel @Inject constructor(
         _uiState.update { it.copy(showDiscardDialog = false) }
     }
 
-    fun getImageAbsolutePath(relativePath: String): String =
-        repository.getImageAbsolutePath(relativePath)
+    fun hasUnsavedPreviewEdits(page: PageEditState): Boolean {
+        val saved = savedPages.find { it.pageId == page.pageId } ?: return false
+        return page.filterKey != saved.filterKey || page.rotationDegrees != saved.rotationDegrees
+    }
+
+    suspend fun getWorkingPreview(page: PageEditState): Bitmap? =
+        workingPreviewManager.getOrCompute(
+            pageId = page.pageId,
+            sourceRelativePath = page.imagePath,
+            filterKey = page.filterKey,
+            rotationDegrees = page.rotationDegrees,
+        )
 
     private fun isDirty(pages: List<PageEditState>): Boolean {
         if (pages.size != savedPages.size) return true
@@ -197,7 +218,9 @@ class PageEditViewModel @Inject constructor(
     private fun PageEntity.toEditState() = PageEditState(
         pageId = id,
         imagePath = imagePath,
+        sourceImageAbsPath = repository.getImageAbsolutePath(imagePath),
         filterKey = filterName,
         rotationDegrees = rotationDegrees,
+        largePreviewAbsPath = largePreviewPath?.let { repository.getLargePreviewAbsolutePath(it) },
     )
 }

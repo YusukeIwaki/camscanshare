@@ -12,12 +12,12 @@ class PageEditViewModelTest {
     @Test
     fun `isDirty detects filter changes`() {
         val saved = listOf(
-            PageEditState(pageId = 1, imagePath = "a.jpg", filterKey = "magic", rotationDegrees = 0),
-            PageEditState(pageId = 2, imagePath = "b.jpg", filterKey = "magic", rotationDegrees = 0),
+            PageEditState(pageId = 1, imagePath = "a.jpg", filterKey = "original", rotationDegrees = 0),
+            PageEditState(pageId = 2, imagePath = "b.jpg", filterKey = "original", rotationDegrees = 0),
         )
         val edited = listOf(
             PageEditState(pageId = 1, imagePath = "a.jpg", filterKey = "bw", rotationDegrees = 0),
-            PageEditState(pageId = 2, imagePath = "b.jpg", filterKey = "magic", rotationDegrees = 0),
+            PageEditState(pageId = 2, imagePath = "b.jpg", filterKey = "original", rotationDegrees = 0),
         )
         assertTrue(isDirty(edited, saved))
     }
@@ -25,10 +25,10 @@ class PageEditViewModelTest {
     @Test
     fun `isDirty detects rotation changes`() {
         val saved = listOf(
-            PageEditState(pageId = 1, imagePath = "a.jpg", filterKey = "magic", rotationDegrees = 0),
+            PageEditState(pageId = 1, imagePath = "a.jpg", filterKey = "original", rotationDegrees = 0),
         )
         val edited = listOf(
-            PageEditState(pageId = 1, imagePath = "a.jpg", filterKey = "magic", rotationDegrees = 90),
+            PageEditState(pageId = 1, imagePath = "a.jpg", filterKey = "original", rotationDegrees = 90),
         )
         assertTrue(isDirty(edited, saved))
     }
@@ -36,7 +36,7 @@ class PageEditViewModelTest {
     @Test
     fun `isDirty returns false when nothing changed`() {
         val saved = listOf(
-            PageEditState(pageId = 1, imagePath = "a.jpg", filterKey = "magic", rotationDegrees = 0),
+            PageEditState(pageId = 1, imagePath = "a.jpg", filterKey = "original", rotationDegrees = 0),
         )
         assertFalse(isDirty(saved, saved))
     }
@@ -57,7 +57,7 @@ class PageEditViewModelTest {
     @Test
     fun `filter apply to all pages changes all filters`() {
         val pages = listOf(
-            PageEditState(pageId = 1, imagePath = "a.jpg", filterKey = "magic"),
+            PageEditState(pageId = 1, imagePath = "a.jpg", filterKey = "original"),
             PageEditState(pageId = 2, imagePath = "b.jpg", filterKey = "original"),
             PageEditState(pageId = 3, imagePath = "c.jpg", filterKey = "bw"),
         )
@@ -68,7 +68,7 @@ class PageEditViewModelTest {
     @Test
     fun `discard reverts to saved state`() {
         val saved = listOf(
-            PageEditState(pageId = 1, imagePath = "a.jpg", filterKey = "magic", rotationDegrees = 0),
+            PageEditState(pageId = 1, imagePath = "a.jpg", filterKey = "original", rotationDegrees = 0),
         )
         val edited = listOf(
             PageEditState(pageId = 1, imagePath = "a.jpg", filterKey = "bw", rotationDegrees = 270),

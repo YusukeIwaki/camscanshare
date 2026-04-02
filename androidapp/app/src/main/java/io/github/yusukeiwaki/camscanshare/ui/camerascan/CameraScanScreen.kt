@@ -74,6 +74,9 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.yusukeiwaki.camscanshare.ui.components.CameraBottomControlMode
+import io.github.yusukeiwaki.camscanshare.ui.components.cameraBottomControlMode
+import io.github.yusukeiwaki.camscanshare.ui.components.SmallPreviewImage
 import java.util.concurrent.Executors
 
 @Composable
@@ -310,38 +313,40 @@ fun CameraScanScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Left: close button or thumbnail stack
-                if (uiState.capturedPageCount == 0) {
-                    Box(
-                        modifier = Modifier
-                            .size(52.dp)
-                            .clip(RoundedCornerShape(12.dp))
-                            .background(Color.White.copy(alpha = 0.15f))
-                            .border(1.5.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
-                            .clickable { onClose() },
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Icon(Icons.Default.Close, contentDescription = "閉じる", tint = Color.White, modifier = Modifier.size(24.dp))
-                    }
-                } else {
-                    Box(
-                        modifier = Modifier.size(52.dp).clickable { onNavigateToPageList(uiState.documentId) },
-                    ) {
-                        uiState.lastThumbnail?.let { thumb ->
-                            Image(
-                                bitmap = thumb.asImageBitmap(),
-                                contentDescription = "撮影済みページ",
-                                modifier = Modifier.size(52.dp).clip(RoundedCornerShape(12.dp))
-                                    .border(1.5.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(12.dp)),
-                                contentScale = ContentScale.Crop,
-                            )
-                        }
+                when (cameraBottomControlMode(uiState.capturedPageCount)) {
+                    CameraBottomControlMode.CLOSE_BUTTON -> {
                         Box(
-                            modifier = Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = (-6).dp)
-                                .height(20.dp).clip(RoundedCornerShape(10.dp))
-                                .background(MaterialTheme.colorScheme.primary).padding(horizontal = 6.dp),
+                            modifier = Modifier
+                                .size(52.dp)
+                                .clip(RoundedCornerShape(12.dp))
+                                .background(Color.White.copy(alpha = 0.15f))
+                                .border(1.5.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+                                .clickable { onClose() },
                             contentAlignment = Alignment.Center,
                         ) {
-                            Text("${uiState.capturedPageCount}", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            Icon(Icons.Default.Close, contentDescription = "閉じる", tint = Color.White, modifier = Modifier.size(24.dp))
+                        }
+                    }
+                    CameraBottomControlMode.THUMBNAIL_STACK -> {
+                        Box(
+                            modifier = Modifier.size(52.dp).clickable { onNavigateToPageList(uiState.documentId) },
+                        ) {
+                            SmallPreviewImage(
+                                absolutePath = uiState.lastPageSmallPreviewAbsPath,
+                                modifier = Modifier
+                                    .size(52.dp)
+                                    .clip(RoundedCornerShape(12.dp))
+                                    .border(1.5.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(12.dp)),
+                                contentDescription = "撮影済みページ",
+                            )
+                            Box(
+                                modifier = Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = (-6).dp)
+                                    .height(20.dp).clip(RoundedCornerShape(10.dp))
+                                    .background(MaterialTheme.colorScheme.primary).padding(horizontal = 6.dp),
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                Text("${uiState.capturedPageCount}", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
+                            }
                         }
                     }
                 }

@@ -22,6 +22,8 @@ data class PageEntity(
     val documentId: Long,
     val sortOrder: Int,
     val imagePath: String,
-    val filterName: String = "magic",
+    val filterName: String = "original",
     val rotationDegrees: Int = 0,
+    val smallPreviewPath: String? = null,
+    val largePreviewPath: String? = null,
 )

@@ -14,6 +14,9 @@ interface PageDao {
     @Query("SELECT * FROM pages WHERE documentId = :documentId ORDER BY sortOrder ASC")
     suspend fun getByDocumentId(documentId: Long): List<PageEntity>
 
+    @Query("SELECT * FROM pages WHERE id = :pageId")
+    suspend fun getById(pageId: Long): PageEntity?
+
     @Query("SELECT COUNT(*) FROM pages WHERE documentId = :documentId")
     suspend fun getPageCount(documentId: Long): Int
 
@@ -29,6 +32,12 @@ interface PageDao {
     @Query("UPDATE pages SET imagePath = :imagePath WHERE id = :pageId")
     suspend fun updateImagePath(pageId: Long, imagePath: String)
 
+    @Query("UPDATE pages SET smallPreviewPath = :path WHERE id = :pageId")
+    suspend fun updateSmallPreviewPath(pageId: Long, path: String?)
+
+    @Query("UPDATE pages SET largePreviewPath = :path WHERE id = :pageId")
+    suspend fun updateLargePreviewPath(pageId: Long, path: String?)
+
     @Query("UPDATE pages SET filterName = :filterName WHERE id = :pageId")
     suspend fun updateFilter(pageId: Long, filterName: String)
 
@@ -43,6 +52,15 @@ interface PageDao {
 
     @Query("SELECT imagePath FROM pages WHERE documentId IN (:documentIds)")
     suspend fun getImagePathsByDocumentIds(documentIds: Set<Long>): List<String>
+
+    @Query("SELECT smallPreviewPath FROM pages WHERE documentId IN (:documentIds)")
+    suspend fun getSmallPreviewPathsByDocumentIds(documentIds: Set<Long>): List<String?>
+
+    @Query("SELECT largePreviewPath FROM pages WHERE documentId IN (:documentIds)")
+    suspend fun getLargePreviewPathsByDocumentIds(documentIds: Set<Long>): List<String?>
+
+    @Query("SELECT id FROM pages WHERE documentId IN (:documentIds)")
+    suspend fun getPageIdsByDocumentIds(documentIds: Set<Long>): List<Long>
 
     @Query("DELETE FROM pages WHERE id = :pageId")
     suspend fun deleteById(pageId: Long)

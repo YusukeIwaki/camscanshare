@@ -43,6 +43,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,6 +59,7 @@ import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.yusukeiwaki.camscanshare.data.db.DocumentSummaryTuple
 import io.github.yusukeiwaki.camscanshare.ui.components.ConfirmDialog
+import io.github.yusukeiwaki.camscanshare.ui.components.SmallPreviewImage
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -106,6 +108,7 @@ fun DocumentListScreen(
                 onDocumentLongPress = { doc ->
                     viewModel.onDocumentLongPress(doc.id)
                 },
+                resolveSmallPreviewPath = viewModel::getSmallPreviewAbsolutePath,
                 modifier = Modifier
                     .fillMaxSize()
                     .statusBarsPadding(),
@@ -199,6 +202,7 @@ private fun DocumentList(
     bottomContentPadding: androidx.compose.ui.unit.Dp,
     onDocumentClick: (DocumentSummaryTuple) -> Unit,
     onDocumentLongPress: (DocumentSummaryTuple) -> Unit,
+    resolveSmallPreviewPath: (String) -> String,
     modifier: Modifier = Modifier,
 ) {
     val haptic = LocalHapticFeedback.current
@@ -217,6 +221,7 @@ private fun DocumentList(
                 document = doc,
                 isSelected = isSelected,
                 isSelectionMode = isSelectionMode,
+                resolveSmallPreviewPath = resolveSmallPreviewPath,
                 modifier = Modifier
                     .fillMaxWidth()
                     .animateItem()
@@ -275,6 +280,7 @@ private fun DocumentItem(
     document: DocumentSummaryTuple,
     isSelected: Boolean,
     isSelectionMode: Boolean,
+    resolveSmallPreviewPath: (String) -> String,
     modifier: Modifier = Modifier,
 ) {
     val scale by animateFloatAsState(
@@ -286,6 +292,9 @@ private fun DocumentItem(
         MaterialTheme.colorScheme.primaryContainer
     } else {
         Color.Transparent
+    }
+    val absPath = remember(document.firstPageSmallPreviewPath) {
+        document.firstPageSmallPreviewPath?.let(resolveSmallPreviewPath)
     }
 
     Row(
@@ -318,11 +327,11 @@ private fun DocumentItem(
                     )
                 }
             } else {
-                Icon(
-                    Icons.Default.Description,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.size(24.dp),
+                SmallPreviewImage(
+                    absolutePath = absPath,
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .clip(RoundedCornerShape(8.dp)),
                 )
             }
         }

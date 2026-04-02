@@ -16,10 +16,10 @@ import org.junit.Test
 class CameraScanViewModelTest {
 
     @Test
-    fun `initial state has zero pages and null thumbnail`() {
+    fun `initial state has zero pages and null preview path`() {
         val state = CameraScanUiState()
         assertEquals(0, state.capturedPageCount)
-        assertNull(state.lastThumbnail)
+        assertNull(state.lastPageSmallPreviewAbsPath)
         assertFalse(state.isCapturing)
         assertFalse(state.showFlash)
     }
@@ -31,20 +31,13 @@ class CameraScanViewModelTest {
     }
 
     @Test
-    fun `thumbnail stack requires both count and thumbnail for display`() {
-        // The UI shows close button when count=0, thumbnail stack when count>0.
-        // When count>0, lastThumbnail MUST be non-null; otherwise the stack is empty.
-        // This is the contract that was violated before the fix.
-
-        // Bad state (bug): count > 0 but no thumbnail
-        val buggyState = CameraScanUiState(capturedPageCount = 3, lastThumbnail = null)
+    fun `thumbnail stack can show placeholder while preview generation is pending`() {
+        val pendingState = CameraScanUiState(capturedPageCount = 3, lastPageSmallPreviewAbsPath = null)
         assertTrue(
-            "When capturedPageCount > 0, lastThumbnail should not be null. " +
-                "The initialize() method must load the last page's thumbnail for existing documents.",
-            buggyState.capturedPageCount > 0 && buggyState.lastThumbnail == null,
+            "When capturedPageCount > 0 and preview path is null, the UI should show a placeholder " +
+                "until the background worker writes the small preview path.",
+            pendingState.capturedPageCount > 0 && pendingState.lastPageSmallPreviewAbsPath == null,
         )
-        // This test documents the invariant. The ViewModel's initialize() is responsible
-        // for ensuring this never happens in practice.
     }
 
     @Test
@@ -61,17 +54,14 @@ class CameraScanViewModelTest {
     }
 
     @Test
-    fun `after capture, count increments and thumbnail and flying thumbnail are set together`() {
-        // Simulates what onCaptureImage does to state (without Bitmap)
+    fun `after capture, flying thumbnail is set while count comes from room observation`() {
         val before = CameraScanUiState(documentId = 1L, capturedPageCount = 2)
         val after = before.copy(
-            capturedPageCount = before.capturedPageCount + 1,
-            lastThumbnail = before.lastThumbnail, // would be non-null in real code
-            flyingThumbnail = before.lastThumbnail,
+            flyingThumbnail = null,
             isCapturing = false,
             showFlash = false,
         )
-        assertEquals(3, after.capturedPageCount)
+        assertEquals(2, after.capturedPageCount)
         assertFalse(after.isCapturing)
     }
 

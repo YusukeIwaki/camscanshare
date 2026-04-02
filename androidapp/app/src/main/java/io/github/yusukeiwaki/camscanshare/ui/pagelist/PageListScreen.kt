@@ -1,15 +1,13 @@
 package io.github.yusukeiwaki.camscanshare.ui.pagelist
 
-import android.graphics.Paint
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -60,13 +58,13 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -78,10 +76,10 @@ import androidx.compose.ui.zIndex
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.yusukeiwaki.camscanshare.data.db.PageEntity
-import io.github.yusukeiwaki.camscanshare.data.image.FilterRenderPlanner
+import io.github.yusukeiwaki.camscanshare.ui.components.PageListPreviewContentMode
 import io.github.yusukeiwaki.camscanshare.ui.components.computePageAspectRatio
-import io.github.yusukeiwaki.camscanshare.ui.components.previewColorMatrix
-import io.github.yusukeiwaki.camscanshare.ui.components.rememberPreviewBitmap
+import io.github.yusukeiwaki.camscanshare.ui.components.pageListPreviewContentMode
+import io.github.yusukeiwaki.camscanshare.ui.components.rememberBitmapFromAbsolutePath
 import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
@@ -187,7 +185,7 @@ fun PageListScreen(
                     PageCard(
                         page = page,
                         pageNumber = index + 1,
-                        imagePath = viewModel.getImagePath(page.imagePath),
+                        largePreviewAbsPath = page.largePreviewPath?.let(viewModel::getLargePreviewAbsolutePath),
                         isDragging = isDragging,
                         dragOffsetX = if (isDragging) dragOffsetX else 0f,
                         dragOffsetY = if (isDragging) dragOffsetY else 0f,
@@ -294,7 +292,7 @@ fun PageListScreen(
 private fun PageCard(
     page: PageEntity,
     pageNumber: Int,
-    imagePath: String,
+    largePreviewAbsPath: String?,
     isDragging: Boolean,
     dragOffsetX: Float,
     dragOffsetY: Float,
@@ -342,16 +340,13 @@ private fun PageCard(
                 else Modifier
             ),
     ) {
-        val renderPlan = remember(page.filterName) {
-            FilterRenderPlanner.planPreview(selectedFilterKey = page.filterName)
-        }
-        val previewState = rememberPreviewBitmap(
-            imagePath = imagePath,
-            rotationDegrees = page.rotationDegrees.toFloat(),
-            renderPlan = renderPlan,
-            maxDimension = 768,
-        )
+        val previewState = rememberBitmapFromAbsolutePath(largePreviewAbsPath)
         val previewBitmap = previewState.bitmap
+        val contentMode = pageListPreviewContentMode(
+            hasBitmap = previewBitmap != null,
+            hasPreviewPath = largePreviewAbsPath != null,
+            isLoading = previewState.isLoading,
+        )
         val cardAspectRatio = remember(previewBitmap) {
             if (previewBitmap != null) computePageAspectRatio(previewBitmap.width, previewBitmap.height)
             else 1f
@@ -370,47 +365,32 @@ private fun PageCard(
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
             elevation = CardDefaults.cardElevation(defaultElevation = if (isDragging) 8.dp else 1.dp),
         ) {
-            if (previewBitmap != null) {
-                val colorMatrix = remember(renderPlan) {
-                    previewColorMatrix(renderPlan.colorMatrixFilterKey)
+            when (contentMode) {
+                PageListPreviewContentMode.IMAGE -> {
+                    val bitmap = requireNotNull(previewBitmap)
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = "ページ $pageNumber",
+                        modifier = Modifier.fillMaxSize(),
+                        contentScale = ContentScale.Crop,
+                    )
                 }
-                val paint = remember(colorMatrix) {
-                    Paint().apply {
-                        if (colorMatrix != null) {
-                            colorFilter = android.graphics.ColorMatrixColorFilter(colorMatrix)
-                        }
-                    }
-                }
-
-                Canvas(
-                    modifier = Modifier
-                        .fillMaxSize()
-                ) {
-                    drawIntoCanvas { canvas ->
-                        val drawBmp = previewBitmap
-                        val scaleX = size.width / drawBmp.width
-                        val scaleY = size.height / drawBmp.height
-                        val scale = maxOf(scaleX, scaleY) // crop to fill
-                        val dx = (size.width - drawBmp.width * scale) / 2
-                        val dy = (size.height - drawBmp.height * scale) / 2
-                        canvas.nativeCanvas.save()
-                        canvas.nativeCanvas.translate(dx, dy)
-                        canvas.nativeCanvas.scale(scale, scale)
-                        canvas.nativeCanvas.drawBitmap(drawBmp, 0f, 0f, paint)
-                        canvas.nativeCanvas.restore()
-                    }
-                }
-            } else {
-                Box(
-                    modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    if (previewState.isLoading) {
+                PageListPreviewContentMode.LOADING_PLACEHOLDER -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         CircularProgressIndicator(
                             strokeWidth = 2.5.dp,
                             modifier = Modifier.size(28.dp),
                         )
-                    } else {
+                    }
+                }
+                PageListPreviewContentMode.NUMBER_PLACEHOLDER -> {
+                    Box(
+                        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.surfaceVariant),
+                        contentAlignment = Alignment.Center,
+                    ) {
                         Text("$pageNumber", style = MaterialTheme.typography.titleLarge)
                     }
                 }

@@ -86,8 +86,8 @@ class PageListViewModel @Inject constructor(
         _uiState.update { it.copy(isDragActive = active) }
     }
 
-    fun getImagePath(relativePath: String): String =
-        repository.getImageAbsolutePath(relativePath)
+    fun getLargePreviewAbsolutePath(relativePath: String): String =
+        repository.getLargePreviewAbsolutePath(relativePath)
 
     fun sharePdf(context: Context) {
         viewModelScope.launch {

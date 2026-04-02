@@ -5,19 +5,18 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.yusukeiwaki.camscanshare.data.repository.DocumentRepository
-import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
 import javax.inject.Inject
 
 data class CameraScanUiState(
     val documentId: Long = 0L,
     val retakePageId: Long = 0L,
     val capturedPageCount: Int = 0,
-    val lastThumbnail: Bitmap? = null,
+    val lastPageSmallPreviewAbsPath: String? = null,
     val isCapturing: Boolean = false,
     val showFlash: Boolean = false,
     val retakeDone: Boolean = false,
@@ -32,6 +31,7 @@ class CameraScanViewModel @Inject constructor(
 
     private val _uiState = MutableStateFlow(CameraScanUiState())
     val uiState: StateFlow<CameraScanUiState> = _uiState
+    private var observePagesJob: Job? = null
 
     val isRetakeMode: Boolean get() = _uiState.value.retakePageId != 0L
 
@@ -40,28 +40,7 @@ class CameraScanViewModel @Inject constructor(
         _uiState.update { it.copy(retakePageId = retakePageId) }
         if (documentId != 0L) {
             _uiState.update { it.copy(documentId = documentId) }
-            viewModelScope.launch {
-                val pages = repository.getPages(documentId)
-                val lastPageThumb = withContext(Dispatchers.IO) {
-                    pages.lastOrNull()?.let { page ->
-                        repository.loadBitmap(page.imagePath)?.let { bmp ->
-                            val thumbSize = 200
-                            val scale = thumbSize.toFloat() / maxOf(bmp.width, bmp.height)
-                            val thumb = android.graphics.Bitmap.createScaledBitmap(
-                                bmp,
-                                (bmp.width * scale).toInt(),
-                                (bmp.height * scale).toInt(),
-                                true,
-                            )
-                            bmp.recycle()
-                            thumb
-                        }
-                    }
-                }
-                _uiState.update {
-                    it.copy(capturedPageCount = pages.size, lastThumbnail = lastPageThumb)
-                }
-            }
+            observePages(documentId)
         }
     }
 
@@ -83,6 +62,7 @@ class CameraScanViewModel @Inject constructor(
                 if (docId == 0L) {
                     docId = repository.createDocument(generateDocumentName())
                     _uiState.update { it.copy(documentId = docId) }
+                    observePages(docId)
                 }
 
                 repository.addPage(docId, bitmap)
@@ -96,11 +76,8 @@ class CameraScanViewModel @Inject constructor(
                     true,
                 )
 
-                val count = _uiState.value.capturedPageCount + 1
                 _uiState.update {
                     it.copy(
-                        capturedPageCount = count,
-                        lastThumbnail = thumb,
                         flyingThumbnail = thumb,
                         isCapturing = false,
                         showFlash = false,
@@ -116,6 +93,23 @@ class CameraScanViewModel @Inject constructor(
 
     fun onFlyingAnimationDone() {
         _uiState.update { it.copy(flyingThumbnail = null) }
+    }
+
+    private fun observePages(documentId: Long) {
+        observePagesJob?.cancel()
+        observePagesJob = viewModelScope.launch {
+            repository.observePages(documentId).collect { pages ->
+                val lastPageSmallPreviewAbsPath = pages.lastOrNull()?.smallPreviewPath?.let {
+                    repository.getSmallPreviewAbsolutePath(it)
+                }
+                _uiState.update {
+                    it.copy(
+                        capturedPageCount = pages.size,
+                        lastPageSmallPreviewAbsPath = lastPageSmallPreviewAbsPath,
+                    )
+                }
+            }
+        }
     }
 
     companion object {

@@ -76,4 +76,7 @@ class DocumentListViewModel @Inject constructor(
     fun onDeleteDismissed() {
         _uiState.update { it.copy(showDeleteConfirmation = false) }
     }
+
+    fun getSmallPreviewAbsolutePath(relativePath: String): String =
+        repository.getSmallPreviewAbsolutePath(relativePath)
 }

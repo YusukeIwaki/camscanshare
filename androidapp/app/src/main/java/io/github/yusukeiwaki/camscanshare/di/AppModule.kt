@@ -9,6 +9,7 @@ import dagger.hilt.android.qualifiers.ApplicationContext
 import dagger.hilt.components.SingletonComponent
 import io.github.yusukeiwaki.camscanshare.data.db.AppDatabase
 import io.github.yusukeiwaki.camscanshare.data.db.DocumentDao
+import io.github.yusukeiwaki.camscanshare.data.db.MIGRATION_1_2
 import io.github.yusukeiwaki.camscanshare.data.db.PageDao
 import javax.inject.Singleton
 
@@ -20,6 +21,7 @@ object AppModule {
     @Singleton
     fun provideDatabase(@ApplicationContext context: Context): AppDatabase =
         Room.databaseBuilder(context, AppDatabase::class.java, "camscanshare.db")
+            .addMigrations(MIGRATION_1_2)
             .build()
 
     @Provides

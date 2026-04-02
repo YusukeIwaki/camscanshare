@@ -1,7 +1,18 @@
 package io.github.yusukeiwaki.camscanshare
 
 import android.app.Application
+import androidx.hilt.work.HiltWorkerFactory
+import androidx.work.Configuration
 import dagger.hilt.android.HiltAndroidApp
+import javax.inject.Inject
 
 @HiltAndroidApp
-class CamScanShareApp : Application()
+class CamScanShareApp : Application(), Configuration.Provider {
+    @Inject
+    lateinit var workerFactory: HiltWorkerFactory
+
+    override val workManagerConfiguration: Configuration
+        get() = Configuration.Builder()
+            .setWorkerFactory(workerFactory)
+            .build()
+}

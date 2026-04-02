@@ -15,7 +15,7 @@ enum class ImageFilter(
     VIVID("鮮やか", "vivid");
 
     companion object {
-        val DEFAULT = MAGIC
+        val DEFAULT = ORIGINAL
 
         fun fromKey(key: String): ImageFilter =
             entries.find { it.filterKey == key } ?: DEFAULT

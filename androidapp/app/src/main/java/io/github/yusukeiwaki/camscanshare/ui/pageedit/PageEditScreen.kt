@@ -1,11 +1,11 @@
 package io.github.yusukeiwaki.camscanshare.ui.pageedit
 
-import android.graphics.Paint
+import android.graphics.Bitmap
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -31,11 +31,11 @@ import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.automirrored.filled.RotateLeft
+import androidx.compose.material.icons.filled.CameraAlt
 import androidx.compose.material.icons.filled.Tune
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -47,15 +47,17 @@ import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
-import androidx.compose.ui.graphics.nativeCanvas
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -64,11 +66,13 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import io.github.yusukeiwaki.camscanshare.data.image.FilterRenderPlanner
 import io.github.yusukeiwaki.camscanshare.ui.components.ConfirmDialog
+import io.github.yusukeiwaki.camscanshare.ui.components.PageEditPreviewContentMode
 import io.github.yusukeiwaki.camscanshare.ui.components.computePageAspectRatio
-import io.github.yusukeiwaki.camscanshare.ui.components.previewColorMatrix
-import io.github.yusukeiwaki.camscanshare.ui.components.rememberPreviewBitmap
+import io.github.yusukeiwaki.camscanshare.ui.components.pageEditPreviewContentMode
+import io.github.yusukeiwaki.camscanshare.ui.components.rememberAspectRatioFromAbsolutePath
+import io.github.yusukeiwaki.camscanshare.ui.components.rememberBitmapFromAbsolutePath
+import io.github.yusukeiwaki.camscanshare.ui.components.resolvePagePlaceholderAspectRatio
 
 @OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
@@ -86,7 +90,6 @@ fun PageEditScreen(
         viewModel.initialize(documentId, initialPageIndex)
     }
 
-    // Applied feedback
     LaunchedEffect(uiState.applied) {
         if (uiState.applied) {
             kotlinx.coroutines.delay(1500)
@@ -120,8 +123,7 @@ fun PageEditScreen(
                     TextButton(onClick = { viewModel.onApplyClick() }) {
                         Text(
                             if (uiState.applied) "✓ 適用済み" else "適用",
-                            color = if (uiState.applied) Color(0xFF137333)
-                            else MaterialTheme.colorScheme.primary,
+                            color = if (uiState.applied) Color(0xFF137333) else MaterialTheme.colorScheme.primary,
                             fontWeight = FontWeight.Medium,
                         )
                     }
@@ -137,7 +139,6 @@ fun PageEditScreen(
                 .fillMaxSize()
                 .padding(innerPadding),
         ) {
-            // Preview area with pager
             Box(
                 modifier = Modifier
                     .weight(1f)
@@ -151,13 +152,12 @@ fun PageEditScreen(
                     ) { pageIndex ->
                         val pageState = uiState.pages.getOrNull(pageIndex) ?: return@HorizontalPager
                         PagePreview(
-                            imagePath = viewModel.getImageAbsolutePath(pageState.imagePath),
-                            filter = ImageFilter.fromKey(pageState.filterKey),
-                            rotationDegrees = pageState.rotationDegrees.toFloat(),
+                            pageState = pageState,
+                            useWorkingPreview = viewModel.hasUnsavedPreviewEdits(pageState),
+                            loadWorkingPreview = viewModel::getWorkingPreview,
                         )
                     }
 
-                    // Page indicator
                     if (uiState.pages.size > 1) {
                         Box(
                             modifier = Modifier
@@ -178,7 +178,6 @@ fun PageEditScreen(
                 }
             }
 
-            // Action toolbar
             ActionToolbar(
                 onRotate = { viewModel.onRotateClick() },
                 onRetake = {
@@ -188,14 +187,13 @@ fun PageEditScreen(
                 onFilter = { viewModel.onToggleFilterPanel() },
             )
 
-            // Filter panel
             AnimatedVisibility(
                 visible = uiState.showFilterPanel,
                 enter = expandVertically(tween(300)),
                 exit = shrinkVertically(tween(300)),
             ) {
                 FilterPanel(
-                    currentFilterKey = uiState.pages.getOrNull(uiState.currentPageIndex)?.filterKey ?: "magic",
+                    currentFilterKey = uiState.pages.getOrNull(uiState.currentPageIndex)?.filterKey ?: "original",
                     onFilterSelected = { viewModel.onFilterSelected(it.filterKey) },
                     onFilterLongPressed = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -206,7 +204,6 @@ fun PageEditScreen(
         }
     }
 
-    // Discard dialog
     if (uiState.showDiscardDialog) {
         ConfirmDialog(
             title = "編集内容を破棄しますか？",
@@ -221,7 +218,6 @@ fun PageEditScreen(
         )
     }
 
-    // Apply to all pages dialog
     if (uiState.showApplyAllDialog) {
         val filterName = ImageFilter.fromKey(uiState.applyAllFilterKey).displayName
         ConfirmDialog(
@@ -236,92 +232,113 @@ fun PageEditScreen(
 
 @Composable
 private fun PagePreview(
-    imagePath: String,
-    filter: ImageFilter,
-    rotationDegrees: Float,
+    pageState: PageEditState,
+    useWorkingPreview: Boolean,
+    loadWorkingPreview: suspend (PageEditState) -> Bitmap?,
 ) {
-    val renderPlan = remember(filter.filterKey) {
-        FilterRenderPlanner.planPreview(
-            selectedFilterKey = filter.filterKey,
-            showOriginal = false,
-        )
+    val largePreviewState = rememberBitmapFromAbsolutePath(pageState.largePreviewAbsPath)
+    var workingBitmap by remember(
+        pageState.pageId,
+        pageState.imagePath,
+        pageState.filterKey,
+        pageState.rotationDegrees,
+        useWorkingPreview,
+    ) { mutableStateOf<Bitmap?>(null) }
+    var isComputing by remember(
+        pageState.pageId,
+        pageState.imagePath,
+        pageState.filterKey,
+        pageState.rotationDegrees,
+        useWorkingPreview,
+    ) { mutableStateOf(useWorkingPreview) }
+
+    LaunchedEffect(
+        pageState.pageId,
+        pageState.imagePath,
+        pageState.filterKey,
+        pageState.rotationDegrees,
+        useWorkingPreview,
+    ) {
+        if (!useWorkingPreview) {
+            workingBitmap = null
+            isComputing = false
+            return@LaunchedEffect
+        }
+
+        isComputing = true
+        workingBitmap = loadWorkingPreview(pageState)
+        isComputing = false
     }
+
+    val displayBitmap = if (useWorkingPreview) workingBitmap else largePreviewState.bitmap
+    val placeholderPath = pageState.largePreviewAbsPath ?: pageState.sourceImageAbsPath
+    val placeholderAspectState = rememberAspectRatioFromAbsolutePath(placeholderPath)
+    val previewAspectRatio = remember(displayBitmap) {
+        if (displayBitmap != null) {
+            computePageAspectRatio(displayBitmap.width, displayBitmap.height)
+        } else {
+            210f / 297f
+        }
+    }
+    val placeholderAspectRatio = resolvePagePlaceholderAspectRatio(placeholderAspectState.aspectRatio)
+    val contentMode = pageEditPreviewContentMode(
+        useWorkingPreview = useWorkingPreview,
+        hasWorkingBitmap = workingBitmap != null,
+        isComputing = isComputing,
+        hasLargeBitmap = largePreviewState.bitmap != null,
+        hasLargePreviewPath = pageState.largePreviewAbsPath != null,
+        isLargePreviewLoading = largePreviewState.isLoading,
+    )
 
     Box(
         modifier = Modifier.fillMaxSize(),
         contentAlignment = Alignment.Center,
     ) {
-        val previewState = rememberPreviewBitmap(
-            imagePath = imagePath,
-            rotationDegrees = rotationDegrees,
-            renderPlan = renderPlan,
-            maxDimension = 1600,
-        )
-        val previewBitmap = previewState.bitmap
-
-        if (previewBitmap != null) {
-            val colorFilter = remember(renderPlan) {
-                previewColorMatrix(renderPlan.colorMatrixFilterKey)?.let {
-                    android.graphics.ColorMatrixColorFilter(it)
-                }
+        when (contentMode) {
+            PageEditPreviewContentMode.IMAGE -> {
+                val bitmap = requireNotNull(displayBitmap)
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = "ページプレビュー",
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .fillMaxWidth(if (previewAspectRatio >= 1f) 0.95f else 0.8f)
+                        .aspectRatio(previewAspectRatio)
+                        .shadow(8.dp, RoundedCornerShape(4.dp))
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color.White),
+                    contentScale = ContentScale.Fit,
+                )
             }
-            val paint = remember(colorFilter) {
-                Paint().apply { this.colorFilter = colorFilter }
-            }
-            val previewAspectRatio = remember(previewBitmap) {
-                computePageAspectRatio(previewBitmap.width, previewBitmap.height)
-            }
-
-            Canvas(
-                modifier = Modifier
-                    .padding(24.dp)
-                    .fillMaxWidth(if (previewAspectRatio >= 1f) 0.95f else 0.8f)
-                    .aspectRatio(previewAspectRatio)
-                    .shadow(8.dp, RoundedCornerShape(4.dp))
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(Color.White),
-            ) {
-                drawIntoCanvas { canvas ->
-                    val drawBitmap = previewBitmap
-                    val scaleX = size.width / drawBitmap.width
-                    val scaleY = size.height / drawBitmap.height
-                    val scale = minOf(scaleX, scaleY)
-                    val dx = (size.width - drawBitmap.width * scale) / 2
-                    val dy = (size.height - drawBitmap.height * scale) / 2
-
-                    canvas.nativeCanvas.save()
-                    canvas.nativeCanvas.translate(dx, dy)
-                    canvas.nativeCanvas.scale(scale, scale)
-                    canvas.nativeCanvas.drawBitmap(drawBitmap, 0f, 0f, paint)
-                    canvas.nativeCanvas.restore()
-                }
-            }
-        } else {
-            Box(
-                modifier = Modifier
-                    .padding(24.dp)
-                    .fillMaxWidth(0.8f)
-                    .aspectRatio(210f / 297f)
-                    .shadow(8.dp, RoundedCornerShape(4.dp))
-                    .clip(RoundedCornerShape(4.dp))
-                    .background(Color.White)
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(4.dp)),
-                contentAlignment = Alignment.Center,
-            ) {
-                if (previewState.isLoading) {
-                    Column(
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
-                    ) {
-                        CircularProgressIndicator(
-                            strokeWidth = 3.dp,
-                            modifier = Modifier.size(32.dp),
-                        )
-                        Text(
-                            "フィルタを適用中…",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
+            PageEditPreviewContentMode.PREVIEW_LOADING,
+            PageEditPreviewContentMode.FILTER_LOADING,
+            PageEditPreviewContentMode.EMPTY_PLACEHOLDER -> {
+                Box(
+                    modifier = Modifier
+                        .padding(24.dp)
+                        .fillMaxWidth(0.8f)
+                        .aspectRatio(placeholderAspectRatio)
+                        .shadow(8.dp, RoundedCornerShape(4.dp))
+                        .clip(RoundedCornerShape(4.dp))
+                        .background(Color.White)
+                        .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(4.dp)),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    if (contentMode != PageEditPreviewContentMode.EMPTY_PLACEHOLDER) {
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            verticalArrangement = Arrangement.spacedBy(12.dp),
+                        ) {
+                            CircularProgressIndicator(
+                                strokeWidth = 3.dp,
+                                modifier = Modifier.size(32.dp),
+                            )
+                            Text(
+                                if (contentMode == PageEditPreviewContentMode.FILTER_LOADING) "フィルタを適用中…" else "プレビューを準備中…",
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                style = MaterialTheme.typography.bodyMedium,
+                            )
+                        }
                     }
                 }
             }
@@ -445,18 +462,19 @@ private fun FilterItem(
                 .clip(RoundedCornerShape(8.dp))
                 .background(Color(0xFFFEFEFE))
                 .then(
-                    if (isActive) Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
-                    else Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
+                    if (isActive) {
+                        Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
+                    } else {
+                        Modifier.border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(8.dp))
+                    }
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            // Simple filter preview with colored box
             Text(
                 filter.displayName.first().toString(),
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
-                color = if (isActive) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.onSurfaceVariant,
+                color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             )
         }
         Spacer(Modifier.height(6.dp))
@@ -464,8 +482,7 @@ private fun FilterItem(
             filter.displayName,
             fontSize = 11.sp,
             fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
-            color = if (isActive) MaterialTheme.colorScheme.primary
-            else MaterialTheme.colorScheme.onSurfaceVariant,
+            color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
     }
