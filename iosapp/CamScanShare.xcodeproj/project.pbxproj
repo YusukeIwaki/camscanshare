@@ -27,6 +27,7 @@
 		77596E4388F81C2840522BD9 /* CameraPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 279CBC8AD55DBF005D2D3ED4 /* CameraPreviewView.swift */; };
 		7E7242B186FCA3CFB58CE3F8 /* opencv2.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5CBAA8E985A80E86F8422DA7 /* opencv2.xcframework */; };
 		7FD6F10068159270B8C9C5D7 /* PreviewStorageServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89B897F308A0AE062E340F8B /* PreviewStorageServiceTests.swift */; };
+		8148555C6F631DB07BCAA875 /* PDFPageLayoutTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5B57539D3165BD4EF9779F72 /* PDFPageLayoutTests.swift */; };
 		866D2A9E44D5FD5F87644462 /* AppNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CB9D848A7AFC6F855375C60 /* AppNavigation.swift */; };
 		8A510479AF3F42B53171CAAE /* FilterPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59A3EFEEB91396856F32CE9C /* FilterPreset.swift */; };
 		8D3ED1FAF6EEC75CE4A789C7 /* PreviewStorageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF2BBC764CA67564812E0627 /* PreviewStorageService.swift */; };
@@ -68,6 +69,7 @@
 		4D8293088D465663936628E1 /* LargePreviewImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LargePreviewImage.swift; sourceTree = "<group>"; };
 		5909FB97B445FB97DE9B1940 /* ImageFilterService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageFilterService.swift; sourceTree = "<group>"; };
 		59A3EFEEB91396856F32CE9C /* FilterPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilterPreset.swift; sourceTree = "<group>"; };
+		5B57539D3165BD4EF9779F72 /* PDFPageLayoutTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFPageLayoutTests.swift; sourceTree = "<group>"; };
 		5CB9D848A7AFC6F855375C60 /* AppNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppNavigation.swift; sourceTree = "<group>"; };
 		5CBAA8E985A80E86F8422DA7 /* opencv2.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = opencv2.xcframework; path = Vendor/opencv2.xcframework; sourceTree = "<group>"; };
 		633CD9C2C356DF80FC5ED1D4 /* OpenCVDocumentFilterBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = OpenCVDocumentFilterBridge.mm; sourceTree = "<group>"; };
@@ -197,6 +199,7 @@
 			children = (
 				F240368D10EEDADE2921A1FC /* PaperDetectionServiceTests.swift */,
 				917F53767CB9F9DBAE299E05 /* PDFGenerationProgressTests.swift */,
+				5B57539D3165BD4EF9779F72 /* PDFPageLayoutTests.swift */,
 				FD86B68360957E27F16FFB04 /* PreviewDisplayStateTests.swift */,
 				89B897F308A0AE062E340F8B /* PreviewStorageServiceTests.swift */,
 			);
@@ -348,6 +351,7 @@
 			buildActionMask = 2147483647;
 			files = (
 				7600D4C90F2B103E3F8C1E84 /* PDFGenerationProgressTests.swift in Sources */,
+				8148555C6F631DB07BCAA875 /* PDFPageLayoutTests.swift in Sources */,
 				B55B69F14230184A19A1BBC2 /* PaperDetectionServiceTests.swift in Sources */,
 				0E5777E69FFD6CD0FCAD1578 /* PreviewDisplayStateTests.swift in Sources */,
 				7FD6F10068159270B8C9C5D7 /* PreviewStorageServiceTests.swift in Sources */,

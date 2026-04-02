@@ -63,8 +63,17 @@ struct PDFGenerationProgress: Sendable, Equatable {
 
 enum PDFService {
     // A4 size in points (72 dpi)
-    private static let a4Width: CGFloat = 595.28
-    private static let a4Height: CGFloat = 841.89
+    static let a4PortraitWidth: CGFloat = 595.28
+    static let a4PortraitHeight: CGFloat = 841.89
+    static let a4PortraitAspectRatio: CGFloat = a4PortraitWidth / a4PortraitHeight
+    static let a4LandscapeAspectRatio: CGFloat = a4PortraitHeight / a4PortraitWidth
+    private static let a4SnapTolerance: CGFloat = 0.2
+    private static let defaultPageRect = CGRect(
+        x: 0,
+        y: 0,
+        width: a4PortraitWidth,
+        height: a4PortraitHeight
+    )
 
     static func generatePDF(
         from pages: [PDFPageData],
@@ -77,8 +86,7 @@ enum PDFService {
         let tempURL = FileManager.default.temporaryDirectory
             .appendingPathComponent((safeName.isEmpty ? UUID().uuidString : safeName) + ".pdf")
 
-        let pageRect = CGRect(x: 0, y: 0, width: a4Width, height: a4Height)
-        let renderer = UIGraphicsPDFRenderer(bounds: pageRect)
+        let renderer = UIGraphicsPDFRenderer(bounds: defaultPageRect)
 
         progressHandler(
             PDFGenerationProgress(
@@ -111,17 +119,18 @@ enum PDFService {
                 )
                 else { continue }
 
-                pdfContext.beginPage()
+                let pageRect = pageRect(for: filteredImage.size)
+                pdfContext.beginPage(withBounds: pageRect, pageInfo: [:])
 
                 let imageSize = filteredImage.size
-                let widthRatio = a4Width / imageSize.width
-                let heightRatio = a4Height / imageSize.height
+                let widthRatio = pageRect.width / imageSize.width
+                let heightRatio = pageRect.height / imageSize.height
                 let scale = min(widthRatio, heightRatio)
 
                 let scaledWidth = imageSize.width * scale
                 let scaledHeight = imageSize.height * scale
-                let x = (a4Width - scaledWidth) / 2
-                let y = (a4Height - scaledHeight) / 2
+                let x = (pageRect.width - scaledWidth) / 2
+                let y = (pageRect.height - scaledHeight) / 2
 
                 filteredImage.draw(in: CGRect(x: x, y: y, width: scaledWidth, height: scaledHeight))
             }
@@ -142,5 +151,39 @@ enum PDFService {
         } catch {
             return nil
         }
+    }
+
+    static func pageRect(for imageSize: CGSize) -> CGRect {
+        guard imageSize.width > 0, imageSize.height > 0 else {
+            return defaultPageRect
+        }
+
+        let aspectRatio = pageAspectRatio(for: imageSize)
+
+        if relativeDifference(actual: aspectRatio, expected: a4PortraitAspectRatio) <= a4SnapTolerance {
+            return CGRect(x: 0, y: 0, width: a4PortraitWidth, height: a4PortraitHeight)
+        }
+
+        if relativeDifference(actual: aspectRatio, expected: a4LandscapeAspectRatio) <= a4SnapTolerance {
+            return CGRect(x: 0, y: 0, width: a4PortraitHeight, height: a4PortraitWidth)
+        }
+
+        if aspectRatio >= 1 {
+            let width = a4PortraitHeight
+            let height = width / aspectRatio
+            return CGRect(x: 0, y: 0, width: width, height: height)
+        }
+
+        let height = a4PortraitHeight
+        let width = height * aspectRatio
+        return CGRect(x: 0, y: 0, width: width, height: height)
+    }
+
+    private static func pageAspectRatio(for imageSize: CGSize) -> CGFloat {
+        imageSize.width / imageSize.height
+    }
+
+    private static func relativeDifference(actual: CGFloat, expected: CGFloat) -> CGFloat {
+        abs(actual - expected) / expected
     }
 }
