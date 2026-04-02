@@ -478,7 +478,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="interaction-trigger">共有ボタンをタップ</span>
-              <span class="interaction-result">全ページをPDFに変換 → 共有シート（ボトムシート）が表示。Google Drive / AirDrop / その他の共有先を選択。</span>
+              <span class="interaction-result">共有ボタンがローディング表示に切り替わり、PDF作成中のオーバーレイが表示される。現在処理中のページプレビューと「何ページ目を処理中か」を示した後、共有シート（ボトムシート）が表示される。</span>
             </li>
             <li>
               <span class="interaction-trigger">ページ追加FABをタップ</span>
@@ -522,7 +522,7 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list">
             <li>
               <span class="spec-element">PDF変換</span>
-              <span class="spec-detail">全ページを順番にPDFドキュメントへ統合。A4サイズにフィットさせる。</span>
+              <span class="spec-detail">全ページを順番にPDFドキュメントへ統合。A4サイズにフィットさせる。変換中はローディングオーバーレイを表示し、現在処理中のページプレビューと進捗テキストを出す。</span>
             </li>
             <li>
               <span class="spec-element">共有シート</span>
@@ -621,7 +621,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">永続化の対象</span>
-              <span class="spec-detail">編集後の画像ではなく、編集前の原画像＋編集パラメータ（フィルタ・回転）を保存。プレビュー画像はキャッシュのみで永続化しない。</span>
+              <span class="spec-detail">編集後の画像ではなく、編集前の原画像＋編集パラメータ（フィルタ・回転）を保存する。UI 表示用には small / large のプレビュー画像を別ファイルとして永続化し、文書一覧・ページ一覧・保存済みページ編集表示はその persisted preview を使う。未保存のページ編集だけは一時 working preview を生成する。PDF 出力は persisted preview を使わず、原画像＋編集パラメータから生成する。</span>
             </li>
             <li>
               <span class="spec-element">ページ編集の基準画像</span>
@@ -639,18 +639,18 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">マジック以外のフィルタ</span>
-              <span class="spec-detail">くっきり・白黒・ホワイトボード・鮮やかは、Step 0 画像に対して軽量な色変換をその場で適用してプレビューする。フィルタ切り替え時は画像ファイルを作り直すのではなく、表示用ビットマップを再生成する。</span>
+              <span class="spec-detail">くっきり・白黒・ホワイトボード・鮮やかは、Step 0 画像に対して軽量な色変換を適用して preview を生成する。保存済み状態では small / large の persisted preview を表示し、フィルタ適用時にそれらを更新する。未保存の編集中だけは working preview を再生成する。</span>
             </li>
             <li>
               <span class="spec-element">マジックフィルタ</span>
-              <span class="spec-detail">マジックは Step 0 または Step 1 を入力として、文書向けの画像補正を適用してプレビューする。概念的には docs の Step 2・Step 3 に近い処理であり、照明ムラの補正、トーンの自動伸長、紙面の白化、色アクセントの保持をまとめて行う。A4 に近い文書では、必要に応じて Step 1 の比率正規化を経由してからマジック処理に入れる。</span>
+              <span class="spec-detail">マジックは Step 0 または Step 1 を入力として、文書向けの画像補正を適用した preview を生成する。概念的には docs の Step 2・Step 3 に近い処理であり、照明ムラの補正、トーンの自動伸長、紙面の白化、色アクセントの保持をまとめて行う。A4 に近い文書では、必要に応じて Step 1 の比率正規化を経由してからマジック処理に入れる。生成結果は保存済み状態では persisted preview として保持する。</span>
             </li>
           </ul>
         </div>
 
         <div class="spec-group">
           <h3>フィルタプリセット</h3>
-          <p>オリジナル / くっきり / 白黒 / マジック（既定） / ホワイトボード / 鮮やか の6種。</p>
+          <p>オリジナル（既定） / くっきり / 白黒 / マジック / ホワイトボード / 鮮やか の6種。</p>
           <p>各フィルタの効果・パラメータの詳細は <a href="/filters">フィルタ解説ページ</a> を参照。</p>
           <p class="spec-note">※ フィルタは今後の要件に応じて追加可能な拡張設計とする。</p>
         </div>

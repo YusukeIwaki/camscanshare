@@ -5,10 +5,13 @@ import SwiftUI
 final class PageListViewModel {
     var document: Document?
     var showRenameDialog = false
+    var showPDFErrorAlert = false
     var renameText = ""
     var isGeneratingPDF = false
+    var pdfGenerationProgress: PDFGenerationProgress?
     var pdfURL: URL?
     var showShareSheet = false
+    private var regeneratingPageIDs: Set<PersistentIdentifier> = []
 
     func loadDocument(id: PersistentIdentifier, context: ModelContext) {
         document = context.model(for: id) as? Document
@@ -55,7 +58,7 @@ final class PageListViewModel {
     }
 
     func deletePage(_ page: Page, context: ModelContext) {
-        ImageStorageService.deleteImage(fileName: page.originalImageFileName)
+        deletePageAssets(page)
         context.delete(page)
         let remainingPages = sortedPages.filter { $0.persistentModelID != page.persistentModelID }
         for (index, remainingPage) in remainingPages.enumerated() {
@@ -68,25 +71,79 @@ final class PageListViewModel {
     func generateAndSharePDF() {
         guard let document else { return }
         isGeneratingPDF = true
+        showPDFErrorAlert = false
 
         let pageData = document.sortedPages.map { page in
             PDFPageData(
                 imageFileName: page.originalImageFileName,
+                smallPreviewFileName: page.smallPreviewFileName,
+                largePreviewFileName: page.largePreviewFileName,
                 filterPreset: page.filterPreset,
                 rotationDegrees: page.rotationDegrees
             )
         }
         let documentName = document.name
+        pdfGenerationProgress = PDFGenerationProgress(
+            phase: .preparing,
+            currentPage: 0,
+            totalPages: pageData.count,
+            currentPageData: pageData.first
+        )
 
-        Task {
+        var progressContinuation: AsyncStream<PDFGenerationProgress>.Continuation?
+        let progressStream = AsyncStream(PDFGenerationProgress.self) { continuation in
+            progressContinuation = continuation
+        }
+
+        Task { [weak self, pageData, documentName] in
+            let progressTask = Task { @MainActor [weak self] in
+                for await progress in progressStream {
+                    self?.pdfGenerationProgress = progress
+                }
+            }
+
             let generatedURL = await Task.detached(priority: .userInitiated) {
-                PDFService.generatePDF(from: pageData, fileName: documentName)
+                guard let progressContinuation else {
+                    return PDFService.generatePDF(from: pageData, fileName: documentName)
+                }
+                return PDFService.generatePDF(
+                    from: pageData,
+                    fileName: documentName,
+                    progressHandler: { progress in
+                        progressContinuation.yield(progress)
+                    }
+                )
             }.value
+            guard let self else { return }
+
+            if let progressContinuation {
+                progressContinuation.finish()
+            }
+            _ = await progressTask.result
+
             pdfURL = generatedURL
             isGeneratingPDF = false
+            pdfGenerationProgress = nil
             if generatedURL != nil {
                 showShareSheet = true
+            } else {
+                showPDFErrorAlert = true
             }
         }
+    }
+
+    func ensureLargePreview(for page: Page, context: ModelContext) {
+        let pageID = page.persistentModelID
+        guard pageNeedsPreviewRegeneration(page) else { return }
+        guard regeneratingPageIDs.insert(pageID).inserted else { return }
+
+        Task { @MainActor [weak self] in
+            await reconcilePersistedPreviews(for: page, context: context)
+            self?.regeneratingPageIDs.remove(pageID)
+        }
+    }
+
+    func isRegeneratingPreview(for page: Page) -> Bool {
+        regeneratingPageIDs.contains(page.persistentModelID)
     }
 }

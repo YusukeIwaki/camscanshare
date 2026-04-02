@@ -7,6 +7,7 @@ struct PageEditView: View {
     @Binding var path: NavigationPath
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel = PageEditViewModel()
+    @State private var workingPreviewManager = WorkingPreviewManager()
 
     var body: some View {
         VStack(spacing: 0) {
@@ -19,9 +20,20 @@ struct PageEditView: View {
         .onAppear {
             viewModel.loadDocument(id: documentId, initialPageIndex: initialPageIndex, context: modelContext)
         }
+        .onDisappear {
+            workingPreviewManager.clearPreview()
+        }
+        .task(id: viewModel.currentPreviewRequestKey) {
+            await updateCurrentPreviewState()
+        }
         .alert("編集内容を破棄しますか？", isPresented: $viewModel.showDiscardDialog) {
             Button("キャンセル", role: .cancel) {}
             Button("破棄", role: .destructive) {
+                if let currentPage = viewModel.currentPage {
+                    workingPreviewManager.clearPreview(sourceFileName: currentPage.originalImageFileName)
+                } else {
+                    workingPreviewManager.clearPreview()
+                }
                 viewModel.discardChanges()
                 path.removeLast()
             }
@@ -68,15 +80,36 @@ struct PageEditView: View {
             Spacer()
 
             Button {
-                viewModel.apply(context: modelContext)
-                path.removeLast()
+                Task {
+                    await viewModel.apply(
+                        context: modelContext,
+                        currentWorkingPreviewImage: workingPreviewManager.supportsPersistedReuse
+                            ? workingPreviewManager.previewImage : nil,
+                        currentWorkingPreviewRequestKey: workingPreviewManager.supportsPersistedReuse
+                            ? workingPreviewManager.previewRequestKey : nil
+                    )
+                    if let currentPage = viewModel.currentPage {
+                        workingPreviewManager.clearPreview(sourceFileName: currentPage.originalImageFileName)
+                    } else {
+                        workingPreviewManager.clearPreview()
+                    }
+                    path.removeLast()
+                }
             } label: {
-                Text("適用")
-                    .font(.system(size: 15, weight: .medium))
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 8)
+                Group {
+                    if viewModel.isApplying {
+                        ProgressView()
+                            .controlSize(.small)
+                    } else {
+                        Text("適用")
+                            .font(.system(size: 15, weight: .medium))
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.vertical, 8)
             }
             .foregroundStyle(Color.accentColor)
+            .disabled(viewModel.isApplying)
         }
         .padding(.horizontal, 8)
         .frame(height: 64)
@@ -113,16 +146,23 @@ struct PageEditView: View {
 
     private func pagePreviewItem(page: Page, index: Int) -> some View {
         GeometryReader { geometry in
-            let editState = index < viewModel.editStates.count ? viewModel.editStates[index] : nil
-            let pageAspectRatio = ImageStorageService.imageAspectRatio(fileName: page.originalImageFileName) ?? 1.0
+            let pageAspectRatio =
+                PreviewStorageService.imageAspectRatio(fileName: page.largePreviewFileName, kind: .large)
+                ?? ImageStorageService.imageAspectRatio(fileName: page.originalImageFileName)
+                ?? 1.0
 
-            AsyncPagePreview(
-                fileName: page.originalImageFileName,
-                editState: editState,
-                pageAspectRatio: pageAspectRatio
+            LargePreviewImage(
+                state: previewDisplayState(for: page, index: index, aspectRatio: pageAspectRatio),
+                contentMode: .fit,
+                cornerRadius: 4
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(24)
+            .onAppear {
+                if index == viewModel.currentPageIndex {
+                    viewModel.ensurePersistedPreview(for: page, context: modelContext)
+                }
+            }
         }
     }
 
@@ -268,137 +308,44 @@ struct PageEditView: View {
         case .vivid: 0.6
         }
     }
-}
 
-private enum PagePreviewCache {
-    nonisolated(unsafe) static let imageCache = NSCache<NSString, UIImage>()
-}
-
-private struct AsyncPagePreview: View {
-    let fileName: String
-    let editState: PageEditState?
-    let pageAspectRatio: CGFloat
-
-    @State private var renderedImage: UIImage?
-    @State private var isLoading = false
-    @State private var activeRenderKey = ""
-
-    init(fileName: String, editState: PageEditState?, pageAspectRatio: CGFloat) {
-        self.fileName = fileName
-        self.editState = editState
-        self.pageAspectRatio = pageAspectRatio
-
-        let key = Self.makeRenderKey(fileName: fileName, editState: editState)
-        let cached = Self.cachedImage(for: key)
-        _renderedImage = State(initialValue: cached)
-        _isLoading = State(initialValue: editState != nil && cached == nil)
-        _activeRenderKey = State(initialValue: key)
-    }
-
-    private var renderKey: String {
-        Self.makeRenderKey(fileName: fileName, editState: editState)
-    }
-
-    var body: some View {
-        ZStack {
-            Rectangle()
-                .fill(Color(.systemGray5))
-                .aspectRatio(pageAspectRatio, contentMode: .fit)
-
-            if let renderedImage {
-                Image(uiImage: renderedImage)
-                    .resizable()
-                    .aspectRatio(contentMode: .fit)
-            }
-
-            if isLoading {
-                VStack(spacing: 12) {
-                    ProgressView()
-                        .controlSize(.regular)
-                    Text("フィルタを適用中…")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 20)
-                .padding(.vertical, 16)
-                .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
-            }
+    private func previewDisplayState(
+        for page: Page,
+        index: Int,
+        aspectRatio: CGFloat
+    ) -> PreviewDisplayState {
+        if index == viewModel.currentPageIndex {
+            return .pageEditor(
+                persistedLargePreviewFileName: page.largePreviewFileName,
+                workingPreviewImage: workingPreviewManager.previewImage,
+                workingPreviewID: workingPreviewManager.previewRequestKey,
+                aspectRatio: aspectRatio,
+                isGeneratingWorkingPreview: workingPreviewManager.isGenerating
+                    || viewModel.isRegeneratingPersistedPreview(for: page)
+            )
         }
-        .clipShape(RoundedRectangle(cornerRadius: 4))
-        .shadow(color: .black.opacity(0.15), radius: 8, x: 0, y: 4)
-        .onAppear {
-            syncStateFromCache(for: renderKey)
-        }
-        .onChange(of: renderKey) { _, newKey in
-            syncStateFromCache(for: newKey)
-        }
-        .task(id: renderKey) {
-            renderPreview()
-        }
+
+        return .pageEditor(
+            persistedLargePreviewFileName: page.largePreviewFileName,
+            workingPreviewImage: nil,
+            workingPreviewID: nil,
+            aspectRatio: aspectRatio,
+            isGeneratingWorkingPreview: viewModel.isRegeneratingPersistedPreview(for: page)
+        )
     }
 
     @MainActor
-    private func renderPreview() {
-        guard let editState else {
-            renderedImage = nil
-            isLoading = false
-            activeRenderKey = renderKey
+    private func updateCurrentPreviewState() async {
+        guard let currentPage = viewModel.currentPage else {
+            workingPreviewManager.clearPreview()
             return
         }
 
-        activeRenderKey = renderKey
-
-        if let cached = PagePreviewCache.imageCache.object(forKey: renderKey as NSString) {
-            renderedImage = cached
-            isLoading = false
-            return
-        }
-
-        renderedImage = nil
-        isLoading = true
-
-        let requestKey = renderKey
-        let fileName = fileName
-        let filterPreset = editState.filterPreset
-        let rotationDegrees = editState.rotationDegrees
-
-        DispatchQueue.global(qos: .userInitiated).async {
-            let image = ImageStorageService.loadImage(fileName: fileName)
-            let filtered = image.flatMap {
-                ImageFilterService.applyFilter(
-                    filterPreset,
-                    to: $0,
-                    rotation: rotationDegrees,
-                    intent: .preview
-                )
-            }
-
-            if let filtered {
-                PagePreviewCache.imageCache.setObject(filtered, forKey: requestKey as NSString)
-            }
-
-            DispatchQueue.main.async {
-                guard activeRenderKey == requestKey else { return }
-                renderedImage = filtered
-                isLoading = false
-            }
-        }
-    }
-
-    @MainActor
-    private func syncStateFromCache(for key: String) {
-        activeRenderKey = key
-        let cached = Self.cachedImage(for: key)
-        renderedImage = cached
-        isLoading = editState != nil && cached == nil
-    }
-
-    private static func makeRenderKey(fileName: String, editState: PageEditState?) -> String {
-        guard let editState else { return "\(fileName)|missing" }
-        return "\(fileName)|\(editState.filterPreset.rawValue)|\(editState.rotationDegrees)"
-    }
-
-    private static func cachedImage(for key: String) -> UIImage? {
-        PagePreviewCache.imageCache.object(forKey: key as NSString)
+        viewModel.ensurePersistedPreview(for: currentPage, context: modelContext)
+        await workingPreviewManager.updatePreview(
+            for: currentPage,
+            editState: viewModel.currentEditState,
+            savedState: viewModel.currentSavedState
+        )
     }
 }

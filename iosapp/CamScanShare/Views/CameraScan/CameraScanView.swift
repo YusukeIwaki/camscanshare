@@ -106,7 +106,7 @@ struct CameraScanView: View {
         } else {
             // Thumbnail stack
             Button {
-                finishScanning()
+                Task { await finishScanning() }
             } label: {
                 ZStack {
                     // Stack effect (background cards)
@@ -164,7 +164,7 @@ struct CameraScanView: View {
                     .frame(width: 58, height: 58)
             }
         }
-        .disabled(viewModel.isCapturing)
+        .disabled(viewModel.isCapturing || viewModel.isFinalizing)
     }
 
     // MARK: - Actions
@@ -179,11 +179,12 @@ struct CameraScanView: View {
         viewModel.processAndStoreCapturedImage(image)
 
         if retakePageId != nil {
-            finishScanning()
+            await finishScanning()
         }
     }
 
-    private func finishScanning() {
+    private func finishScanning() async {
+        guard !viewModel.isFinalizing else { return }
         guard !viewModel.capturedPages.isEmpty else {
             if path.count > 0 {
                 path.removeLast()
@@ -191,8 +192,11 @@ struct CameraScanView: View {
             return
         }
 
+        viewModel.isFinalizing = true
+        defer { viewModel.isFinalizing = false }
+
         if let retakePageId {
-            replaceRetakePage(retakePageId)
+            await replaceRetakePage(retakePageId)
             if path.count > 0 {
                 path.removeLast()
             }
@@ -203,10 +207,17 @@ struct CameraScanView: View {
         let startOrder = document.pages.count
         for (index, image) in viewModel.capturedPages.enumerated() {
             let fileName = ImageStorageService.saveImage(image)
+            let previewFiles = try? await PreviewGenerationCoordinator.shared.generatePersistedPreviews(
+                sourceFileName: fileName,
+                filter: .original,
+                rotation: 0
+            )
             let page = Page(
                 document: document,
                 sortOrder: startOrder + index,
-                originalImageFileName: fileName
+                originalImageFileName: fileName,
+                smallPreviewFileName: previewFiles?.smallFileName,
+                largePreviewFileName: previewFiles?.largeFileName
             )
             modelContext.insert(page)
         }
@@ -236,16 +247,35 @@ struct CameraScanView: View {
         return document
     }
 
-    private func replaceRetakePage(_ pageId: PersistentIdentifier) {
+    private func replaceRetakePage(_ pageId: PersistentIdentifier) async {
         guard let replacementImage = viewModel.capturedPages.last,
             let page = modelContext.model(for: pageId) as? Page
         else { return }
 
         let oldFileName = page.originalImageFileName
+        let oldSmallPreviewFileName = page.smallPreviewFileName
+        let oldLargePreviewFileName = page.largePreviewFileName
         let newFileName = ImageStorageService.saveImage(replacementImage)
         page.originalImageFileName = newFileName
+
+        do {
+            let previewFiles = try await PreviewGenerationCoordinator.shared.generatePersistedPreviews(
+                sourceFileName: newFileName,
+                filter: page.filterPreset,
+                rotation: page.rotationDegrees
+            )
+            page.smallPreviewFileName = previewFiles.smallFileName
+            page.largePreviewFileName = previewFiles.largeFileName
+        } catch {
+            page.smallPreviewFileName = nil
+            page.largePreviewFileName = nil
+        }
+
         page.document?.updatedAt = .now
         try? modelContext.save()
         ImageStorageService.deleteImage(fileName: oldFileName)
+        PreviewStorageService.deletePreview(fileName: oldSmallPreviewFileName, kind: .small)
+        PreviewStorageService.deletePreview(fileName: oldLargePreviewFileName, kind: .large)
+        WorkingPreviewStorageService.deleteWorkingPreviews(sourceFileName: oldFileName)
     }
 }

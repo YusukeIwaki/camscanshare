@@ -7,6 +7,7 @@ final class DocumentListViewModel {
     var selectedIds: Set<PersistentIdentifier> = []
     var isSelectionMode = false
     var showDeleteConfirmation = false
+    private var regeneratingPageIDs: Set<PersistentIdentifier> = []
 
     func enterSelectionMode(with id: PersistentIdentifier) {
         isSelectionMode = true
@@ -31,13 +32,29 @@ final class DocumentListViewModel {
 
     func deleteSelected(documents: [Document], modelContext: ModelContext) {
         for document in documents where selectedIds.contains(document.persistentModelID) {
-            // Delete associated image files
             for page in document.pages {
-                ImageStorageService.deleteImage(fileName: page.originalImageFileName)
+                deletePageAssets(page)
             }
             modelContext.delete(document)
         }
         try? modelContext.save()
         exitSelectionMode()
+    }
+
+    func ensureSmallPreview(for page: Page?, context: ModelContext) {
+        guard let page else { return }
+        let pageID = page.persistentModelID
+        guard pageNeedsPreviewRegeneration(page) else { return }
+        guard regeneratingPageIDs.insert(pageID).inserted else { return }
+
+        Task { @MainActor [weak self] in
+            await reconcilePersistedPreviews(for: page, context: context)
+            self?.regeneratingPageIDs.remove(pageID)
+        }
+    }
+
+    func isRegeneratingPreview(for page: Page?) -> Bool {
+        guard let page else { return false }
+        return regeneratingPageIDs.contains(page.persistentModelID)
     }
 }

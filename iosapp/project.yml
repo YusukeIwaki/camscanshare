@@ -16,11 +16,32 @@ targets:
     platform: iOS
     sources:
       - CamScanShare
+    dependencies:
+      - framework: Vendor/opencv2.xcframework
+        embed: false
     settings:
       base:
         INFOPLIST_FILE: CamScanShare/Info.plist
         PRODUCT_BUNDLE_IDENTIFIER: io.github.yusukeiwaki.camscanshare
         MARKETING_VERSION: "1.0.0"
         CURRENT_PROJECT_VERSION: "1"
+        TARGETED_DEVICE_FAMILY: "1,2"
+        SWIFT_STRICT_CONCURRENCY: complete
+        SWIFT_OBJC_BRIDGING_HEADER: CamScanShare/CamScanShare-Bridging-Header.h
+        CLANG_CXX_LANGUAGE_STANDARD: "gnu++17"
+        OTHER_CPLUSPLUSFLAGS: "$(inherited) -Wno-documentation -Wno-documentation-deprecated-sync"
+  CamScanShareTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - CamScanShareTests
+    dependencies:
+      - target: CamScanShare
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: io.github.yusukeiwaki.camscanshareTests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/CamScanShare.app/CamScanShare"
+        BUNDLE_LOADER: "$(TEST_HOST)"
         TARGETED_DEVICE_FAMILY: "1,2"
         SWIFT_STRICT_CONCURRENCY: complete

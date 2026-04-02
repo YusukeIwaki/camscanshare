@@ -7,31 +7,42 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		0E5777E69FFD6CD0FCAD1578 /* PreviewDisplayStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD86B68360957E27F16FFB04 /* PreviewDisplayStateTests.swift */; };
 		1048B97CFD333FA68092EF81 /* CameraScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5056EFD0E915B99E8993897 /* CameraScanView.swift */; };
 		1395CA0ACD6EA45F7CD8CE52 /* PageEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41694F5E572593C5D5BEFCB8 /* PageEditView.swift */; };
+		1765B1744F40E376AB6B1C65 /* OpenCVDocumentFilterBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = 633CD9C2C356DF80FC5ED1D4 /* OpenCVDocumentFilterBridge.mm */; };
 		1BDAEBFA334DE643C857C70D /* PageListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 63DDFF1E1E429AB2BCF9560F /* PageListView.swift */; };
 		1F001F2191CBF3220F47B6C4 /* PDFService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 346AE984F3898649F714B559 /* PDFService.swift */; };
 		2BB72CD5BD060E9BA7994EE9 /* CamScanShareApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3CABF25D2BB00A943EA3E55F /* CamScanShareApp.swift */; };
+		32AA3371B49B0E1C32EBE517 /* LargePreviewImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4D8293088D465663936628E1 /* LargePreviewImage.swift */; };
+		3BAEEB6A664E1968C672AC47 /* SmallPreviewImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = DE35A3AAE9AB8EEE7A097E86 /* SmallPreviewImage.swift */; };
 		3C6DA303B86AE66D726005D7 /* DetectionOverlayView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 886D5796C0EEC3414BBC18C4 /* DetectionOverlayView.swift */; };
+		3E8C202C68DE3D87D5E2EB84 /* CamScanShareSchema.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8D827D31290592D22A11C0BE /* CamScanShareSchema.swift */; };
+		4A54A461B0B07674F5B04360 /* WorkingPreviewManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 000BF81DE9FB9E20C00AB8CA /* WorkingPreviewManager.swift */; };
+		5AD2EF78AEBB5E9537D80960 /* PreviewDisplayState.swift in Sources */ = {isa = PBXBuildFile; fileRef = 743347BA4443F98D6A751B6E /* PreviewDisplayState.swift */; };
 		660EAB4E79091266D089CC6B /* DocumentListView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 995191BF0768C7FB28C48BA4 /* DocumentListView.swift */; };
 		72D35EF0A2A3E8CCEA04D965 /* PaperDetectionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = C117EBC6128C06E54A15A256 /* PaperDetectionService.swift */; };
 		75C655EF0D3E152EC6611069 /* ImageFilterService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5909FB97B445FB97DE9B1940 /* ImageFilterService.swift */; };
+		7600D4C90F2B103E3F8C1E84 /* PDFGenerationProgressTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 917F53767CB9F9DBAE299E05 /* PDFGenerationProgressTests.swift */; };
 		77596E4388F81C2840522BD9 /* CameraPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 279CBC8AD55DBF005D2D3ED4 /* CameraPreviewView.swift */; };
+		7E7242B186FCA3CFB58CE3F8 /* opencv2.xcframework in Frameworks */ = {isa = PBXBuildFile; fileRef = 5CBAA8E985A80E86F8422DA7 /* opencv2.xcframework */; };
+		7FD6F10068159270B8C9C5D7 /* PreviewStorageServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89B897F308A0AE062E340F8B /* PreviewStorageServiceTests.swift */; };
 		866D2A9E44D5FD5F87644462 /* AppNavigation.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5CB9D848A7AFC6F855375C60 /* AppNavigation.swift */; };
 		8A510479AF3F42B53171CAAE /* FilterPreset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 59A3EFEEB91396856F32CE9C /* FilterPreset.swift */; };
+		8D3ED1FAF6EEC75CE4A789C7 /* PreviewStorageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = DF2BBC764CA67564812E0627 /* PreviewStorageService.swift */; };
 		8DD48D50E8C860B4052069AE /* Page.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1FF8990B3550B8A7F4DE9A4F /* Page.swift */; };
 		9A60A3A0C9D19ADAF927F638 /* CameraScanViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 95C7A56B93C34BF72F230E1D /* CameraScanViewModel.swift */; };
+		B55B69F14230184A19A1BBC2 /* PaperDetectionServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = F240368D10EEDADE2921A1FC /* PaperDetectionServiceTests.swift */; };
 		C3A08A1157F372C00A8D5F45 /* Document.swift in Sources */ = {isa = PBXBuildFile; fileRef = 08A6CC96D255BF782C5E86C0 /* Document.swift */; };
 		C79202B4282E25F15CC5218B /* ImageStorageService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0799DB79B88E95BF47CE5EF1 /* ImageStorageService.swift */; };
 		EC03E09A669CAAD5CA031330 /* DocumentListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1850D11179A0A3835B4C2B34 /* DocumentListViewModel.swift */; };
 		EF6AC4AC96A7D5ACEAFDF565 /* PageEditViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = D780CFAE0318ACA7F5407B7D /* PageEditViewModel.swift */; };
 		F290B51023C48272C8C064A7 /* PageListViewModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = 2A54AE68FDB6A0BC8B104531 /* PageListViewModel.swift */; };
 		F86B431C74FA2A17E17BF8A1 /* UIImage+Extensions.swift in Sources */ = {isa = PBXBuildFile; fileRef = CC4603ACB122A3A75D62C6C3 /* UIImage+Extensions.swift */; };
-		A10000000000000000000001 /* PaperDetectionServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A10000000000000000000002 /* PaperDetectionServiceTests.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
-		A10000000000000000000007 /* PBXContainerItemProxy */ = {
+		404599C2D48D2FC599969A1D /* PBXContainerItemProxy */ = {
 			isa = PBXContainerItemProxy;
 			containerPortal = FD75D13E0AD1E7C51A52B32A /* Project object */;
 			proxyType = 1;
@@ -41,6 +52,8 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		000BF81DE9FB9E20C00AB8CA /* WorkingPreviewManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WorkingPreviewManager.swift; sourceTree = "<group>"; };
+		03D4A046299CB00235FAFE0F /* CamScanShare-Bridging-Header.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "CamScanShare-Bridging-Header.h"; sourceTree = "<group>"; };
 		0799DB79B88E95BF47CE5EF1 /* ImageStorageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageStorageService.swift; sourceTree = "<group>"; };
 		08A6CC96D255BF782C5E86C0 /* Document.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Document.swift; sourceTree = "<group>"; };
 		1850D11179A0A3835B4C2B34 /* DocumentListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentListViewModel.swift; sourceTree = "<group>"; };
@@ -48,30 +61,42 @@
 		279CBC8AD55DBF005D2D3ED4 /* CameraPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraPreviewView.swift; sourceTree = "<group>"; };
 		2A54AE68FDB6A0BC8B104531 /* PageListViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageListViewModel.swift; sourceTree = "<group>"; };
 		346AE984F3898649F714B559 /* PDFService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFService.swift; sourceTree = "<group>"; };
-		35DD7840FE6A1C637684CF4C /* CamScanShare.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = CamScanShare.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		35DD7840FE6A1C637684CF4C /* CamScanShare.app */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.application; path = CamScanShare.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		3CABF25D2BB00A943EA3E55F /* CamScanShareApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CamScanShareApp.swift; sourceTree = "<group>"; };
 		41694F5E572593C5D5BEFCB8 /* PageEditView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageEditView.swift; sourceTree = "<group>"; };
 		44A5A9D772EC161E8B643FC7 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		4D8293088D465663936628E1 /* LargePreviewImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LargePreviewImage.swift; sourceTree = "<group>"; };
 		5909FB97B445FB97DE9B1940 /* ImageFilterService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageFilterService.swift; sourceTree = "<group>"; };
 		59A3EFEEB91396856F32CE9C /* FilterPreset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = FilterPreset.swift; sourceTree = "<group>"; };
 		5CB9D848A7AFC6F855375C60 /* AppNavigation.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppNavigation.swift; sourceTree = "<group>"; };
+		5CBAA8E985A80E86F8422DA7 /* opencv2.xcframework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.xcframework; name = opencv2.xcframework; path = Vendor/opencv2.xcframework; sourceTree = "<group>"; };
+		633CD9C2C356DF80FC5ED1D4 /* OpenCVDocumentFilterBridge.mm */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.cpp.objcpp; path = OpenCVDocumentFilterBridge.mm; sourceTree = "<group>"; };
 		63DDFF1E1E429AB2BCF9560F /* PageListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageListView.swift; sourceTree = "<group>"; };
+		743347BA4443F98D6A751B6E /* PreviewDisplayState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewDisplayState.swift; sourceTree = "<group>"; };
 		886D5796C0EEC3414BBC18C4 /* DetectionOverlayView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DetectionOverlayView.swift; sourceTree = "<group>"; };
+		89B897F308A0AE062E340F8B /* PreviewStorageServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewStorageServiceTests.swift; sourceTree = "<group>"; };
+		8D827D31290592D22A11C0BE /* CamScanShareSchema.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CamScanShareSchema.swift; sourceTree = "<group>"; };
+		917F53767CB9F9DBAE299E05 /* PDFGenerationProgressTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PDFGenerationProgressTests.swift; sourceTree = "<group>"; };
 		95C7A56B93C34BF72F230E1D /* CameraScanViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraScanViewModel.swift; sourceTree = "<group>"; };
 		995191BF0768C7FB28C48BA4 /* DocumentListView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DocumentListView.swift; sourceTree = "<group>"; };
 		B5056EFD0E915B99E8993897 /* CameraScanView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CameraScanView.swift; sourceTree = "<group>"; };
 		C117EBC6128C06E54A15A256 /* PaperDetectionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperDetectionService.swift; sourceTree = "<group>"; };
+		C46C5692ED6077CBD6BF1FEE /* OpenCVDocumentFilterBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = OpenCVDocumentFilterBridge.h; sourceTree = "<group>"; };
 		CC4603ACB122A3A75D62C6C3 /* UIImage+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UIImage+Extensions.swift"; sourceTree = "<group>"; };
 		D780CFAE0318ACA7F5407B7D /* PageEditViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageEditViewModel.swift; sourceTree = "<group>"; };
-		A10000000000000000000002 /* PaperDetectionServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperDetectionServiceTests.swift; sourceTree = "<group>"; };
-		A10000000000000000000003 /* CamScanShareTests.xctest */ = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; includeInIndex = 0; path = CamScanShareTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		DE35A3AAE9AB8EEE7A097E86 /* SmallPreviewImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmallPreviewImage.swift; sourceTree = "<group>"; };
+		DF2BBC764CA67564812E0627 /* PreviewStorageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewStorageService.swift; sourceTree = "<group>"; };
+		F240368D10EEDADE2921A1FC /* PaperDetectionServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperDetectionServiceTests.swift; sourceTree = "<group>"; };
+		F7698F0996CA54F3EC2FBD95 /* CamScanShareTests.xctest */ = {isa = PBXFileReference; includeInIndex = 0; lastKnownFileType = wrapper.cfbundle; path = CamScanShareTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		FD86B68360957E27F16FFB04 /* PreviewDisplayStateTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewDisplayStateTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		A10000000000000000000005 /* Frameworks */ = {
+		F6D1F7749C1D5135304EB16D /* Frameworks */ = {
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				7E7242B186FCA3CFB58CE3F8 /* opencv2.xcframework in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -82,7 +107,7 @@
 			isa = PBXGroup;
 			children = (
 				35DD7840FE6A1C637684CF4C /* CamScanShare.app */,
-				A10000000000000000000003 /* CamScanShareTests.xctest */,
+				F7698F0996CA54F3EC2FBD95 /* CamScanShareTests.xctest */,
 			);
 			name = Products;
 			sourceTree = "<group>";
@@ -101,10 +126,24 @@
 			children = (
 				5909FB97B445FB97DE9B1940 /* ImageFilterService.swift */,
 				0799DB79B88E95BF47CE5EF1 /* ImageStorageService.swift */,
+				C46C5692ED6077CBD6BF1FEE /* OpenCVDocumentFilterBridge.h */,
+				633CD9C2C356DF80FC5ED1D4 /* OpenCVDocumentFilterBridge.mm */,
 				C117EBC6128C06E54A15A256 /* PaperDetectionService.swift */,
 				346AE984F3898649F714B559 /* PDFService.swift */,
+				DF2BBC764CA67564812E0627 /* PreviewStorageService.swift */,
+				000BF81DE9FB9E20C00AB8CA /* WorkingPreviewManager.swift */,
 			);
 			path = Services;
+			sourceTree = "<group>";
+		};
+		4A0D1C67D9332915845CCD59 /* Components */ = {
+			isa = PBXGroup;
+			children = (
+				4D8293088D465663936628E1 /* LargePreviewImage.swift */,
+				743347BA4443F98D6A751B6E /* PreviewDisplayState.swift */,
+				DE35A3AAE9AB8EEE7A097E86 /* SmallPreviewImage.swift */,
+			);
+			path = Components;
 			sourceTree = "<group>";
 		};
 		679336761AF45235691388B8 /* DocumentList */ = {
@@ -120,11 +159,20 @@
 			isa = PBXGroup;
 			children = (
 				E6CB716D5A2C75AB271C0F59 /* CameraScan */,
+				4A0D1C67D9332915845CCD59 /* Components */,
 				679336761AF45235691388B8 /* DocumentList */,
 				1D2091F33AE50D3709DEC957 /* PageEdit */,
 				C0FA5EE13390940C9F779F9F /* PageList */,
 			);
 			path = Views;
+			sourceTree = "<group>";
+		};
+		8EDE1BEFFC75721BEA865F5F /* Frameworks */ = {
+			isa = PBXGroup;
+			children = (
+				5CBAA8E985A80E86F8422DA7 /* opencv2.xcframework */,
+			);
+			name = Frameworks;
 			sourceTree = "<group>";
 		};
 		B202151A1CFAC1790D6277D8 /* Navigation */ = {
@@ -144,12 +192,24 @@
 			path = PageList;
 			sourceTree = "<group>";
 		};
+		D6AB19F2BE4D580301D49558 /* CamScanShareTests */ = {
+			isa = PBXGroup;
+			children = (
+				F240368D10EEDADE2921A1FC /* PaperDetectionServiceTests.swift */,
+				917F53767CB9F9DBAE299E05 /* PDFGenerationProgressTests.swift */,
+				FD86B68360957E27F16FFB04 /* PreviewDisplayStateTests.swift */,
+				89B897F308A0AE062E340F8B /* PreviewStorageServiceTests.swift */,
+			);
+			path = CamScanShareTests;
+			sourceTree = "<group>";
+		};
 		D74787170DD0F07B8428EFD9 /* Models */ = {
 			isa = PBXGroup;
 			children = (
 				08A6CC96D255BF782C5E86C0 /* Document.swift */,
 				59A3EFEEB91396856F32CE9C /* FilterPreset.swift */,
 				1FF8990B3550B8A7F4DE9A4F /* Page.swift */,
+				E9F13AAC23A56A13D8F2CB30 /* Schema */,
 			);
 			path = Models;
 			sourceTree = "<group>";
@@ -158,7 +218,8 @@
 			isa = PBXGroup;
 			children = (
 				F51D346346B8AC02106F1F84 /* CamScanShare */,
-				A10000000000000000000004 /* CamScanShareTests */,
+				D6AB19F2BE4D580301D49558 /* CamScanShareTests */,
+				8EDE1BEFFC75721BEA865F5F /* Frameworks */,
 				1B4618C02812B46B2B91172B /* Products */,
 			);
 			sourceTree = "<group>";
@@ -174,6 +235,14 @@
 			path = CameraScan;
 			sourceTree = "<group>";
 		};
+		E9F13AAC23A56A13D8F2CB30 /* Schema */ = {
+			isa = PBXGroup;
+			children = (
+				8D827D31290592D22A11C0BE /* CamScanShareSchema.swift */,
+			);
+			path = Schema;
+			sourceTree = "<group>";
+		};
 		F4DB8E933EBBA11EC1217F81 /* Extensions */ = {
 			isa = PBXGroup;
 			children = (
@@ -185,6 +254,7 @@
 		F51D346346B8AC02106F1F84 /* CamScanShare */ = {
 			isa = PBXGroup;
 			children = (
+				03D4A046299CB00235FAFE0F /* CamScanShare-Bridging-Header.h */,
 				3CABF25D2BB00A943EA3E55F /* CamScanShareApp.swift */,
 				44A5A9D772EC161E8B643FC7 /* Info.plist */,
 				F4DB8E933EBBA11EC1217F81 /* Extensions */,
@@ -196,22 +266,33 @@
 			path = CamScanShare;
 			sourceTree = "<group>";
 		};
-		A10000000000000000000004 /* CamScanShareTests */ = {
-			isa = PBXGroup;
-			children = (
-				A10000000000000000000002 /* PaperDetectionServiceTests.swift */,
-			);
-			path = CamScanShareTests;
-			sourceTree = "<group>";
-		};
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
+		8D891FA13BD2269CC5E8429F /* CamScanShareTests */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = D6E3BCA41A3C8701976E649A /* Build configuration list for PBXNativeTarget "CamScanShareTests" */;
+			buildPhases = (
+				777D3DA98A03382967A00C1B /* Sources */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+				4D629BD3FA0194682A4DD4DB /* PBXTargetDependency */,
+			);
+			name = CamScanShareTests;
+			packageProductDependencies = (
+			);
+			productName = CamScanShareTests;
+			productReference = F7698F0996CA54F3EC2FBD95 /* CamScanShareTests.xctest */;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
 		E330404F2CD306EEA3E735E3 /* CamScanShare */ = {
 			isa = PBXNativeTarget;
 			buildConfigurationList = 6035ABA666E3B4A08B24C5C7 /* Build configuration list for PBXNativeTarget "CamScanShare" */;
 			buildPhases = (
 				DC818F5DAF604F82625122B3 /* Sources */,
+				F6D1F7749C1D5135304EB16D /* Frameworks */,
 			);
 			buildRules = (
 			);
@@ -224,25 +305,6 @@
 			productReference = 35DD7840FE6A1C637684CF4C /* CamScanShare.app */;
 			productType = "com.apple.product-type.application";
 		};
-		A10000000000000000000009 /* CamScanShareTests */ = {
-			isa = PBXNativeTarget;
-			buildConfigurationList = A1000000000000000000000A /* Build configuration list for PBXNativeTarget "CamScanShareTests" */;
-			buildPhases = (
-				A10000000000000000000005 /* Frameworks */,
-				A10000000000000000000006 /* Sources */,
-			);
-			buildRules = (
-			);
-			dependencies = (
-				A10000000000000000000008 /* PBXTargetDependency */,
-			);
-			name = CamScanShareTests;
-			packageProductDependencies = (
-			);
-			productName = CamScanShareTests;
-			productReference = A10000000000000000000003 /* CamScanShareTests.xctest */;
-			productType = "com.apple.product-type.bundle.unit-test";
-		};
 /* End PBXNativeTarget section */
 
 /* Begin PBXProject section */
@@ -251,6 +313,14 @@
 			attributes = {
 				BuildIndependentTargetsInParallel = YES;
 				LastUpgradeCheck = 1600;
+				TargetAttributes = {
+					8D891FA13BD2269CC5E8429F = {
+						DevelopmentTeam = "";
+					};
+					E330404F2CD306EEA3E735E3 = {
+						DevelopmentTeam = "";
+					};
+				};
 			};
 			buildConfigurationList = 70B52DA69D5664C3E60AF54C /* Build configuration list for PBXProject "CamScanShare" */;
 			developmentRegion = en;
@@ -267,17 +337,20 @@
 			projectRoot = "";
 			targets = (
 				E330404F2CD306EEA3E735E3 /* CamScanShare */,
-				A10000000000000000000009 /* CamScanShareTests */,
+				8D891FA13BD2269CC5E8429F /* CamScanShareTests */,
 			);
 		};
 /* End PBXProject section */
 
 /* Begin PBXSourcesBuildPhase section */
-		A10000000000000000000006 /* Sources */ = {
+		777D3DA98A03382967A00C1B /* Sources */ = {
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
-				A10000000000000000000001 /* PaperDetectionServiceTests.swift in Sources */,
+				7600D4C90F2B103E3F8C1E84 /* PDFGenerationProgressTests.swift in Sources */,
+				B55B69F14230184A19A1BBC2 /* PaperDetectionServiceTests.swift in Sources */,
+				0E5777E69FFD6CD0FCAD1578 /* PreviewDisplayStateTests.swift in Sources */,
+				7FD6F10068159270B8C9C5D7 /* PreviewStorageServiceTests.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -287,6 +360,7 @@
 			files = (
 				866D2A9E44D5FD5F87644462 /* AppNavigation.swift in Sources */,
 				2BB72CD5BD060E9BA7994EE9 /* CamScanShareApp.swift in Sources */,
+				3E8C202C68DE3D87D5E2EB84 /* CamScanShareSchema.swift in Sources */,
 				77596E4388F81C2840522BD9 /* CameraPreviewView.swift in Sources */,
 				1048B97CFD333FA68092EF81 /* CameraScanView.swift in Sources */,
 				9A60A3A0C9D19ADAF927F638 /* CameraScanViewModel.swift in Sources */,
@@ -297,6 +371,8 @@
 				8A510479AF3F42B53171CAAE /* FilterPreset.swift in Sources */,
 				75C655EF0D3E152EC6611069 /* ImageFilterService.swift in Sources */,
 				C79202B4282E25F15CC5218B /* ImageStorageService.swift in Sources */,
+				32AA3371B49B0E1C32EBE517 /* LargePreviewImage.swift in Sources */,
+				1765B1744F40E376AB6B1C65 /* OpenCVDocumentFilterBridge.mm in Sources */,
 				1F001F2191CBF3220F47B6C4 /* PDFService.swift in Sources */,
 				8DD48D50E8C860B4052069AE /* Page.swift in Sources */,
 				1395CA0ACD6EA45F7CD8CE52 /* PageEditView.swift in Sources */,
@@ -304,17 +380,21 @@
 				1BDAEBFA334DE643C857C70D /* PageListView.swift in Sources */,
 				F290B51023C48272C8C064A7 /* PageListViewModel.swift in Sources */,
 				72D35EF0A2A3E8CCEA04D965 /* PaperDetectionService.swift in Sources */,
+				5AD2EF78AEBB5E9537D80960 /* PreviewDisplayState.swift in Sources */,
+				8D3ED1FAF6EEC75CE4A789C7 /* PreviewStorageService.swift in Sources */,
+				3BAEEB6A664E1968C672AC47 /* SmallPreviewImage.swift in Sources */,
 				F86B431C74FA2A17E17BF8A1 /* UIImage+Extensions.swift in Sources */,
+				4A54A461B0B07674F5B04360 /* WorkingPreviewManager.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
-		A10000000000000000000008 /* PBXTargetDependency */ = {
+		4D629BD3FA0194682A4DD4DB /* PBXTargetDependency */ = {
 			isa = PBXTargetDependency;
 			target = E330404F2CD306EEA3E735E3 /* CamScanShare */;
-			targetProxy = A10000000000000000000007 /* PBXContainerItemProxy */;
+			targetProxy = 404599C2D48D2FC599969A1D /* PBXContainerItemProxy */;
 		};
 /* End PBXTargetDependency section */
 
@@ -323,17 +403,23 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 6KG5EF3BN2;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"Vendor\"",
+				);
 				INFOPLIST_FILE = CamScanShare/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0.0;
+				OTHER_CPLUSPLUSFLAGS = "$(inherited) -Wno-documentation -Wno-documentation-deprecated-sync";
 				PRODUCT_BUNDLE_IDENTIFIER = io.github.yusukeiwaki.camscanshare;
 				SDKROOT = iphoneos;
+				SWIFT_OBJC_BRIDGING_HEADER = "CamScanShare/CamScanShare-Bridging-Header.h";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				TARGETED_DEVICE_FAMILY = "1,2";
 			};
@@ -343,69 +429,25 @@
 			isa = XCBuildConfiguration;
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++17";
 				CODE_SIGN_IDENTITY = "iPhone Developer";
 				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 6KG5EF3BN2;
+				FRAMEWORK_SEARCH_PATHS = (
+					"$(inherited)",
+					"\"Vendor\"",
+				);
 				INFOPLIST_FILE = CamScanShare/Info.plist;
 				LD_RUNPATH_SEARCH_PATHS = (
 					"$(inherited)",
 					"@executable_path/Frameworks",
 				);
 				MARKETING_VERSION = 1.0.0;
+				OTHER_CPLUSPLUSFLAGS = "$(inherited) -Wno-documentation -Wno-documentation-deprecated-sync";
 				PRODUCT_BUNDLE_IDENTIFIER = io.github.yusukeiwaki.camscanshare;
 				SDKROOT = iphoneos;
+				SWIFT_OBJC_BRIDGING_HEADER = "CamScanShare/CamScanShare-Bridging-Header.h";
 				SWIFT_STRICT_CONCURRENCY = complete;
 				TARGETED_DEVICE_FAMILY = "1,2";
-			};
-			name = Release;
-		};
-		A1000000000000000000000B /* Debug */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 6KG5EF3BN2;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.yusukeiwaki.camscanshareTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SWIFT_STRICT_CONCURRENCY = complete;
-				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CamScanShare.app/CamScanShare";
-			};
-			name = Debug;
-		};
-		A1000000000000000000000C /* Release */ = {
-			isa = XCBuildConfiguration;
-			buildSettings = {
-				BUNDLE_LOADER = "$(TEST_HOST)";
-				CODE_SIGN_IDENTITY = "iPhone Developer";
-				CURRENT_PROJECT_VERSION = 1;
-				DEVELOPMENT_TEAM = 6KG5EF3BN2;
-				GENERATE_INFOPLIST_FILE = YES;
-				IPHONEOS_DEPLOYMENT_TARGET = 17.0;
-				LD_RUNPATH_SEARCH_PATHS = (
-					"$(inherited)",
-					"@executable_path/Frameworks",
-					"@loader_path/Frameworks",
-				);
-				MARKETING_VERSION = 1.0.0;
-				PRODUCT_BUNDLE_IDENTIFIER = io.github.yusukeiwaki.camscanshareTests;
-				PRODUCT_NAME = "$(TARGET_NAME)";
-				SDKROOT = iphoneos;
-				SWIFT_STRICT_CONCURRENCY = complete;
-				SWIFT_VERSION = 6.0;
-				TARGETED_DEVICE_FAMILY = "1,2";
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CamScanShare.app/CamScanShare";
 			};
 			name = Release;
 		};
@@ -473,6 +515,24 @@
 			};
 			name = Debug;
 		};
+		AFC6772E5224B0859D70F2A5 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.yusukeiwaki.camscanshareTests;
+				SDKROOT = iphoneos;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CamScanShare.app/CamScanShare";
+			};
+			name = Release;
+		};
 		C49460CCD45E42222B407DF0 /* Release */ = {
 			isa = XCBuildConfiguration;
 			buildSettings = {
@@ -530,18 +590,27 @@
 			};
 			name = Release;
 		};
+		F8080A27D7185391BE0D93D3 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				GENERATE_INFOPLIST_FILE = YES;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/Frameworks",
+					"@loader_path/Frameworks",
+				);
+				PRODUCT_BUNDLE_IDENTIFIER = io.github.yusukeiwaki.camscanshareTests;
+				SDKROOT = iphoneos;
+				SWIFT_STRICT_CONCURRENCY = complete;
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/CamScanShare.app/CamScanShare";
+			};
+			name = Debug;
+		};
 /* End XCBuildConfiguration section */
 
 /* Begin XCConfigurationList section */
-		A1000000000000000000000A /* Build configuration list for PBXNativeTarget "CamScanShareTests" */ = {
-			isa = XCConfigurationList;
-			buildConfigurations = (
-				A1000000000000000000000B /* Debug */,
-				A1000000000000000000000C /* Release */,
-			);
-			defaultConfigurationIsVisible = 0;
-			defaultConfigurationName = Debug;
-		};
 		6035ABA666E3B4A08B24C5C7 /* Build configuration list for PBXNativeTarget "CamScanShare" */ = {
 			isa = XCConfigurationList;
 			buildConfigurations = (
@@ -556,6 +625,15 @@
 			buildConfigurations = (
 				6106108E9CEA852591E82870 /* Debug */,
 				C49460CCD45E42222B407DF0 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		D6E3BCA41A3C8701976E649A /* Build configuration list for PBXNativeTarget "CamScanShareTests" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				F8080A27D7185391BE0D93D3 /* Debug */,
+				AFC6772E5224B0859D70F2A5 /* Release */,
 			);
 			defaultConfigurationIsVisible = 0;
 			defaultConfigurationName = Debug;

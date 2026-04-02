@@ -100,7 +100,7 @@ agent-browser scrollintoview "#screen-page-edit .phone-frame" && agent-browser s
 
 ## フィルタプリセット
 
-オリジナル / くっきり / 白黒 / マジック（既定） / ホワイトボード / 鮮やか の6種。各フィルタの効果・パラメータの詳細は [フィルタ解説ページ](docs/src/pages/filters.astro) を参照。
+オリジナル（既定） / くっきり / 白黒 / マジック / ホワイトボード / 鮮やか の6種。各フィルタの効果・パラメータの詳細は [フィルタ解説ページ](docs/src/pages/filters.astro) を参照。
 
 フィルタは今後追加可能な拡張設計とする。
 
@@ -125,6 +125,7 @@ agent-browser scrollintoview "#screen-page-edit .phone-frame" && agent-browser s
 
 ## 技術的な注意事項
 
+- プレビュー責務: 原画像は PDF 出力と編集の基準として保持し、UI 表示は persisted preview を使う。文書一覧とカメラ左下は `small preview`、ページ一覧と保存済みページ編集は `large preview`、未保存のページ編集だけは一時 `working preview` を生成する。フィルタ適用・撮り直し・削除では preview file も source image と整合するよう更新・削除すること。
 - 紙検出: GaussianBlur → Canny(複数閾値) → dilate(3x3) → findContours(RETR_LIST) → approxPolyDP → スコアリング選択。面積最大ではなく長方形度・平行度のスコアで選択。リアルタイム表示は5フレーム安定化+500ms保持
 - 台形補正: 検出した4点を用いた射影変換。キャプチャ画像で再検出してから適用（プレビュー座標は使わない）
 - PDF変換: 全ページをA4サイズにフィットさせて統合

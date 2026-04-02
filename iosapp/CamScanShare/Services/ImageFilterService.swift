@@ -27,11 +27,24 @@ enum ImageFilterService {
         _ preset: FilterPreset,
         to image: UIImage,
         rotation: Int = 0,
-        intent: RenderIntent = .preview
+        intent: RenderIntent = .preview,
+        previewMaxDimension: CGFloat = 1800
     ) -> UIImage? {
+        let normalizedRotation = ((rotation % 360) + 360) % 360
+        if intent == .preview,
+            shouldUseOpenCVPreviewPipeline(for: preset),
+            let renderedPreview = OpenCVDocumentFilterBridge.applyPreviewFilterNamed(
+                preset.rawValue,
+                to: image,
+                rotationDegrees: normalizedRotation,
+                maxDimension: previewMaxDimension
+            )
+        {
+            return renderedPreview
+        }
+
         guard var ciImage = CIImage(image: image) else { return nil }
 
-        let normalizedRotation = ((rotation % 360) + 360) % 360
         if normalizedRotation != 0 {
             let radians = -Double(normalizedRotation) * .pi / 180.0
             ciImage = ciImage.transformed(by: CGAffineTransform(rotationAngle: radians))
@@ -40,7 +53,12 @@ enum ImageFilterService {
                 by: CGAffineTransform(translationX: -translatedOrigin.x, y: -translatedOrigin.y))
         }
 
-        ciImage = applyFilterChain(preset, to: ciImage, intent: intent)
+        ciImage = applyFilterChain(
+            preset,
+            to: ciImage,
+            intent: intent,
+            previewMaxDimension: previewMaxDimension
+        )
 
         guard let cgImage = displayContext.createCGImage(ciImage, from: ciImage.extent) else { return nil }
         return UIImage(cgImage: cgImage, scale: image.scale, orientation: .up)
@@ -49,37 +67,37 @@ enum ImageFilterService {
     private static func applyFilterChain(
         _ preset: FilterPreset,
         to image: CIImage,
-        intent: RenderIntent
+        intent: RenderIntent,
+        previewMaxDimension: CGFloat
     ) -> CIImage {
+        let workingImage = downscaleIfNeeded(image, maxDimension: previewMaxDimension, intent: intent)
+
         switch preset {
         case .original:
-            return image
+            return workingImage
 
         case .sharpen:
             let filter = CIFilter.colorControls()
-            filter.inputImage = image
+            filter.inputImage = workingImage
             filter.contrast = 1.4
             filter.brightness = 0.05
-            return filter.outputImage ?? image
+            return filter.outputImage ?? workingImage
 
         case .bw:
-            let working = downscaleIfNeeded(image, maxDimension: 1800, intent: intent)
-            return applyDocumentBWPipeline(to: working) ?? image
+            return applyDocumentBWPipeline(to: workingImage) ?? workingImage
 
         case .magic:
-            let working = downscaleIfNeeded(image, maxDimension: 1800, intent: intent)
-            return applyMagicPipeline(to: working) ?? image
+            return applyMagicPipeline(to: workingImage) ?? workingImage
 
         case .whiteboard:
-            let working = downscaleIfNeeded(image, maxDimension: 1800, intent: intent)
-            return applyWhiteboardPipeline(to: working) ?? image
+            return applyWhiteboardPipeline(to: workingImage) ?? workingImage
 
         case .vivid:
             let filter = CIFilter.colorControls()
-            filter.inputImage = image
+            filter.inputImage = workingImage
             filter.saturation = 2.0
             filter.contrast = 1.2
-            return filter.outputImage ?? image
+            return filter.outputImage ?? workingImage
         }
     }
 
@@ -98,6 +116,15 @@ enum ImageFilterService {
         filter.setValue(scale, forKey: kCIInputScaleKey)
         filter.setValue(1.0, forKey: kCIInputAspectRatioKey)
         return filter.outputImage ?? image
+    }
+
+    private static func shouldUseOpenCVPreviewPipeline(for preset: FilterPreset) -> Bool {
+        switch preset {
+        case .bw, .magic, .whiteboard:
+            true
+        case .original, .sharpen, .vivid:
+            false
+        }
     }
 
     private static func applyDocumentBWPipeline(to image: CIImage) -> CIImage? {

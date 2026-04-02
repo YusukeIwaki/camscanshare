@@ -36,4 +36,18 @@ extension UIImage {
 
         return UIGraphicsGetImageFromCurrentImageContext()
     }
+
+    func scaledToFit(maxDimension: CGFloat) -> UIImage {
+        let maxSide = max(size.width, size.height)
+        guard maxDimension > 0, maxSide > maxDimension, maxSide > 0 else { return self }
+
+        let scaleFactor = maxDimension / maxSide
+        let targetSize = CGSize(width: size.width * scaleFactor, height: size.height * scaleFactor)
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = scale
+        let renderer = UIGraphicsImageRenderer(size: targetSize, format: format)
+        return renderer.image { _ in
+            draw(in: CGRect(origin: .zero, size: targetSize))
+        }
+    }
 }

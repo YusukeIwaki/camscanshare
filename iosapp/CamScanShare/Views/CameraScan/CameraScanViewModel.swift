@@ -22,9 +22,10 @@ final class CameraScanViewModel {
     private let sessionBox = CaptureSessionBox()
     var detectedRectangle: DetectedRectangle?
     var previewImageAspectRatio: CGFloat = 3.0 / 4.0
+    var isCapturing = false
+    var isFinalizing = false
     var capturedPages: [UIImage] = []
     var latestThumbnail: UIImage?
-    var isCapturing = false
 
     private let photoOutput = AVCapturePhotoOutput()
     private let videoOutput = AVCaptureVideoDataOutput()
@@ -102,7 +103,6 @@ final class CameraScanViewModel {
 
     func processAndStoreCapturedImage(_ image: UIImage) {
         let correctedImage = PaperDetectionService.correctDocumentGeometry(image: image)
-
         capturedPages.append(correctedImage)
         latestThumbnail = correctedImage.preparingThumbnail(of: CGSize(width: 104, height: 104))
     }

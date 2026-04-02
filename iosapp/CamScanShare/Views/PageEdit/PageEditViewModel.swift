@@ -15,9 +15,11 @@ final class PageEditViewModel {
     var showDiscardDialog = false
     var showApplyAllFilterDialog = false
     var pendingApplyAllFilter: FilterPreset?
+    var isApplying = false
 
     private var savedStates: [PageEditState] = []
     private var loadedDocumentId: PersistentIdentifier?
+    private var regeneratingPageIDs: Set<PersistentIdentifier> = []
 
     var pages: [Page] {
         document?.sortedPages ?? []
@@ -30,6 +32,23 @@ final class PageEditViewModel {
     var currentEditState: PageEditState? {
         guard currentPageIndex >= 0, currentPageIndex < editStates.count else { return nil }
         return editStates[currentPageIndex]
+    }
+
+    var currentSavedState: PageEditState? {
+        guard currentPageIndex >= 0, currentPageIndex < savedStates.count else { return nil }
+        return savedStates[currentPageIndex]
+    }
+
+    var currentPage: Page? {
+        guard currentPageIndex >= 0, currentPageIndex < pages.count else { return nil }
+        return pages[currentPageIndex]
+    }
+
+    var currentPreviewRequestKey: String {
+        let pageKey = currentPage.map { $0.originalImageFileName } ?? "missing"
+        let editKey = currentEditState.map { "\($0.filterPreset.rawValue)|\($0.rotationDegrees)" } ?? "missing"
+        let savedKey = currentSavedState.map { "\($0.filterPreset.rawValue)|\($0.rotationDegrees)" } ?? "missing"
+        return "\(pageKey)|\(editKey)|\(savedKey)|\(currentPageIndex)"
     }
 
     var isDirty: Bool {
@@ -72,12 +91,37 @@ final class PageEditViewModel {
         }
     }
 
-    func apply(context: ModelContext) {
+    func apply(
+        context: ModelContext,
+        currentWorkingPreviewImage: UIImage? = nil,
+        currentWorkingPreviewRequestKey: String? = nil
+    ) async {
+        guard !isApplying else { return }
+        isApplying = true
+        defer { isApplying = false }
+
         let sorted = document?.sortedPages ?? []
         for (index, page) in sorted.enumerated() {
             guard index < editStates.count else { break }
-            page.filterPreset = editStates[index].filterPreset
-            page.rotationDegrees = editStates[index].rotationDegrees
+            let newState = editStates[index]
+            let oldState = index < savedStates.count ? savedStates[index] : nil
+            page.filterPreset = newState.filterPreset
+            page.rotationDegrees = newState.rotationDegrees
+
+            if oldState != newState || pageNeedsPreviewRegeneration(page) {
+                let previewRequestKey =
+                    "\(page.originalImageFileName)|\(newState.filterPreset.rawValue)|\(newState.rotationDegrees)"
+                let renderedPreviewImage =
+                    currentWorkingPreviewRequestKey == previewRequestKey ? currentWorkingPreviewImage : nil
+                await reconcilePersistedPreviews(
+                    for: page,
+                    context: context,
+                    force: true,
+                    renderedPreviewImage: renderedPreviewImage
+                )
+            }
+
+            WorkingPreviewStorageService.deleteWorkingPreviews(sourceFileName: page.originalImageFileName)
         }
         document?.updatedAt = .now
         try? context.save()
@@ -91,5 +135,31 @@ final class PageEditViewModel {
     var currentPageId: PersistentIdentifier? {
         guard currentPageIndex >= 0, currentPageIndex < pages.count else { return nil }
         return pages[currentPageIndex].persistentModelID
+    }
+
+    func editState(at index: Int) -> PageEditState? {
+        guard index >= 0, index < editStates.count else { return nil }
+        return editStates[index]
+    }
+
+    func savedState(at index: Int) -> PageEditState? {
+        guard index >= 0, index < savedStates.count else { return nil }
+        return savedStates[index]
+    }
+
+    func ensurePersistedPreview(for page: Page, context: ModelContext) {
+        let pageID = page.persistentModelID
+        guard pageNeedsPreviewRegeneration(page) else { return }
+        guard regeneratingPageIDs.insert(pageID).inserted else { return }
+
+        Task { @MainActor [weak self] in
+            await reconcilePersistedPreviews(for: page, context: context)
+            self?.regeneratingPageIDs.remove(pageID)
+        }
+    }
+
+    func isRegeneratingPersistedPreview(for page: Page?) -> Bool {
+        guard let page else { return false }
+        return regeneratingPageIDs.contains(page.persistentModelID)
     }
 }

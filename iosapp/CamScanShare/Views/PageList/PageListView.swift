@@ -41,6 +41,10 @@ struct PageListView: View {
                 if let draggedPage = draggedPage {
                     draggingOverlay(for: draggedPage)
                 }
+
+                if let progress = viewModel.pdfGenerationProgress, viewModel.isGeneratingPDF {
+                    pdfGenerationOverlay(progress)
+                }
             }
             .coordinateSpace(name: "PageListRoot")
             .navigationBarHidden(true)
@@ -63,6 +67,11 @@ struct PageListView: View {
                 Button("変更") {
                     viewModel.rename(context: modelContext)
                 }
+            }
+            .alert("PDFの作成に失敗しました", isPresented: $viewModel.showPDFErrorAlert) {
+                Button("OK", role: .cancel) {}
+            } message: {
+                Text("しばらくしてから再度お試しください。")
             }
             .sheet(isPresented: $viewModel.showShareSheet) {
                 if let url = viewModel.pdfURL {
@@ -105,9 +114,17 @@ struct PageListView: View {
             Button {
                 viewModel.generateAndSharePDF()
             } label: {
-                Image(systemName: "square.and.arrow.up")
-                    .font(.title3)
-                    .frame(width: 40, height: 40)
+                Group {
+                    if viewModel.isGeneratingPDF {
+                        ProgressView()
+                            .controlSize(.regular)
+                            .tint(Color.accentColor)
+                    } else {
+                        Image(systemName: "square.and.arrow.up")
+                            .font(.title3)
+                    }
+                }
+                .frame(width: 40, height: 40)
             }
             .foregroundStyle(Color.accentColor)
             .disabled(viewModel.isGeneratingPDF)
@@ -157,12 +174,15 @@ struct PageListView: View {
             guard dragState == nil else { return }
             path.append(AppRoute.pageEdit(documentId: documentId, initialPageIndex: index))
         }
+        .onAppear {
+            viewModel.ensureLargePreview(for: page, context: modelContext)
+        }
         .gesture(reorderGesture(for: page, containerHeight: containerHeight))
         .allowsHitTesting(dragState == nil || isDraggedPage)
     }
 
     private func pageCardBody(page: Page, index: Int, isPlaceholder: Bool = false) -> some View {
-        let pageAspectRatio = ImageStorageService.imageAspectRatio(fileName: page.originalImageFileName) ?? 1.0
+        let pageAspectRatio = pagePreviewAspectRatio(page)
 
         return VStack(spacing: 0) {
             Group {
@@ -183,22 +203,15 @@ struct PageListView: View {
                                 .foregroundStyle(.secondary)
                         }
                 } else {
-                    if let thumb = ImageStorageService.thumbnail(
-                        fileName: page.originalImageFileName,
-                        size: CGSize(width: 300, height: 420)
-                    ) {
-                        Image(uiImage: thumb)
-                            .resizable()
-                            .aspectRatio(pageAspectRatio, contentMode: .fill)
-                    } else {
-                        Rectangle()
-                            .fill(Color(.systemGray6))
-                            .aspectRatio(pageAspectRatio, contentMode: .fit)
-                            .overlay {
-                                Image(systemName: "doc.text")
-                                    .foregroundStyle(.secondary)
-                            }
-                    }
+                    LargePreviewImage(
+                        state: .pageCard(
+                            largePreviewFileName: page.largePreviewFileName,
+                            aspectRatio: pageAspectRatio,
+                            isRegenerating: viewModel.isRegeneratingPreview(for: page)
+                        ),
+                        contentMode: .fill,
+                        cornerRadius: 12
+                    )
                 }
             }
             .clipShape(RoundedRectangle(cornerRadius: 12))
@@ -211,6 +224,31 @@ struct PageListView: View {
         .background(Color(.systemBackground))
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .shadow(color: .black.opacity(0.05), radius: 2, x: 0, y: 1)
+    }
+
+    private func pagePreviewAspectRatio(_ page: Page) -> CGFloat {
+        PreviewStorageService.imageAspectRatio(fileName: page.largePreviewFileName, kind: .large)
+            ?? ImageStorageService.imageAspectRatio(fileName: page.originalImageFileName)
+            ?? 1.0
+    }
+
+    private func pdfPreviewAspectRatio(_ pageData: PDFPageData) -> CGFloat {
+        PreviewStorageService.imageAspectRatio(fileName: pageData.largePreviewFileName, kind: .large)
+            ?? PreviewStorageService.imageAspectRatio(fileName: pageData.smallPreviewFileName, kind: .small)
+            ?? ImageStorageService.imageAspectRatio(fileName: pageData.imageFileName)
+            ?? 1.0
+    }
+
+    private func pdfPreviewState(_ pageData: PDFPageData) -> PreviewDisplayState {
+        let aspectRatio = pdfPreviewAspectRatio(pageData)
+
+        if let largePreviewFileName = pageData.largePreviewFileName {
+            return .image(fileName: largePreviewFileName, kind: .large, aspectRatio: aspectRatio)
+        }
+        if let smallPreviewFileName = pageData.smallPreviewFileName {
+            return .image(fileName: smallPreviewFileName, kind: .small, aspectRatio: aspectRatio)
+        }
+        return .placeholder(aspectRatio: aspectRatio)
     }
 
     private var emptyState: some View {
@@ -295,6 +333,52 @@ struct PageListView: View {
 
     private func dragIndexDisplay(for page: Page) -> Int {
         orderedPages.firstIndex(where: { $0.persistentModelID == page.persistentModelID }).map { $0 + 1 } ?? 1
+    }
+
+    @ViewBuilder
+    private func pdfGenerationOverlay(_ progress: PDFGenerationProgress) -> some View {
+        ZStack {
+            Color.black.opacity(0.22)
+                .ignoresSafeArea()
+
+            VStack(spacing: 16) {
+                ProgressView()
+                    .controlSize(.large)
+                    .tint(Color.accentColor)
+
+                Text(progress.title)
+                    .font(.system(size: 18, weight: .semibold))
+
+                if let currentPageData = progress.currentPageData {
+                    LargePreviewImage(
+                        state: pdfPreviewState(currentPageData),
+                        contentMode: .fit,
+                        cornerRadius: 16,
+                        placeholderSystemImage: "doc.richtext"
+                    )
+                    .frame(width: 132)
+                    .shadow(color: .black.opacity(0.08), radius: 8, x: 0, y: 4)
+                }
+
+                if let fractionCompleted = progress.fractionCompleted {
+                    ProgressView(value: fractionCompleted)
+                        .tint(Color.accentColor)
+                }
+
+                Text(progress.detailText)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(2)
+            }
+            .padding(.horizontal, 24)
+            .padding(.vertical, 22)
+            .frame(maxWidth: 280)
+            .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 28))
+            .shadow(color: .black.opacity(0.18), radius: 18, x: 0, y: 10)
+            .padding(.horizontal, 24)
+        }
+        .transition(.opacity)
     }
 
     private func reorderGesture(for page: Page, containerHeight: CGFloat) -> some Gesture {

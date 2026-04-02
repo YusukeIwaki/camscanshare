@@ -81,28 +81,15 @@ struct DocumentListView: View {
 
     private func documentRow(_ document: Document) -> some View {
         let isSelected = viewModel.selectedIds.contains(document.persistentModelID)
+        let firstPage = document.sortedPages.first
 
         return HStack(spacing: 16) {
             // Thumbnail
             ZStack {
-                if let firstPage = document.sortedPages.first,
-                    let thumb = ImageStorageService.thumbnail(
-                        fileName: firstPage.originalImageFileName, size: CGSize(width: 96, height: 96))
-                {
-                    Image(uiImage: thumb)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                        .frame(width: 48, height: 48)
-                        .clipShape(RoundedRectangle(cornerRadius: 8))
-                } else {
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color(.systemGray5))
-                        .frame(width: 48, height: 48)
-                        .overlay {
-                            Image(systemName: "doc.text")
-                                .foregroundStyle(.secondary)
-                        }
-                }
+                SmallPreviewImage(
+                    fileName: firstPage?.smallPreviewFileName,
+                    isRegenerating: viewModel.isRegeneratingPreview(for: firstPage)
+                )
 
                 if isSelected {
                     RoundedRectangle(cornerRadius: 8)
@@ -139,6 +126,9 @@ struct DocumentListView: View {
         .padding(.vertical, 12)
         .background(isSelected ? Color.accentColor.opacity(0.12) : Color.clear)
         .contentShape(Rectangle())
+        .onAppear {
+            viewModel.ensureSmallPreview(for: firstPage, context: modelContext)
+        }
         .onTapGesture {
             if viewModel.isSelectionMode {
                 viewModel.toggleSelection(document.persistentModelID)
