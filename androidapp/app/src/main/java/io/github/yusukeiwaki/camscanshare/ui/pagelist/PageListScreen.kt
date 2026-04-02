@@ -1,6 +1,7 @@
 package io.github.yusukeiwaki.camscanshare.ui.pagelist
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
@@ -18,6 +19,7 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -35,6 +37,7 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
@@ -58,6 +61,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
@@ -94,6 +98,7 @@ fun PageListScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val haptic = LocalHapticFeedback.current
+    val shareProgress = uiState.shareProgress
 
     LaunchedEffect(documentId) {
         viewModel.initialize(documentId)
@@ -114,13 +119,19 @@ fun PageListScreen(
         topBar = {
             TopAppBar(
                 navigationIcon = {
-                    IconButton(onClick = onBack) {
+                    IconButton(
+                        onClick = onBack,
+                        enabled = !uiState.isSharing,
+                    ) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "戻る")
                     }
                 },
                 title = {
                     Row(
-                        modifier = Modifier.clickable { viewModel.onRenameClick() },
+                        modifier = Modifier.clickable(
+                            enabled = !uiState.isSharing,
+                            onClick = { viewModel.onRenameClick() },
+                        ),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
@@ -139,7 +150,10 @@ fun PageListScreen(
                     }
                 },
                 actions = {
-                    IconButton(onClick = { viewModel.sharePdf(context) }) {
+                    IconButton(
+                        onClick = { viewModel.sharePdf(context) },
+                        enabled = !uiState.isSharing,
+                    ) {
                         Icon(
                             Icons.Default.Share,
                             contentDescription = "共有",
@@ -153,7 +167,7 @@ fun PageListScreen(
             )
         },
         floatingActionButton = {
-            if (!uiState.isDragActive) {
+            if (!uiState.isDragActive && !uiState.isSharing) {
                 FloatingActionButton(
                     onClick = onAddPageClick,
                     containerColor = MaterialTheme.colorScheme.primary,
@@ -176,6 +190,7 @@ fun PageListScreen(
                 contentPadding = PaddingValues(16.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
+                userScrollEnabled = !uiState.isSharing,
                 modifier = Modifier.fillMaxSize()
                     .then(if (uiState.isDragActive) Modifier.zIndex(99f) else Modifier),
             ) {
@@ -189,6 +204,7 @@ fun PageListScreen(
                         isDragging = isDragging,
                         dragOffsetX = if (isDragging) dragOffsetX else 0f,
                         dragOffsetY = if (isDragging) dragOffsetY else 0f,
+                        interactionEnabled = !uiState.isSharing,
                         onClick = { onPageClick(index) },
                         onDragStart = { cardRootY, cardHeight, pointerLocalY ->
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -274,6 +290,23 @@ fun PageListScreen(
                     }
                 }
             }
+
+            if (shareProgress != null) {
+                val currentPage = shareProgress.currentPageId?.let { currentPageId ->
+                    uiState.pages.firstOrNull { it.id == currentPageId }
+                }
+                ShareProgressOverlay(
+                    progress = shareProgress,
+                    currentPage = currentPage,
+                    getPreviewAbsolutePath = { page ->
+                        page.largePreviewPath?.let(viewModel::getLargePreviewAbsolutePath)
+                            ?: viewModel.getImageAbsolutePath(page.imagePath)
+                    },
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .zIndex(200f),
+                )
+            }
         }
     }
 
@@ -296,6 +329,7 @@ private fun PageCard(
     isDragging: Boolean,
     dragOffsetX: Float,
     dragOffsetY: Float,
+    interactionEnabled: Boolean,
     onClick: () -> Unit,
     onDragStart: (Float, Float, Float) -> Unit, // (cardRootY, cardHeight, pointerLocalY)
     onDrag: (Float, Float) -> Unit,
@@ -319,19 +353,25 @@ private fun PageCard(
                 }
             }
             // pointerInput BEFORE visual transforms so drag amounts are in root coordinates
-            .pointerInput(Unit) {
-                detectDragGesturesAfterLongPress(
-                    onDragStart = { offset ->
-                        currentOnDragStart(cardRootY, cardHeight, offset.y)
-                    },
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        currentOnDrag(dragAmount.x, dragAmount.y)
-                    },
-                    onDragEnd = { currentOnDragEnd() },
-                    onDragCancel = { currentOnDragEnd() },
-                )
-            }
+            .then(
+                if (interactionEnabled) {
+                    Modifier.pointerInput(Unit) {
+                        detectDragGesturesAfterLongPress(
+                            onDragStart = { offset ->
+                                currentOnDragStart(cardRootY, cardHeight, offset.y)
+                            },
+                            onDrag = { change, dragAmount ->
+                                change.consume()
+                                currentOnDrag(dragAmount.x, dragAmount.y)
+                            },
+                            onDragEnd = { currentOnDragEnd() },
+                            onDragCancel = { currentOnDragEnd() },
+                        )
+                    }
+                } else {
+                    Modifier
+                }
+            )
             .then(
                 if (isDragging) Modifier
                     .zIndex(100f)
@@ -360,7 +400,10 @@ private fun PageCard(
                     if (isDragging) Modifier.shadow(16.dp, RoundedCornerShape(12.dp))
                     else Modifier
                 )
-                .clickable { onClick() },
+                .clickable(
+                    enabled = interactionEnabled,
+                    onClick = onClick,
+                ),
             shape = RoundedCornerShape(12.dp),
             colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceContainer),
             elevation = CardDefaults.cardElevation(defaultElevation = if (isDragging) 8.dp else 1.dp),
@@ -403,6 +446,117 @@ private fun PageCard(
             fontWeight = FontWeight.Medium,
             modifier = Modifier.padding(top = 4.dp),
         )
+    }
+}
+
+@Composable
+private fun ShareProgressOverlay(
+    progress: SharePdfProgress,
+    currentPage: PageEntity?,
+    getPreviewAbsolutePath: (PageEntity) -> String?,
+    modifier: Modifier = Modifier,
+) {
+    val previewAbsolutePath = currentPage?.let(getPreviewAbsolutePath)
+    val previewState = rememberBitmapFromAbsolutePath(previewAbsolutePath)
+
+    Box(
+        modifier = modifier
+            .background(Color.Black.copy(alpha = 0.24f))
+            .padding(24.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        Card(
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        ) {
+            Column(
+                modifier = Modifier
+                    .width(320.dp)
+                    .padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp),
+            ) {
+                Card(
+                    shape = RoundedCornerShape(16.dp),
+                    colors = CardDefaults.cardColors(
+                        containerColor = MaterialTheme.colorScheme.surfaceContainer,
+                    ),
+                ) {
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(180.dp),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Crossfade(
+                            targetState = previewState.bitmap,
+                            animationSpec = tween(durationMillis = 180),
+                            label = "share-progress-preview",
+                        ) { bitmap ->
+                            if (bitmap != null) {
+                                Image(
+                                    bitmap = bitmap.asImageBitmap(),
+                                    contentDescription = "処理中のページ",
+                                    modifier = Modifier.fillMaxSize(),
+                                    contentScale = ContentScale.Crop,
+                                )
+                            } else {
+                                Column(
+                                    horizontalAlignment = Alignment.CenterHorizontally,
+                                    verticalArrangement = Arrangement.spacedBy(8.dp),
+                                ) {
+                                    CircularProgressIndicator(
+                                        strokeWidth = 2.5.dp,
+                                        modifier = Modifier.size(28.dp),
+                                    )
+                                    Text(
+                                        text = if (progress.currentPageIndex > 0) {
+                                            "ページ ${progress.currentPageIndex}"
+                                        } else {
+                                            "準備中"
+                                        },
+                                        style = MaterialTheme.typography.bodyMedium,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
+                CircularProgressIndicator()
+
+                Column(
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Text(
+                        text = progress.message,
+                        style = MaterialTheme.typography.titleMedium,
+                        fontWeight = FontWeight.SemiBold,
+                    )
+                    if (progress.totalPages > 0) {
+                        Text(
+                            text = "${progress.currentPageIndex} / ${progress.totalPages} ページ",
+                            style = MaterialTheme.typography.bodyMedium,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                    if (currentPage != null && progress.currentPageIndex > 0) {
+                        Text(
+                            text = "ページ ${progress.currentPageIndex} を処理中",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                    }
+                }
+
+                LinearProgressIndicator(
+                    progress = { progress.progressFraction },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
     }
 }
 

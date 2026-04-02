@@ -11,6 +11,7 @@ import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.yusukeiwaki.camscanshare.data.db.PageEntity
 import io.github.yusukeiwaki.camscanshare.data.image.ImageProcessor
 import io.github.yusukeiwaki.camscanshare.data.repository.DocumentRepository
+import io.github.yusukeiwaki.camscanshare.ui.components.computePdfPageSize
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -25,7 +26,25 @@ data class PageListUiState(
     val pages: List<PageEntity> = emptyList(),
     val showRenameDialog: Boolean = false,
     val isDragActive: Boolean = false,
-)
+    val shareProgress: SharePdfProgress? = null,
+) {
+    val isSharing: Boolean
+        get() = shareProgress != null
+}
+
+data class SharePdfProgress(
+    val message: String,
+    val currentPageIndex: Int,
+    val totalPages: Int,
+    val currentPageId: Long? = null,
+) {
+    val progressFraction: Float
+        get() = if (totalPages <= 0) {
+            0f
+        } else {
+            currentPageIndex.coerceIn(0, totalPages).toFloat() / totalPages.toFloat()
+        }
+}
 
 @HiltViewModel
 class PageListViewModel @Inject constructor(
@@ -89,63 +108,124 @@ class PageListViewModel @Inject constructor(
     fun getLargePreviewAbsolutePath(relativePath: String): String =
         repository.getLargePreviewAbsolutePath(relativePath)
 
+    fun getImageAbsolutePath(relativePath: String): String =
+        repository.getImageAbsolutePath(relativePath)
+
     fun sharePdf(context: Context) {
+        if (_uiState.value.isSharing) return
+
         viewModelScope.launch {
             val pages = repository.getPages(documentId)
             if (pages.isEmpty()) return@launch
 
-            val pdfFile = withContext(Dispatchers.IO) {
-                val pdfDocument = PdfDocument()
-                val a4Width = 595
-                val a4Height = 842
+            _uiState.update {
+                it.copy(
+                    shareProgress = SharePdfProgress(
+                        message = "PDFを準備しています",
+                        currentPageIndex = 0,
+                        totalPages = pages.size,
+                        currentPageId = pages.firstOrNull()?.id,
+                    ),
+                )
+            }
 
-                pages.forEachIndexed { index, page ->
-                    val absPath = repository.getImageAbsolutePath(page.imagePath)
-                    val bitmap = BitmapFactory.decodeFile(absPath) ?: return@forEachIndexed
+            try {
+                val pdfFile = withContext(Dispatchers.IO) {
+                    val pdfDocument = PdfDocument()
 
-                    val rotated = imageProcessor.rotateBitmap(bitmap, page.rotationDegrees.toFloat())
-                    val filtered = imageProcessor.applyFilter(rotated, page.filterName)
+                    try {
+                        pages.forEachIndexed { index, page ->
+                            _uiState.update {
+                                it.copy(
+                                    shareProgress = SharePdfProgress(
+                                        message = "PDFを作成しています",
+                                        currentPageIndex = index + 1,
+                                        totalPages = pages.size,
+                                        currentPageId = page.id,
+                                    ),
+                                )
+                            }
 
-                    val pageInfo = PdfDocument.PageInfo.Builder(a4Width, a4Height, index + 1).create()
-                    val pdfPage = pdfDocument.startPage(pageInfo)
+                            val absPath = repository.getImageAbsolutePath(page.imagePath)
+                            val bitmap = BitmapFactory.decodeFile(absPath) ?: return@forEachIndexed
 
-                    val scale = minOf(
-                        a4Width.toFloat() / filtered.width,
-                        a4Height.toFloat() / filtered.height,
+                            val rotated = imageProcessor.rotateBitmap(bitmap, page.rotationDegrees.toFloat())
+                            val filtered = imageProcessor.applyFilter(rotated, page.filterName)
+                            val pdfPageSize = computePdfPageSize(filtered.width, filtered.height)
+
+                            val pageInfo = PdfDocument.PageInfo.Builder(
+                                pdfPageSize.width,
+                                pdfPageSize.height,
+                                index + 1,
+                            ).create()
+                            val pdfPage = pdfDocument.startPage(pageInfo)
+
+                            val scale = minOf(
+                                pdfPageSize.width.toFloat() / filtered.width,
+                                pdfPageSize.height.toFloat() / filtered.height,
+                            )
+                            val dx = (pdfPageSize.width - filtered.width * scale) / 2
+                            val dy = (pdfPageSize.height - filtered.height * scale) / 2
+
+                            val canvas = pdfPage.canvas
+                            canvas.translate(dx, dy)
+                            canvas.scale(scale, scale)
+                            canvas.drawBitmap(filtered, 0f, 0f, null)
+
+                            pdfDocument.finishPage(pdfPage)
+                            if (filtered !== rotated) filtered.recycle()
+                            if (rotated !== bitmap) rotated.recycle()
+                            bitmap.recycle()
+                        }
+
+                        _uiState.update {
+                            it.copy(
+                                shareProgress = SharePdfProgress(
+                                    message = "PDFを書き出しています",
+                                    currentPageIndex = pages.size,
+                                    totalPages = pages.size,
+                                    currentPageId = pages.lastOrNull()?.id,
+                                ),
+                            )
+                        }
+
+                        val safeName = _uiState.value.documentName
+                            .replace(Regex("[/\\\\:*?\"<>|]"), "_")
+                            .ifBlank { "document" }
+                        File(context.cacheDir, "$safeName.pdf").also { file ->
+                            file.outputStream().use { pdfDocument.writeTo(it) }
+                        }
+                    } finally {
+                        pdfDocument.close()
+                    }
+                }
+
+                _uiState.update {
+                    it.copy(
+                        shareProgress = SharePdfProgress(
+                            message = "共有シートを開いています",
+                            currentPageIndex = pages.size,
+                            totalPages = pages.size,
+                            currentPageId = pages.lastOrNull()?.id,
+                        ),
                     )
-                    val dx = (a4Width - filtered.width * scale) / 2
-                    val dy = (a4Height - filtered.height * scale) / 2
-
-                    val canvas = pdfPage.canvas
-                    canvas.translate(dx, dy)
-                    canvas.scale(scale, scale)
-                    canvas.drawBitmap(filtered, 0f, 0f, null)
-
-                    pdfDocument.finishPage(pdfPage)
-                    if (filtered !== rotated) filtered.recycle()
-                    if (rotated !== bitmap) rotated.recycle()
-                    bitmap.recycle()
                 }
 
-                val safeName = _uiState.value.documentName.replace(Regex("[/\\\\:*?\"<>|]"), "_")
-                File(context.cacheDir, "$safeName.pdf").also { file ->
-                    file.outputStream().use { pdfDocument.writeTo(it) }
-                    pdfDocument.close()
+                val uri = FileProvider.getUriForFile(
+                    context,
+                    "${context.packageName}.fileprovider",
+                    pdfFile,
+                )
+
+                val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = "application/pdf"
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 }
+                context.startActivity(Intent.createChooser(shareIntent, "PDFとして共有"))
+            } finally {
+                _uiState.update { it.copy(shareProgress = null) }
             }
-
-            val uri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                pdfFile,
-            )
-
-            val shareIntent = Intent(Intent.ACTION_SEND).apply {
-                type = "application/pdf"
-                putExtra(Intent.EXTRA_STREAM, uri)
-                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            }
-            context.startActivity(Intent.createChooser(shareIntent, "PDFとして共有"))
         }
     }
 }

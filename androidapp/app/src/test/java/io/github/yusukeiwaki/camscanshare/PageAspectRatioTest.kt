@@ -1,6 +1,7 @@
 package io.github.yusukeiwaki.camscanshare
 
 import io.github.yusukeiwaki.camscanshare.ui.components.computePageAspectRatio
+import io.github.yusukeiwaki.camscanshare.ui.components.computePdfPageSize
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -51,5 +52,37 @@ class PageAspectRatioTest {
     @Test
     fun `zero dimensions fallback to A4 portrait`() {
         assertEquals(a4Portrait, computePageAspectRatio(0, 0), 0.001f)
+    }
+
+    @Test
+    fun `pdf page size snaps near A4 portrait to A4 canvas`() {
+        val size = computePdfPageSize(2100, 2970)
+
+        assertEquals(595, size.width)
+        assertEquals(842, size.height)
+    }
+
+    @Test
+    fun `pdf page size snaps near A4 landscape to A4 landscape canvas`() {
+        val size = computePdfPageSize(2970, 2100)
+
+        assertEquals(842, size.width)
+        assertEquals(595, size.height)
+    }
+
+    @Test
+    fun `pdf page size keeps wide landscape aspect for non A4 images`() {
+        val size = computePdfPageSize(3000, 1000)
+
+        assertEquals(842, size.width)
+        assertEquals(281, size.height)
+    }
+
+    @Test
+    fun `pdf page size keeps tall portrait aspect for non A4 images`() {
+        val size = computePdfPageSize(500, 2000)
+
+        assertEquals(211, size.width)
+        assertEquals(842, size.height)
     }
 }

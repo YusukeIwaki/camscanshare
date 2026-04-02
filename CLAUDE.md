@@ -128,7 +128,7 @@ agent-browser scrollintoview "#screen-page-edit .phone-frame" && agent-browser s
 - プレビュー責務: 原画像は PDF 出力と編集の基準として保持し、UI 表示は persisted preview を使う。文書一覧とカメラ左下は `small preview`、ページ一覧と保存済みページ編集は `large preview`、未保存のページ編集だけは一時 `working preview` を生成する。フィルタ適用・撮り直し・削除では preview file も source image と整合するよう更新・削除すること。
 - 紙検出: GaussianBlur → Canny(複数閾値) → dilate(3x3) → findContours(RETR_LIST) → approxPolyDP → スコアリング選択。面積最大ではなく長方形度・平行度のスコアで選択。リアルタイム表示は5フレーム安定化+500ms保持
 - 台形補正: 検出した4点を用いた射影変換。キャプチャ画像で再検出してから適用（プレビュー座標は使わない）
-- PDF変換: 全ページをA4サイズにフィットさせて統合
+- PDF変換: 全ページを順番にPDFへ統合。A4 に近い比率のページは A4 に揃え、それ以外は画像比率に合わせたキャンバスで出力する
 - 共有: OS標準の共有API（Android: Intent.ACTION_SEND, iOS: UIActivityViewController）
 - 連続撮影: 撮影後もカメラは起動したまま、完了ボタンで終了
 
