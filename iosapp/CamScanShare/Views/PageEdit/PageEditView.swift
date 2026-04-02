@@ -286,27 +286,11 @@ struct PageEditView: View {
 
     @ViewBuilder
     private func filterPreviewContent(preset: FilterPreset) -> some View {
-        // Simple visual representation of the filter effect
-        VStack(spacing: 3) {
-            ForEach(0..<6, id: \.self) { i in
-                RoundedRectangle(cornerRadius: 1)
-                    .fill(.gray.opacity(filterOpacity(for: preset)))
-                    .frame(height: i == 0 ? 3 : 2)
-                    .frame(maxWidth: i == 0 ? 32 : CGFloat([44, 36, 48, 34, 42][i - 1]))
-            }
-        }
-        .padding(6)
-    }
-
-    private func filterOpacity(for preset: FilterPreset) -> Double {
-        switch preset {
-        case .original: 0.5
-        case .sharpen: 0.7
-        case .bw: 0.9
-        case .magic: 0.8
-        case .whiteboard: 0.3
-        case .vivid: 0.6
-        }
+        Image(preset.thumbnailAssetName)
+            .resizable()
+            .scaledToFill()
+            .frame(width: 64, height: 80)
+            .clipped()
     }
 
     private func previewDisplayState(

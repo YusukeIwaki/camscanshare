@@ -21,4 +21,15 @@ enum FilterPreset: String, CaseIterable, Identifiable, Sendable {
         case .vivid: "鮮やか"
         }
     }
+
+    var thumbnailAssetName: String {
+        switch self {
+        case .original: "FilterOriginal"
+        case .sharpen: "FilterSharpen"
+        case .bw: "FilterBW"
+        case .magic: "FilterMagic"
+        case .whiteboard: "FilterWhiteboard"
+        case .vivid: "FilterVivid"
+        }
+    }
 }

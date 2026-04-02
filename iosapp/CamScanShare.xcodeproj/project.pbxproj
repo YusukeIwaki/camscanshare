@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		0E5777E69FFD6CD0FCAD1578 /* PreviewDisplayStateTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = FD86B68360957E27F16FFB04 /* PreviewDisplayStateTests.swift */; };
+		0FE40FABD038378DED194D64 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = D9A325932F1016F085FBA0D2 /* Assets.xcassets */; };
 		1048B97CFD333FA68092EF81 /* CameraScanView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B5056EFD0E915B99E8993897 /* CameraScanView.swift */; };
 		1395CA0ACD6EA45F7CD8CE52 /* PageEditView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 41694F5E572593C5D5BEFCB8 /* PageEditView.swift */; };
 		1765B1744F40E376AB6B1C65 /* OpenCVDocumentFilterBridge.mm in Sources */ = {isa = PBXBuildFile; fileRef = 633CD9C2C356DF80FC5ED1D4 /* OpenCVDocumentFilterBridge.mm */; };
@@ -86,6 +87,7 @@
 		C46C5692ED6077CBD6BF1FEE /* OpenCVDocumentFilterBridge.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = OpenCVDocumentFilterBridge.h; sourceTree = "<group>"; };
 		CC4603ACB122A3A75D62C6C3 /* UIImage+Extensions.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "UIImage+Extensions.swift"; sourceTree = "<group>"; };
 		D780CFAE0318ACA7F5407B7D /* PageEditViewModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PageEditViewModel.swift; sourceTree = "<group>"; };
+		D9A325932F1016F085FBA0D2 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		DE35A3AAE9AB8EEE7A097E86 /* SmallPreviewImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SmallPreviewImage.swift; sourceTree = "<group>"; };
 		DF2BBC764CA67564812E0627 /* PreviewStorageService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PreviewStorageService.swift; sourceTree = "<group>"; };
 		F240368D10EEDADE2921A1FC /* PaperDetectionServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PaperDetectionServiceTests.swift; sourceTree = "<group>"; };
@@ -257,6 +259,7 @@
 		F51D346346B8AC02106F1F84 /* CamScanShare */ = {
 			isa = PBXGroup;
 			children = (
+				D9A325932F1016F085FBA0D2 /* Assets.xcassets */,
 				03D4A046299CB00235FAFE0F /* CamScanShare-Bridging-Header.h */,
 				3CABF25D2BB00A943EA3E55F /* CamScanShareApp.swift */,
 				44A5A9D772EC161E8B643FC7 /* Info.plist */,
@@ -295,6 +298,7 @@
 			buildConfigurationList = 6035ABA666E3B4A08B24C5C7 /* Build configuration list for PBXNativeTarget "CamScanShare" */;
 			buildPhases = (
 				DC818F5DAF604F82625122B3 /* Sources */,
+				F6716B14B2687906C352A942 /* Resources */,
 				F6D1F7749C1D5135304EB16D /* Frameworks */,
 			);
 			buildRules = (
@@ -344,6 +348,17 @@
 			);
 		};
 /* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		F6716B14B2687906C352A942 /* Resources */ = {
+			isa = PBXResourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				0FE40FABD038378DED194D64 /* Assets.xcassets in Resources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		777D3DA98A03382967A00C1B /* Sources */ = {

@@ -2,17 +2,19 @@ package io.github.yusukeiwaki.camscanshare.ui.pageedit
 
 import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
+import io.github.yusukeiwaki.camscanshare.R
 
 enum class ImageFilter(
     val displayName: String,
     val filterKey: String,
+    val thumbnailResId: Int,
 ) {
-    ORIGINAL("オリジナル", "original"),
-    SHARPEN("くっきり", "sharpen"),
-    BW("白黒", "bw"),
-    MAGIC("マジック", "magic"),
-    WHITEBOARD("ホワイトボード", "whiteboard"),
-    VIVID("鮮やか", "vivid");
+    ORIGINAL("オリジナル", "original", R.drawable.filter_thumbnail_original),
+    SHARPEN("くっきり", "sharpen", R.drawable.filter_thumbnail_sharpen),
+    BW("白黒", "bw", R.drawable.filter_thumbnail_bw),
+    MAGIC("マジック", "magic", R.drawable.filter_thumbnail_magic),
+    WHITEBOARD("ホワイトボード", "whiteboard", R.drawable.filter_thumbnail_whiteboard),
+    VIVID("鮮やか", "vivid", R.drawable.filter_thumbnail_vivid);
 
     companion object {
         val DEFAULT = ORIGINAL

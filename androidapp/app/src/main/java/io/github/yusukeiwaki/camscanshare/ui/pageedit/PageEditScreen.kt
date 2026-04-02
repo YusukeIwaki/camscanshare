@@ -58,6 +58,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
@@ -460,7 +461,6 @@ private fun FilterItem(
             modifier = Modifier
                 .size(width = 64.dp, height = 80.dp)
                 .clip(RoundedCornerShape(8.dp))
-                .background(Color(0xFFFEFEFE))
                 .then(
                     if (isActive) {
                         Modifier.border(2.dp, MaterialTheme.colorScheme.primary, RoundedCornerShape(8.dp))
@@ -470,11 +470,11 @@ private fun FilterItem(
                 ),
             contentAlignment = Alignment.Center,
         ) {
-            Text(
-                filter.displayName.first().toString(),
-                fontSize = 18.sp,
-                fontWeight = FontWeight.Bold,
-                color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            Image(
+                painter = painterResource(filter.thumbnailResId),
+                contentDescription = "${filter.displayName} フィルタサムネイル",
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop,
             )
         }
         Spacer(Modifier.height(6.dp))
