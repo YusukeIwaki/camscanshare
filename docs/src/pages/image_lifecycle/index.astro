@@ -1,0 +1,795 @@
+---
+import Layout from '../../layouts/Layout.astro';
+
+const assetRows = [
+  {
+    asset: 'source image',
+    storage: '永続化 / files',
+    generated: '撮影・撮り直し直後に同期保存',
+    usedBy: 'PDF 生成、preview 再生成の唯一の入力',
+    note: '台形補正・正面化まで終えた基準画像。PDF は常にここから再レンダリングする。',
+  },
+  {
+    asset: 'page metadata',
+    storage: '永続化 / DB',
+    generated: '撮影時に初期値、apply で更新',
+    usedBy: 'PDF 生成、preview 再生成、一覧ソート',
+    note: 'filter / rotation / sort order を保持する。既定フィルタはオリジナル。',
+  },
+  {
+    asset: 'small preview',
+    storage: '永続化 / preview storage',
+    generated: '撮影・撮り直し後の background job、必要なら apply 後も更新',
+    usedBy: 'カメラ左下スタック、文書一覧',
+    note: '正方形の軽量画像。未生成時は placeholder を出す `SmallPreviewThumb` コンポーネントを使う。',
+  },
+  {
+    asset: 'large preview',
+    storage: '永続化 / preview storage',
+    generated: '撮影・撮り直し後の background job、apply 時は working から更新',
+    usedBy: 'ページ一覧、ページ詳細の通常表示',
+    note: 'ページ画面用の確定 preview。ページ詳細では直接上書きせず、まず working preview で確認する。',
+  },
+  {
+    asset: 'working preview',
+    storage: 'cache 領域 / LRU',
+    generated: 'ページ詳細で filter を選んだ時だけ生成',
+    usedBy: 'ページ詳細の filter 確認表示',
+    note: 'heavy filter は約6.5秒、light filter は1秒未満。キャンセルで破棄、apply で large にコピー。古い page 単位から削除する。',
+  },
+  {
+    asset: 'temp PDF',
+    storage: 'cache 領域 / 一時ファイル',
+    generated: '共有時のみ',
+    usedBy: 'OS 共有シート',
+    note: 'source image と保存済み metadata だけで再生成する。一覧・詳細の preview は使わない。',
+  },
+];
+---
+
+<Layout title="CamScanShare - 画像ライフサイクル">
+  <header class="life-header">
+    <div class="life-header-inner">
+      <div class="life-header-copy">
+        <div class="badge-row">
+          <span class="badge badge-info">Design Study</span>
+          <span class="badge badge-neutral">Use Case Simulator</span>
+        </div>
+        <a href="/" class="back-link">&larr; 画面設計ドキュメントへ戻る</a>
+        <h1>画像ライフサイクル</h1>
+        <p class="life-subtitle">
+          画像を「source image」「small preview」「large preview」「working preview」「temp PDF」に分け、
+          どこで生成し、どこに保存し、画面ではどの順で見せるかをユースケース単位で決めるための設計ページ。
+          右カラムは採用したいロジックと制約、左カラムは画面設計ページと同じスマホモックを動かしたシミュレーションを置く。
+        </p>
+      </div>
+      <div class="hero-aside">
+        <div class="hero-card">
+          <h2>このページで決めること</h2>
+          <ul class="hero-list">
+            <li>撮影直後に small / large preview をどこまで先に作るか。</li>
+            <li>ページ詳細で committed large と working preview をどう分けるか。</li>
+            <li>loading 中でも swipe と filter 再選択を止めないための状態管理。</li>
+            <li>PDF を source + metadata だけで完結させる境界線。</li>
+          </ul>
+        </div>
+        <div class="hero-card subtle">
+          <h2>前提</h2>
+          <p>白黒・マジック・ホワイトボードは重い filter として約6.5秒、その他は1秒未満で擬似シミュレーションする。loading は全画面ブロックではなく、画像領域の spinner のみで、ユーザー操作は継続可能とする。</p>
+        </div>
+      </div>
+    </div>
+  </header>
+
+  <nav class="life-nav" id="lifeNav">
+    <div class="life-nav-inner">
+      <a href="#case-capture" class="life-link is-active">撮影 → Preview 生成</a>
+      <a href="#case-apply" class="life-link">詳細で Filter 確認</a>
+      <a href="#case-swipe" class="life-link">横スワイプ</a>
+      <a href="#case-pdf" class="life-link">PDF 共有</a>
+      <a href="#assets" class="life-link">保存方針マップ</a>
+    </div>
+  </nav>
+
+  <main class="life-main">
+    <section class="life-section" id="case-capture">
+      <div class="section-heading">
+        <h2>ユースケース 1: 撮影 → background preview 生成 → 一覧へ出す</h2>
+        <p>1つの新規文書に A / B / C の 3 ページを連続撮影する前提で、撮影の同期パスは source image 保存までに留める。各ページの small preview は撮影から約 2 秒後、large preview は約 5 秒後に background job で追従生成し、camera stack は最新 C、文書一覧サムネイルは先頭ページ A を採用する。</p>
+      </div>
+
+      <div class="case-layout">
+        <div class="demo-card">
+          <iframe data-auto-height src="/image_lifecycle/capture-previews.html" title="撮影から preview 生成まで"></iframe>
+          <p class="demo-caption">`カメラスキャン` → `文書一覧` → `ページ一覧` をそのままつなぎ、A / B / C それぞれの small / large がどう育つかを phone の下の進行状況パネルで追う。camera は画面設計どおりのモックを使い、ユーザが数回シャッターを押してから左下スタックをタップして文書一覧へ進む。</p>
+        </div>
+
+        <div class="logic-card">
+          <div class="logic-group">
+            <h3>何が起きるか</h3>
+            <ul class="logic-list">
+              <li>A / B / C の各シャッター時に保存するのは source image と page metadata の初期値だけ。既定 filter は `オリジナル`。</li>
+              <li>A / B / C それぞれに対して `small preview job` と `large preview job` を非同期に投入する。</li>
+              <li>`small preview job` は撮影から約 2 秒後、`large preview job` は約 5 秒後に完了する想定で、3 ページ分の完了時刻は少しずつずれる。</li>
+              <li>camera 左下スタックは最新ページ C の small preview、文書一覧は先頭ページ A の small preview を採用する。</li>
+              <li>ページ一覧とページ詳細は A / B / C 各ページの large preview を待つ。</li>
+              <li>preview job がまだ終わっていない間も、文書の作成や画面遷移自体は進められる。</li>
+            </ul>
+          </div>
+
+          <div class="logic-group">
+            <h3>表示優先順位</h3>
+            <ul class="logic-list">
+              <li>`SmallPreviewThumb`: small preview があれば即表示、無ければ placeholder のみ。camera 左下スタックと文書一覧で共通利用する。</li>
+              <li>`PageList / PageDetail`: large preview があれば即表示、無ければその画像領域にだけ placeholder / spinner を出す。A だけ ready、B / C は生成中のような混在状態を許容する。</li>
+              <li>source image は画面表示に直接出さず、preview の再生成と PDF 生成の入力にだけ使う。</li>
+            </ul>
+          </div>
+
+          <div class="logic-group warning">
+            <h3>このユースケースで詰める論点</h3>
+            <ul class="logic-list">
+              <li>preview worker は idempotent にして、アプリ再起動や途中中断後も安全に再実行できるようにする。</li>
+              <li>撮り直し時は source / small / large / working preview をその page だけまとめて invalidation する。</li>
+              <li>filter apply で small preview も変わるページについては、apply 後に small refresh job を追従投入する。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="life-section" id="case-apply">
+      <div class="section-heading">
+        <h2>ユースケース 2: ページ詳細で filter を確認して、キャンセルか適用かを決める</h2>
+        <p>ページ詳細では committed large preview と working preview を分ける。filter 確認中は working だけを書き換え、キャンセルなら捨て、適用なら large にコピーする。</p>
+      </div>
+
+      <div class="case-layout">
+        <div class="demo-card">
+          <iframe data-auto-height src="/image_lifecycle/list-detail-filter.html" title="ページ詳細での filter 確認"></iframe>
+          <p class="demo-caption">`ページ一覧` と `ページ編集` の実画面をつなぎ、committed large と working preview が同時に存在する状態を phone 外のパネルで追う。</p>
+        </div>
+
+        <div class="logic-card">
+          <div class="logic-group">
+            <h3>使う画像</h3>
+            <ul class="logic-list">
+              <li>通常表示の土台は保存済み large preview。source image はこの画面の直接表示には使わない。</li>
+              <li>filter を選ぶと working preview を別途生成し、その結果だけを画面に重ねて見せる。</li>
+              <li>committed large と working preview は同時に持ち、apply までは large を汚さない。</li>
+            </ul>
+          </div>
+
+          <div class="logic-group">
+            <h3>キャンセル / 適用のルール</h3>
+            <ul class="logic-list">
+              <li>`キャンセル`: working preview を破棄し、metadata も large preview もそのままに戻る。</li>
+              <li>`適用`: metadata を保存し、working preview を large preview にコピーしてから working を破棄対象にする。</li>
+              <li>small preview を使う面が影響を受けるなら、apply 完了後に small refresh job を別で流す。</li>
+            </ul>
+          </div>
+
+          <div class="logic-group">
+            <h3>並行操作の扱い</h3>
+            <ul class="logic-list">
+              <li>白黒・マジック・ホワイトボードは約6.5秒、その他は1秒未満で working preview を更新する。</li>
+              <li>loading 中も spinner は画像の上だけに出し、ViewPager swipe と filter の再選択は止めない。</li>
+              <li>新しい filter 要求が来たら request token を更新し、古い job の遅着結果は捨てる。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="life-section" id="case-swipe">
+      <div class="section-heading">
+        <h2>ユースケース 3: 詳細で左右スワイプしながら working preview を再利用する</h2>
+        <p>同じページへ戻った時に filter 確認結果を即表示したいので、working preview は page 単位で LRU 管理する。大事なのは「large preview の通常表示」と「working preview の候補表示」を混ぜないこと。</p>
+      </div>
+
+      <div class="case-layout">
+        <div class="demo-card">
+          <iframe data-auto-height src="/image_lifecycle/swipe-cache.html" title="横スワイプ時の working preview cache"></iframe>
+          <p class="demo-caption">`ページ編集` mockup をそのまま左右に動かし、spinner は画像上だけに残しつつ、page 単位の LRU cache hit / miss / eviction を外側で見せる。</p>
+        </div>
+
+        <div class="logic-card">
+          <div class="logic-group">
+            <h3>cache の単位</h3>
+            <ul class="logic-list">
+              <li>working preview のキーは `page + filter + rotation`。同じ page でも filter が違えば別物。</li>
+              <li>eviction の単位は page。ある page に紐づく working preview 群をまとめて外す。</li>
+              <li>large preview は永続 preview、working preview は cache preview として責務を分ける。</li>
+            </ul>
+          </div>
+
+          <div class="logic-group">
+            <h3>このユースケースでの期待値</h3>
+            <ul class="logic-list">
+              <li>初見の page / filter 組み合わせは miss し、画像領域だけ spinner を出しながら job を流す。</li>
+              <li>一度作った working preview が残っていれば、ページ詳細を閉じて開き直しても即表示できる。</li>
+              <li>容量上限を超えた後に古い page を再訪した場合だけ、その page の working preview を再計算する。</li>
+            </ul>
+          </div>
+
+          <div class="logic-group">
+            <h3>設計で決めること</h3>
+            <ul class="logic-list">
+              <li>working preview cache は `cache` 扱いで、アプリの正しさは large preview と metadata のみで成立させる。</li>
+              <li>swipe 先読みを入れるなら working preview ではなく、次 page の job 予約だけに留める方が破棄規則を保ちやすい。</li>
+              <li>late result が別 page に描かれないよう、表示先 page と request token の両方を照合する。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="life-section" id="case-pdf">
+      <div class="section-heading">
+        <h2>ユースケース 4: ページ一覧から PDF 共有</h2>
+        <p>PDF 共有は preview 系アセットと完全に切り離す。使うのは source image と保存済み metadata だけで、small / large / working preview は一切入力にしない。</p>
+      </div>
+
+      <div class="case-layout">
+        <div class="demo-card">
+          <iframe data-auto-height src="/image_lifecycle/pdf-share.html" title="PDF 共有時の画像フロー"></iframe>
+          <p class="demo-caption">`ページ一覧` の share ボタンと share sheet をそのまま使い、preview を読まない render queue だけを phone 外で可視化する。</p>
+        </div>
+
+        <div class="logic-card">
+          <div class="logic-group">
+            <h3>何を入力にするか</h3>
+            <ul class="logic-list">
+              <li>各ページの source image を decode し、保存済み metadata の filter / rotation を適用する。</li>
+              <li>適用結果を A4 の PDF page へ描画し、一時 PDF を組み立てる。</li>
+              <li>共有対象は `cache` に置いた temp PDF のみ。</li>
+            </ul>
+          </div>
+
+          <div class="logic-group">
+            <h3>preview を使わない理由</h3>
+            <ul class="logic-list">
+              <li>preview は画面都合の縮小画像であり、PDF 品質の基準に向かない。</li>
+              <li>working preview は未保存の確認結果を含みうるので、共有結果の正しさの根拠に使えない。</li>
+              <li>source + metadata に統一すると、preview cache の壊れ方と PDF 品質が切り離せる。</li>
+            </ul>
+          </div>
+
+          <div class="logic-group">
+            <h3>実務上の含意</h3>
+            <ul class="logic-list">
+              <li>共有直前に CPU コストは発生するが、preview の整合性を心配しなくてよい。</li>
+              <li>未 apply の working preview は PDF に反映しない。共有結果は保存済み metadata に従う。</li>
+              <li>filter 変更や撮り直し後も、temp PDF を捨てて再生成すれば整合性を保てる。</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="life-section" id="assets">
+      <div class="section-heading">
+        <h2>保存方針マップ</h2>
+        <p>責務ごとにアセットを切り分ける。source と metadata が正で、small / large は永続 preview、working と PDF は cache であることを明示しておく。</p>
+      </div>
+
+      <div class="decision-card">
+        <table class="decision-table">
+          <thead>
+            <tr>
+              <th>アセット</th>
+              <th>保存先</th>
+              <th>生成タイミング</th>
+              <th>使う場所</th>
+              <th>設計メモ</th>
+            </tr>
+          </thead>
+          <tbody>
+            {assetRows.map((row) => (
+              <tr>
+                <td>{row.asset}</td>
+                <td>{row.storage}</td>
+                <td>{row.generated}</td>
+                <td>{row.usedBy}</td>
+                <td>{row.note}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note-grid">
+        <article class="note-card positive">
+          <h3>UI コンポーネント</h3>
+          <p>`SmallPreviewThumb` は「small preview があれば描画、無ければ placeholder」を返すだけの薄い部品にし、camera 左下スタックと文書一覧で共通利用する。</p>
+        </article>
+        <article class="note-card caution">
+          <h3>更新トリガー</h3>
+          <p>撮影・撮り直しでは source 保存後に small / large job を起動し、apply では working から large を更新したうえで、必要なら small refresh job を追従させる。</p>
+        </article>
+        <article class="note-card">
+          <h3>破棄規則</h3>
+          <p>working preview と temp PDF は cache として扱う。late result の破棄、page 単位の LRU eviction、撮り直し時のまとめ invalidation を最初から規則化しておく。</p>
+        </article>
+      </div>
+    </section>
+  </main>
+
+  <script>
+    const links = Array.from(document.querySelectorAll('.life-link[href^="#"]'));
+    const sections = Array.from(document.querySelectorAll('.life-section[id]'));
+    const demoIframes = Array.from(document.querySelectorAll('iframe[data-auto-height]'));
+
+    if (links.length && sections.length) {
+      const setActive = (id) => {
+        links.forEach((link) => {
+          link.classList.toggle('is-active', link.getAttribute('href') === `#${id}`);
+        });
+      };
+
+      const currentSectionId = () => {
+        const navHeight = document.querySelector('.life-nav')?.getBoundingClientRect().height ?? 0;
+        const threshold = navHeight + 40;
+        let activeId = sections[0].id;
+
+        sections.forEach((section) => {
+          if (section.getBoundingClientRect().top <= threshold) {
+            activeId = section.id;
+          }
+        });
+
+        return activeId;
+      };
+
+      let ticking = false;
+      const syncActive = () => {
+        ticking = false;
+        setActive(currentSectionId());
+      };
+
+      const requestSync = () => {
+        if (ticking) return;
+        ticking = true;
+        requestAnimationFrame(syncActive);
+      };
+
+      links.forEach((link) => {
+        link.addEventListener('click', () => {
+          const targetId = link.getAttribute('href')?.slice(1);
+          if (targetId) setActive(targetId);
+        });
+      });
+
+      window.addEventListener('scroll', requestSync, { passive: true });
+      window.addEventListener('resize', requestSync);
+      window.addEventListener('hashchange', requestSync);
+      requestSync();
+    }
+
+    if (demoIframes.length) {
+      const iframeObservers = new WeakMap();
+      let resizeFrame = 0;
+
+      const measureIframeHeight = (iframe) => {
+        const doc = iframe.contentDocument;
+        if (!doc) return 0;
+
+        const root = doc.documentElement;
+        const body = doc.body;
+        return Math.ceil(Math.max(
+          root?.scrollHeight ?? 0,
+          root?.offsetHeight ?? 0,
+          root?.clientHeight ?? 0,
+          root?.getBoundingClientRect().height ?? 0,
+          body?.scrollHeight ?? 0,
+          body?.offsetHeight ?? 0,
+          body?.clientHeight ?? 0,
+          body?.getBoundingClientRect().height ?? 0,
+        ));
+      };
+
+      const syncIframeHeight = (iframe) => {
+        const nextHeight = measureIframeHeight(iframe);
+        if (!nextHeight) return;
+        iframe.style.height = `${nextHeight}px`;
+      };
+
+      const syncAllIframes = () => {
+        resizeFrame = 0;
+        demoIframes.forEach(syncIframeHeight);
+      };
+
+      const requestIframeSync = () => {
+        if (resizeFrame) return;
+        resizeFrame = requestAnimationFrame(syncAllIframes);
+      };
+
+      const bindIframe = (iframe) => {
+        const connectObservers = () => {
+          const root = iframe.contentDocument?.documentElement;
+          const body = iframe.contentDocument?.body;
+          if (!root || iframeObservers.has(iframe) || !window.ResizeObserver) return;
+
+          const observer = new ResizeObserver(requestIframeSync);
+          observer.observe(root);
+          if (body) observer.observe(body);
+          iframeObservers.set(iframe, observer);
+        };
+
+        iframe.addEventListener('load', () => {
+          requestIframeSync();
+          connectObservers();
+          iframe.contentWindow?.addEventListener('resize', requestIframeSync);
+          iframe.contentDocument?.fonts?.ready?.then(requestIframeSync).catch(() => {});
+        });
+
+        if (iframe.contentDocument?.readyState === 'complete') {
+          requestIframeSync();
+          connectObservers();
+        }
+      };
+
+      demoIframes.forEach(bindIframe);
+      window.addEventListener('resize', requestIframeSync, { passive: true });
+      requestIframeSync();
+    }
+  </script>
+
+  <style>
+    .life-header {
+      padding: 48px 24px 28px;
+      background:
+        radial-gradient(circle at top left, rgba(12, 102, 228, 0.12), transparent 30%),
+        linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(247, 248, 249, 0.92));
+      border-bottom: 1px solid var(--ds-border);
+    }
+
+    .life-header-inner {
+      max-width: 1320px;
+      margin: 0 auto;
+      display: grid;
+      grid-template-columns: minmax(0, 1.5fr) minmax(320px, 0.78fr);
+      gap: 24px;
+      align-items: start;
+    }
+
+    .badge-row {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 8px;
+      margin-bottom: 12px;
+    }
+
+    .badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    .badge-info {
+      background: var(--ds-background-information);
+      color: var(--ds-text-brand);
+    }
+
+    .badge-neutral {
+      background: var(--ds-background-neutral);
+      color: var(--ds-text-subtle);
+    }
+
+    .back-link {
+      display: inline-flex;
+      align-items: center;
+      color: var(--ds-text-brand);
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+    }
+
+    .back-link:hover { text-decoration: underline; }
+
+    .life-header h1 {
+      margin: 14px 0 10px;
+      font-size: clamp(36px, 5vw, 54px);
+      line-height: 1.02;
+      letter-spacing: -0.03em;
+    }
+
+    .life-subtitle {
+      margin: 0;
+      max-width: 860px;
+      color: var(--ds-text-subtle);
+      font-size: 16px;
+      line-height: 28px;
+    }
+
+    .hero-aside {
+      display: grid;
+      gap: 14px;
+    }
+
+    .hero-card {
+      padding: 18px 20px;
+      border-radius: 20px;
+      background: rgba(255, 255, 255, 0.92);
+      border: 1px solid var(--ds-border);
+      box-shadow: var(--ds-shadow-raised);
+    }
+
+    .hero-card.subtle {
+      background: rgba(247, 248, 249, 0.96);
+    }
+
+    .hero-card h2 {
+      margin: 0 0 10px;
+      font-size: 16px;
+    }
+
+    .hero-card p,
+    .hero-list {
+      margin: 0;
+      color: var(--ds-text-subtle);
+      font-size: 14px;
+      line-height: 24px;
+    }
+
+    .hero-list {
+      padding-left: 18px;
+    }
+
+    .life-nav {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      backdrop-filter: blur(14px);
+      background: rgba(247, 248, 249, 0.86);
+      border-bottom: 1px solid var(--ds-border);
+    }
+
+    .life-nav-inner {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 0 24px;
+      display: flex;
+      gap: 10px;
+      align-items: center;
+      overflow-x: auto;
+      min-height: 64px;
+    }
+
+    .life-link {
+      flex: 0 0 auto;
+      display: inline-flex;
+      align-items: center;
+      height: 40px;
+      padding: 0 14px;
+      border-radius: 999px;
+      color: var(--ds-text-subtle);
+      font-size: 14px;
+      font-weight: 600;
+      text-decoration: none;
+      transition: background 0.2s ease, color 0.2s ease;
+    }
+
+    .life-link:hover { color: var(--ds-text-brand); }
+
+    .life-link.is-active {
+      background: rgba(12, 102, 228, 0.12);
+      color: var(--ds-text-brand);
+    }
+
+    .life-link-end {
+      margin-left: auto;
+    }
+
+    .life-main {
+      max-width: 1320px;
+      margin: 0 auto;
+      padding: 28px 24px 72px;
+    }
+
+    .life-section + .life-section {
+      margin-top: 56px;
+    }
+
+    .section-heading {
+      margin-bottom: 18px;
+    }
+
+    .section-heading h2 {
+      margin: 0 0 8px;
+      font-size: 30px;
+      line-height: 1.16;
+      letter-spacing: -0.02em;
+    }
+
+    .section-heading p {
+      margin: 0;
+      max-width: 920px;
+      color: var(--ds-text-subtle);
+      font-size: 16px;
+      line-height: 28px;
+    }
+
+    .case-layout {
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(320px, 0.9fr);
+      gap: 18px;
+      align-items: start;
+    }
+
+    .demo-card,
+    .logic-card,
+    .decision-card,
+    .reference-card,
+    .note-card {
+      border-radius: 24px;
+      background: var(--ds-surface);
+      border: 1px solid var(--ds-border);
+      box-shadow: var(--ds-shadow-raised);
+    }
+
+    .demo-card {
+      padding: 16px;
+    }
+
+    .demo-card iframe {
+      width: 100%;
+      min-height: 520px;
+      border: 0;
+      border-radius: 18px;
+      background: #f4f7fb;
+      display: block;
+      transition: height 0.2s ease;
+    }
+
+    .demo-caption {
+      margin: 12px 4px 0;
+      color: var(--ds-text-subtlest);
+      font-size: 13px;
+      line-height: 20px;
+    }
+
+    .logic-card {
+      padding: 20px;
+      display: grid;
+      gap: 16px;
+    }
+
+    .logic-group {
+      padding: 16px 18px;
+      border-radius: 18px;
+      background: rgba(247, 248, 249, 0.92);
+      border: 1px solid rgba(9, 30, 66, 0.08);
+    }
+
+    .logic-group.warning {
+      background: rgba(255, 247, 237, 0.86);
+      border-color: rgba(194, 81, 0, 0.18);
+    }
+
+    .logic-group h3 {
+      margin: 0 0 10px;
+      font-size: 16px;
+    }
+
+    .logic-list {
+      margin: 0;
+      padding-left: 18px;
+      color: var(--ds-text-subtle);
+      font-size: 14px;
+      line-height: 24px;
+    }
+
+    .logic-list.compact {
+      margin-top: 12px;
+    }
+
+    .decision-card {
+      padding: 10px;
+      overflow-x: auto;
+    }
+
+    .decision-table {
+      width: 100%;
+      min-width: 920px;
+      border-collapse: collapse;
+    }
+
+    .decision-table th,
+    .decision-table td {
+      padding: 16px 14px;
+      border-bottom: 1px solid var(--ds-border);
+      text-align: left;
+      vertical-align: top;
+      font-size: 14px;
+      line-height: 24px;
+    }
+
+    .decision-table th {
+      color: var(--ds-text-subtle);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      background: rgba(247, 248, 249, 0.96);
+    }
+
+    .note-grid,
+    .reference-grid {
+      display: grid;
+      gap: 16px;
+      margin-top: 18px;
+    }
+
+    .note-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .reference-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+
+    .note-card,
+    .reference-card {
+      padding: 20px;
+    }
+
+    .note-card.positive {
+      background: rgba(220, 255, 241, 0.66);
+      border-color: rgba(31, 132, 90, 0.18);
+    }
+
+    .note-card.caution {
+      background: rgba(255, 247, 237, 0.8);
+      border-color: rgba(194, 81, 0, 0.18);
+    }
+
+    .note-card h3,
+    .reference-card h3 {
+      margin: 0 0 10px;
+      font-size: 18px;
+    }
+
+    .note-card p,
+    .reference-card p {
+      margin: 0;
+      color: var(--ds-text-subtle);
+      font-size: 14px;
+      line-height: 24px;
+    }
+
+    .reference-card code {
+      display: block;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: rgba(247, 248, 249, 0.96);
+      color: var(--ds-text);
+      font-size: 12px;
+      line-height: 18px;
+      word-break: break-all;
+    }
+
+    @media (max-width: 1080px) {
+      .life-header { padding: 40px 20px 24px; }
+      .life-header-inner,
+      .case-layout,
+      .note-grid,
+      .reference-grid {
+        grid-template-columns: 1fr;
+      }
+
+      .life-nav-inner,
+      .life-main {
+        padding-left: 20px;
+        padding-right: 20px;
+      }
+
+    }
+  </style>
+</Layout>

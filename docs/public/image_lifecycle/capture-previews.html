@@ -1,0 +1,1028 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>撮影から preview 生成まで</title>
+  <style>
+    :root {
+      --bg: #eef3f9;
+      --text: #17304d;
+      --subtle: #61758c;
+      --surface: rgba(255, 255, 255, 0.95);
+      --surface-soft: #f6f9fc;
+      --line: rgba(23, 48, 77, 0.1);
+      --brand: #0c66e4;
+      --brand-soft: rgba(12, 102, 228, 0.12);
+      --success: #1f845a;
+      --success-soft: rgba(31, 132, 90, 0.12);
+      --warn: #c25100;
+      --warn-soft: rgba(194, 81, 0, 0.12);
+      --shadow: 0 28px 72px rgba(15, 23, 42, 0.14);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: "Noto Sans JP", system-ui, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(12, 102, 228, 0.12), transparent 26%),
+        radial-gradient(circle at bottom right, rgba(31, 132, 90, 0.08), transparent 24%),
+        var(--bg);
+    }
+
+    button {
+      font: inherit;
+    }
+
+    .demo {
+      display: grid;
+      gap: 16px;
+    }
+
+    .step-header {
+      display: grid;
+      gap: 8px;
+    }
+
+    .step-controls {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      width: fit-content;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid var(--line);
+      box-shadow: 0 16px 32px rgba(15, 23, 42, 0.08);
+    }
+
+    .step-reset-btn {
+      height: 36px;
+      padding: 0 14px;
+      border: 0;
+      border-radius: 999px;
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-size: 12px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform 0.2s ease, background 0.2s ease;
+    }
+
+    .step-reset-btn:hover {
+      transform: translateY(-1px);
+      background: rgba(12, 102, 228, 0.18);
+    }
+
+    .step-indicator {
+      min-width: 56px;
+      text-align: center;
+      color: var(--subtle);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .control-note {
+      margin: 0;
+      color: var(--subtle);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .step-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .step-card,
+    .panel-card {
+      padding: 14px;
+      border-radius: 18px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      transition: transform 0.28s ease, border-color 0.28s ease, box-shadow 0.28s ease, opacity 0.28s ease;
+    }
+
+    .step-card {
+      display: grid;
+      gap: 6px;
+      opacity: 0.54;
+    }
+
+    .step-card.completed {
+      opacity: 0.78;
+      border-color: rgba(31, 132, 90, 0.18);
+    }
+
+    .step-card.active {
+      opacity: 1;
+      transform: translateY(-2px);
+      border-color: rgba(12, 102, 228, 0.24);
+      box-shadow: 0 18px 36px rgba(12, 102, 228, 0.14);
+    }
+
+    .step-kicker {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--subtle);
+    }
+
+    .step-title {
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .step-copy,
+    .panel-card p,
+    .panel-card li {
+      margin: 0;
+      color: var(--subtle);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .stage {
+      display: grid;
+      grid-template-columns: 320px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .phone-column {
+      display: grid;
+      gap: 12px;
+    }
+
+    .phone-wrap {
+      display: flex;
+      justify-content: center;
+    }
+
+    .phone-frame {
+      width: 300px;
+      height: 620px;
+      background: #1a1a1a;
+      border-radius: 36px;
+      padding: 12px;
+      position: relative;
+      box-shadow: 0 24px 56px rgba(15, 23, 42, 0.22), inset 0 0 0 2px #333;
+    }
+
+    .phone-notch {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 80px;
+      height: 22px;
+      background: #1a1a1a;
+      border-radius: 0 0 12px 12px;
+      z-index: 10;
+    }
+
+    .screen-stack {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      border-radius: 24px;
+      background: #fff;
+    }
+
+    .screen-state {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      transform: scale(0.985);
+      transition: opacity 0.4s ease, transform 0.4s ease;
+      pointer-events: none;
+    }
+
+    .screen-state.active {
+      opacity: 1;
+      transform: none;
+      pointer-events: auto;
+    }
+
+    .screen-state iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #fff;
+      pointer-events: none;
+    }
+
+    .screen-state.active iframe {
+      pointer-events: auto;
+    }
+
+    .phone-panels {
+      display: grid;
+      gap: 12px;
+    }
+
+    .panel-card h2 {
+      margin: 0 0 10px;
+      font-size: 15px;
+    }
+
+    .timeline-grid,
+    .screen-grid {
+      display: grid;
+      gap: 8px;
+    }
+
+    .timeline-row,
+    .screen-row {
+      display: grid;
+      gap: 10px;
+      padding: 12px;
+      border-radius: 14px;
+      background: var(--surface-soft);
+      border: 1px solid var(--line);
+      transition: transform 0.28s ease, border-color 0.28s ease, box-shadow 0.28s ease;
+    }
+
+    .screen-row {
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+    }
+
+    .screen-row.active {
+      border-color: rgba(12, 102, 228, 0.24);
+      box-shadow: 0 12px 24px rgba(12, 102, 228, 0.12);
+    }
+
+    .timeline-head,
+    .screen-copy {
+      display: grid;
+      gap: 4px;
+    }
+
+    .timeline-head strong,
+    .screen-copy strong {
+      font-size: 13px;
+    }
+
+    .timeline-head span,
+    .screen-copy span,
+    .timeline-lane-label {
+      color: var(--subtle);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .timeline-lane {
+      display: grid;
+      grid-template-columns: 42px minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+    }
+
+    .timeline-track {
+      position: relative;
+      height: 8px;
+      border-radius: 999px;
+      background: rgba(9, 30, 66, 0.08);
+      overflow: hidden;
+    }
+
+    .timeline-track::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      transform-origin: left center;
+      transform: scaleX(var(--track-progress, 0.04));
+      transition: transform 0.2s linear;
+    }
+
+    .timeline-track.waiting::before {
+      background: rgba(9, 30, 66, 0.14);
+    }
+
+    .timeline-track.processing::before {
+      background: linear-gradient(90deg, rgba(12, 102, 228, 0.42), rgba(12, 102, 228, 0.88));
+    }
+
+    .timeline-track.ready::before {
+      background: linear-gradient(90deg, rgba(31, 132, 90, 0.52), rgba(31, 132, 90, 0.96));
+      transform: scaleX(1);
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 112px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .status-pill.ready {
+      background: var(--success-soft);
+      color: var(--success);
+    }
+
+    .status-pill.pending {
+      background: var(--brand-soft);
+      color: var(--brand);
+    }
+
+    .status-pill.waiting {
+      background: rgba(9, 30, 66, 0.08);
+      color: var(--subtle);
+    }
+
+    .status-pill.placeholder {
+      background: var(--warn-soft);
+      color: var(--warn);
+    }
+
+    .side {
+      display: grid;
+      gap: 12px;
+    }
+
+    .logic-list {
+      margin: 0;
+      padding-left: 18px;
+      display: grid;
+      gap: 6px;
+    }
+
+    @media (max-width: 900px) {
+      body { padding: 16px; }
+      .step-strip,
+      .stage { grid-template-columns: 1fr; }
+      .phone-frame {
+        width: min(300px, 100%);
+        height: 620px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="demo">
+    <div class="step-header">
+      <div class="step-controls">
+        <span class="step-indicator" id="stepIndicator">Step 1</span>
+        <button type="button" class="step-reset-btn" id="resetBtn">リセット</button>
+      </div>
+      <p class="control-note">
+        `カメラスキャン` の既存モックをそのまま使う。シャッターを数回押して A / B / C を作り、左下スタックをタップして文書一覧へ移動し、文書をタップするとページ一覧へ進む。
+      </p>
+    </div>
+
+    <div class="step-strip">
+      <article class="step-card active" id="step-0">
+        <div class="step-kicker">Step 1</div>
+        <div class="step-title">Capture A / B / C</div>
+        <p class="step-copy">シャッターをユーザが複数回押してページを追加する。source image は撮影直後に保存され、small / large は各ページごとに別ジョブで進む。</p>
+      </article>
+      <article class="step-card" id="step-1">
+        <div class="step-kicker">Step 2</div>
+        <div class="step-title">Tap Stack To List</div>
+        <p class="step-copy">左下スタックをタップして文書一覧へ戻る。文書一覧サムネイルは常に先頭ページ A の small preview を参照する。</p>
+      </article>
+      <article class="step-card" id="step-2">
+        <div class="step-kicker">Step 3</div>
+        <div class="step-title">Tap Document</div>
+        <p class="step-copy">文書一覧の当該文書をタップしてページ一覧へ進む。large preview が無いページはその場で spinner を出す。</p>
+      </article>
+      <article class="step-card" id="step-3">
+        <div class="step-kicker">Step 4</div>
+        <div class="step-title">Large Ready</div>
+        <p class="step-copy">ページ一覧の中で large preview が ready のページから順に表示される。全ページ ready になった時点で通常表示へ揃う。</p>
+      </article>
+    </div>
+
+    <div class="stage">
+      <div class="phone-column">
+        <div class="phone-wrap">
+          <div class="phone-frame">
+            <div class="phone-notch"></div>
+            <div class="screen-stack">
+              <div class="screen-state active" data-screen="camera">
+                <iframe id="cameraFrame" src="/mockups/camera-scan.html" title="camera scan"></iframe>
+              </div>
+              <div class="screen-state" data-screen="document">
+                <iframe id="documentFrame" src="/mockups/document-list.html" title="document list"></iframe>
+              </div>
+              <div class="screen-state" data-screen="page-list">
+                <iframe id="pageListFrame" src="/mockups/page-list.html" title="page list"></iframe>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="phone-panels">
+          <section class="panel-card">
+            <h2>Preview Generation</h2>
+            <div class="timeline-grid">
+              <div class="timeline-row">
+                <div class="timeline-head">
+                  <strong>Page A</strong>
+                  <span>撮影から 2 秒後に small、5 秒後に large が ready。</span>
+                </div>
+                <div class="timeline-lane">
+                  <div class="timeline-lane-label">small</div>
+                  <div class="timeline-track waiting" id="track-a-small"></div>
+                  <span class="status-pill waiting" id="status-a-small">not captured</span>
+                </div>
+                <div class="timeline-lane">
+                  <div class="timeline-lane-label">large</div>
+                  <div class="timeline-track waiting" id="track-a-large"></div>
+                  <span class="status-pill waiting" id="status-a-large">not captured</span>
+                </div>
+              </div>
+
+              <div class="timeline-row">
+                <div class="timeline-head">
+                  <strong>Page B</strong>
+                  <span>B は A の後にユーザが追加撮影する。完了時刻は実際のシャッター時刻から数える。</span>
+                </div>
+                <div class="timeline-lane">
+                  <div class="timeline-lane-label">small</div>
+                  <div class="timeline-track waiting" id="track-b-small"></div>
+                  <span class="status-pill waiting" id="status-b-small">not captured</span>
+                </div>
+                <div class="timeline-lane">
+                  <div class="timeline-lane-label">large</div>
+                  <div class="timeline-track waiting" id="track-b-large"></div>
+                  <span class="status-pill waiting" id="status-b-large">not captured</span>
+                </div>
+              </div>
+
+              <div class="timeline-row">
+                <div class="timeline-head">
+                  <strong>Page C</strong>
+                  <span>camera の左下スタックでは最新ページ C を先頭に積むが、small 未完了なら placeholder のまま見せる。</span>
+                </div>
+                <div class="timeline-lane">
+                  <div class="timeline-lane-label">small</div>
+                  <div class="timeline-track waiting" id="track-c-small"></div>
+                  <span class="status-pill waiting" id="status-c-small">not captured</span>
+                </div>
+                <div class="timeline-lane">
+                  <div class="timeline-lane-label">large</div>
+                  <div class="timeline-track waiting" id="track-c-large"></div>
+                  <span class="status-pill waiting" id="status-c-large">not captured</span>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel-card">
+            <h2>Screen Mapping</h2>
+            <div class="screen-grid">
+              <div class="screen-row active" id="screen-row-camera">
+                <div class="screen-copy">
+                  <strong>Camera Stack</strong>
+                  <span>latest page の small preview が出来るまでは placeholder の stack を出す。ready 後だけ small に差し替える。</span>
+                </div>
+                <span class="status-pill waiting" id="screen-status-camera">capturing</span>
+              </div>
+              <div class="screen-row" id="screen-row-document">
+                <div class="screen-copy">
+                  <strong>文書一覧</strong>
+                  <span>新規文書の small preview には先頭ページ A だけを使う。B / C の small 状態は一覧サムネイルには直接出ない。</span>
+                </div>
+                <span class="status-pill waiting" id="screen-status-document">waiting</span>
+              </div>
+              <div class="screen-row" id="screen-row-page-list">
+                <div class="screen-copy">
+                  <strong>ページ一覧</strong>
+                  <span>各ページの large preview を個別参照する。A が ready、B / C は processing のような混在を許容する。</span>
+                </div>
+                <span class="status-pill waiting" id="screen-status-page-list">waiting</span>
+              </div>
+            </div>
+          </section>
+        </div>
+      </div>
+
+      <div class="side">
+        <section class="panel-card">
+          <h2>Reading Guide</h2>
+          <ul class="logic-list">
+            <li>カメラ画面は `/mockups/camera-scan.html` をそのまま表示し、capture・stack・viewfinder の見た目を画面設計と揃える。</li>
+            <li>source image はシャッター直後に保存済みとみなし、small / large preview のみが時間差で ready になる。</li>
+            <li>文書一覧は A の small preview だけを参照するので、B / C の遅れは一覧サムネイルには現れない。</li>
+            <li>ページ一覧では large preview が page 単位で ready / processing に分かれ、同じ画面に混在して見える。</li>
+          </ul>
+        </section>
+
+        <section class="panel-card">
+          <h2>Design Notes</h2>
+          <ul class="logic-list">
+            <li>preview worker は idempotent にして、アプリ再起動や途中中断後も安全に再実行できるようにする。</li>
+            <li>撮り直し時は、その page の source / small / large / working をまとめて invalidation する。</li>
+            <li>camera stack と文書一覧の両方が small preview を使うが、参照ページは最新 C と先頭 A で異なる。</li>
+            <li>ページ一覧の placeholder / spinner は page 単位で残し、画面全体は block しない。</li>
+          </ul>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SMALL_DELAY_MS = 2000;
+    const LARGE_DELAY_MS = 5000;
+    const PAGE_LABELS = ['A', 'B', 'C'];
+
+    const stepIndicator = document.getElementById('stepIndicator');
+    const resetBtn = document.getElementById('resetBtn');
+    const steps = [...document.querySelectorAll('.step-card')];
+    const screens = [...document.querySelectorAll('.screen-state')];
+    const cameraFrame = document.getElementById('cameraFrame');
+    const documentFrame = document.getElementById('documentFrame');
+    const pageListFrame = document.getElementById('pageListFrame');
+
+    const screenRows = {
+      camera: document.getElementById('screen-row-camera'),
+      document: document.getElementById('screen-row-document'),
+      'page-list': document.getElementById('screen-row-page-list'),
+    };
+
+    const screenStatus = {
+      camera: document.getElementById('screen-status-camera'),
+      document: document.getElementById('screen-status-document'),
+      'page-list': document.getElementById('screen-status-page-list'),
+    };
+
+    const timelineStatus = {
+      A: { small: document.getElementById('status-a-small'), large: document.getElementById('status-a-large') },
+      B: { small: document.getElementById('status-b-small'), large: document.getElementById('status-b-large') },
+      C: { small: document.getElementById('status-c-small'), large: document.getElementById('status-c-large') },
+    };
+
+    const timelineTracks = {
+      A: { small: document.getElementById('track-a-small'), large: document.getElementById('track-a-large') },
+      B: { small: document.getElementById('track-b-small'), large: document.getElementById('track-b-large') },
+      C: { small: document.getElementById('track-c-small'), large: document.getElementById('track-c-large') },
+    };
+
+    const state = {
+      screen: 'camera',
+      captures: [],
+      ready: false,
+    };
+
+    let renderTimer = null;
+
+    function waitForFrame(frame) {
+      return new Promise((resolve) => {
+        const done = () => resolve(frame.contentDocument);
+        if (frame.contentDocument?.readyState === 'complete') {
+          done();
+        } else {
+          frame.addEventListener('load', done, { once: true });
+        }
+      });
+    }
+
+    function formatRemaining(ms) {
+      return `${(ms / 1000).toFixed(1)}s left`;
+    }
+
+    function setStatus(el, kind, label) {
+      if (!el) return;
+      el.className = `status-pill ${kind}`;
+      el.textContent = label;
+    }
+
+    function setTrack(el, phase, progress) {
+      if (!el) return;
+      const className = phase === 'ready' ? 'ready' : phase === 'pending' ? 'processing' : 'waiting';
+      el.className = `timeline-track ${className}`;
+      el.style.setProperty('--track-progress', Math.max(0.04, Math.min(progress, 1)));
+    }
+
+    function getPageState(page) {
+      if (!page) {
+        return {
+          small: { phase: 'waiting', kind: 'waiting', label: 'not captured', progress: 0.04 },
+          large: { phase: 'waiting', kind: 'waiting', label: 'not captured', progress: 0.04 },
+        };
+      }
+
+      const elapsed = performance.now() - page.capturedAt;
+      const smallReady = elapsed >= SMALL_DELAY_MS;
+      const largeReady = elapsed >= LARGE_DELAY_MS;
+
+      return {
+        small: smallReady
+          ? { phase: 'ready', kind: 'ready', label: 'ready', progress: 1 }
+          : { phase: 'pending', kind: 'pending', label: formatRemaining(SMALL_DELAY_MS - elapsed), progress: Math.max(elapsed / SMALL_DELAY_MS, 0.06) },
+        large: largeReady
+          ? { phase: 'ready', kind: 'ready', label: 'ready', progress: 1 }
+          : { phase: 'pending', kind: 'pending', label: formatRemaining(LARGE_DELAY_MS - elapsed), progress: Math.max(elapsed / LARGE_DELAY_MS, 0.06) },
+      };
+    }
+
+    function getLifecycle() {
+      return PAGE_LABELS.map((label, index) => {
+        const page = state.captures[index] ?? null;
+        return {
+          label,
+          page,
+          preview: getPageState(page),
+        };
+      });
+    }
+
+    function getCurrentStep(lifecycle) {
+      if (state.screen === 'camera') return 0;
+      if (state.screen === 'document') return 1;
+      if (state.screen === 'page-list') {
+        const captured = lifecycle.filter((entry) => entry.page);
+        const allLargeReady = captured.length > 0 && captured.every((entry) => entry.preview.large.phase === 'ready');
+        return allLargeReady ? 3 : 2;
+      }
+      return 0;
+    }
+
+    function setStep(stepIndex) {
+      const labels = ['Step 1', 'Step 2', 'Step 3', 'Step 4'];
+      stepIndicator.textContent = labels[stepIndex];
+      steps.forEach((step, index) => {
+        step.classList.toggle('active', index === stepIndex);
+        step.classList.toggle('completed', index < stepIndex);
+      });
+    }
+
+    function setScreen(name) {
+      screens.forEach((screen) => {
+        screen.classList.toggle('active', screen.dataset.screen === name);
+      });
+      Object.entries(screenRows).forEach(([key, row]) => {
+        row.classList.toggle('active', key === name);
+      });
+    }
+
+    function ensureInnerStyles(doc) {
+      if (doc.getElementById('lifecycle-overlay-style')) return;
+      const style = doc.createElement('style');
+      style.id = 'lifecycle-overlay-style';
+      style.textContent = `
+        .lifecycle-overlay {
+          position: absolute;
+          inset: 0;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 50;
+          border-radius: inherit;
+          overflow: hidden;
+        }
+        .lifecycle-overlay.hidden { display: none; }
+        .lifecycle-overlay.placeholder {
+          background: rgba(255, 255, 255, 0.88);
+        }
+        .lifecycle-overlay.processing {
+          background: rgba(255, 255, 255, 0.74);
+        }
+        .lifecycle-skeleton {
+          width: 100%;
+          height: 100%;
+          background:
+            linear-gradient(100deg, rgba(255, 255, 255, 0.56), rgba(255, 255, 255, 0.88), rgba(255, 255, 255, 0.56)),
+            linear-gradient(135deg, rgba(12, 102, 228, 0.08), rgba(12, 102, 228, 0.03));
+          background-size: 220% 100%, 100% 100%;
+          animation: lifecycle-sheen 1.4s linear infinite;
+        }
+        .lifecycle-spinner {
+          width: 28px;
+          height: 28px;
+          border-radius: 50%;
+          border: 3px solid rgba(12, 102, 228, 0.18);
+          border-top-color: #0c66e4;
+          animation: lifecycle-spin 0.9s linear infinite;
+        }
+        .lifecycle-letter-badge {
+          position: absolute;
+          right: 6px;
+          bottom: 6px;
+          min-width: 22px;
+          height: 22px;
+          padding: 0 7px;
+          border-radius: 999px;
+          background: rgba(23, 48, 77, 0.88);
+          color: #fff;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 11px;
+          font-weight: 800;
+          letter-spacing: 0.04em;
+          z-index: 70;
+          box-shadow: 0 4px 10px rgba(15, 23, 42, 0.2);
+        }
+        .lifecycle-letter-badge.latest {
+          background: #0c66e4;
+        }
+        .lifecycle-actionable {
+          animation: lifecycle-pulse 1.7s ease-in-out infinite;
+          box-shadow: 0 0 0 3px rgba(12, 102, 228, 0.18);
+        }
+        @keyframes lifecycle-spin { to { transform: rotate(360deg); } }
+        @keyframes lifecycle-sheen {
+          from { background-position: 200% 0, 0 0; }
+          to { background-position: -20% 0, 0 0; }
+        }
+        @keyframes lifecycle-pulse {
+          0%, 100% { box-shadow: 0 0 0 0 rgba(12, 102, 228, 0.08); }
+          50% { box-shadow: 0 0 0 4px rgba(12, 102, 228, 0.22); }
+        }
+      `;
+      doc.head.appendChild(style);
+    }
+
+    function setOverlay(target, mode) {
+      if (!target) return;
+      const doc = target.ownerDocument;
+      ensureInnerStyles(doc);
+      if (getComputedStyle(target).position === 'static') {
+        target.style.position = 'relative';
+      }
+      let overlay = target.querySelector(':scope > .lifecycle-overlay');
+      if (!overlay) {
+        overlay = doc.createElement('div');
+        overlay.className = 'lifecycle-overlay hidden';
+        target.appendChild(overlay);
+      }
+      if (!mode || mode === 'ready') {
+        overlay.className = 'lifecycle-overlay hidden';
+        overlay.innerHTML = '';
+        return;
+      }
+      overlay.className = `lifecycle-overlay ${mode}`;
+      overlay.innerHTML = mode === 'processing'
+        ? '<div class="lifecycle-spinner"></div>'
+        : '<div class="lifecycle-skeleton"></div>';
+    }
+
+    function applyLetterBadge(target, label, latest = false) {
+      if (!target) return;
+      const doc = target.ownerDocument;
+      ensureInnerStyles(doc);
+      if (getComputedStyle(target).position === 'static') {
+        target.style.position = 'relative';
+      }
+      let badge = target.querySelector(':scope > .lifecycle-letter-badge');
+      if (!badge) {
+        badge = doc.createElement('div');
+        badge.className = 'lifecycle-letter-badge';
+        target.appendChild(badge);
+      }
+      badge.textContent = label;
+      badge.classList.toggle('latest', latest);
+    }
+
+    function setActionable(target, enabled) {
+      if (!target) return;
+      ensureInnerStyles(target.ownerDocument);
+      target.classList.toggle('lifecycle-actionable', enabled);
+    }
+
+    function configureCameraFrame() {
+      const win = cameraFrame.contentWindow;
+      const doc = cameraFrame.contentDocument;
+      if (!win || !doc || doc.body.dataset.lifecycleConfigured === 'ready') return;
+
+      ensureInnerStyles(doc);
+      const originalCapture = win.capture.bind(win);
+
+      win.capture = () => {
+        if (state.captures.length >= PAGE_LABELS.length) return;
+        originalCapture();
+        const label = PAGE_LABELS[state.captures.length];
+        state.captures.push({ label, capturedAt: performance.now() });
+        render();
+      };
+
+      win.thumbTap = () => {
+        if (state.captures.length > 0) {
+          state.screen = 'document';
+          render();
+        }
+      };
+
+      win.leftActionTap = () => {
+        if (state.captures.length === 0) {
+          return;
+        }
+        state.screen = 'document';
+        render();
+      };
+
+      doc.body.dataset.lifecycleConfigured = 'ready';
+    }
+
+    function configureDocumentFrame() {
+      const doc = documentFrame.contentDocument;
+      if (!doc || doc.body.dataset.lifecycleConfigured === 'ready') return;
+
+      ensureInnerStyles(doc);
+      const items = [...doc.querySelectorAll('.document-item')];
+      items.forEach((item, index) => {
+        item.style.display = index === 0 ? 'flex' : 'none';
+      });
+
+      const first = items[0];
+      if (first && !first.dataset.lifecycleConfigured) {
+        first.addEventListener('click', (event) => {
+          event.preventDefault();
+          if (state.captures.length > 0) {
+            state.screen = 'page-list';
+            render();
+          }
+        });
+        first.dataset.lifecycleConfigured = 'ready';
+      }
+
+      const docList = doc.getElementById('docList');
+      if (docList) {
+        docList.scrollTop = 0;
+        docList.style.paddingTop = '8px';
+      }
+
+      doc.body.dataset.lifecycleConfigured = 'ready';
+    }
+
+    function configurePageListFrame() {
+      const doc = pageListFrame.contentDocument;
+      if (!doc || doc.body.dataset.lifecycleConfigured === 'ready') return;
+      ensureInnerStyles(doc);
+      doc.body.dataset.lifecycleConfigured = 'ready';
+    }
+
+    function renderCameraFrame(lifecycle) {
+      const doc = cameraFrame.contentDocument;
+      if (!doc) return;
+
+      const thumbStack = doc.getElementById('thumbStack');
+      const pageBadge = doc.getElementById('pageBadge');
+      const thumbs = [...doc.querySelectorAll('#thumbStack .thumb-item')];
+      const captured = lifecycle.filter((entry) => entry.page);
+
+      if (pageBadge) {
+        pageBadge.textContent = String(captured.length);
+      }
+
+      thumbs.forEach((thumb, index) => {
+        const entry = captured[index];
+        if (!entry) return;
+        applyLetterBadge(thumb, entry.label, index === thumbs.length - 1);
+        setOverlay(thumb, entry.preview.small.phase === 'ready' ? 'ready' : 'placeholder');
+      });
+
+      setActionable(thumbStack, state.screen === 'camera' && captured.length > 0);
+    }
+
+    function renderDocumentFrame(lifecycle) {
+      const doc = documentFrame.contentDocument;
+      if (!doc) return;
+
+      const first = doc.querySelector('.document-item');
+      const thumb = first?.querySelector('.item-thumbnail');
+      const title = first?.querySelector('.item-title');
+      const metaSpans = first?.querySelectorAll('.item-meta span:not(.meta-separator)');
+      const firstPage = lifecycle[0];
+
+      if (title) title.textContent = '新規ドキュメント_2026-04-02';
+      if (metaSpans?.[0]) metaSpans[0].textContent = `${state.captures.length}ページ`;
+      if (metaSpans?.[1]) metaSpans[1].textContent = '2026/04/02';
+
+      applyLetterBadge(thumb, 'A');
+      if (!firstPage.page) {
+        setOverlay(thumb, 'placeholder');
+      } else {
+        setOverlay(thumb, firstPage.preview.small.phase === 'ready' ? 'ready' : 'placeholder');
+      }
+
+      setActionable(first, state.screen === 'document');
+    }
+
+    function renderPageListFrame(lifecycle) {
+      const doc = pageListFrame.contentDocument;
+      if (!doc) return;
+
+      const title = doc.getElementById('docTitle');
+      if (title) title.textContent = '新規ドキュメント_2026-04-02';
+
+      const cards = [...doc.querySelectorAll('.page-card')];
+      cards.forEach((card, index) => {
+        const entry = lifecycle[index];
+        if (!entry?.page) {
+          card.style.display = 'none';
+          return;
+        }
+        card.style.display = '';
+        const label = card.querySelector('.page-label');
+        const thumb = card.querySelector('.page-thumbnail');
+        if (label) label.textContent = entry.label;
+        applyLetterBadge(thumb, entry.label, index === state.captures.length - 1);
+        setOverlay(thumb, entry.preview.large.phase === 'ready' ? 'ready' : 'processing');
+      });
+    }
+
+    function renderTimeline(lifecycle) {
+      lifecycle.forEach((entry) => {
+        ['small', 'large'].forEach((kind) => {
+          const status = entry.preview[kind];
+          setStatus(timelineStatus[entry.label][kind], status.kind, status.label);
+          setTrack(timelineTracks[entry.label][kind], status.phase, status.progress);
+        });
+      });
+    }
+
+    function renderScreenMap(lifecycle) {
+      const captured = lifecycle.filter((entry) => entry.page);
+      const firstPage = lifecycle[0];
+      const latestPage = captured[captured.length - 1] ?? null;
+
+      const cameraLabel = latestPage
+        ? latestPage.preview.small.phase === 'ready' ? `${latestPage.label} small` : `${latestPage.label} placeholder`
+        : 'capturing';
+      const documentLabel = firstPage.page
+        ? firstPage.preview.small.phase === 'ready' ? 'A small' : 'A placeholder'
+        : 'waiting';
+
+      let pageListKind = 'waiting';
+      let pageListLabel = 'waiting';
+      if (captured.length > 0) {
+        const readyCount = captured.filter((entry) => entry.preview.large.phase === 'ready').length;
+        pageListKind = readyCount === captured.length ? 'ready' : 'pending';
+        pageListLabel = readyCount === captured.length
+          ? `${captured.length} large ready`
+          : `${readyCount}/${captured.length} large ready`;
+      }
+
+      setStatus(screenStatus.camera, latestPage ? (latestPage.preview.small.phase === 'ready' ? 'ready' : 'placeholder') : 'waiting', cameraLabel);
+      setStatus(screenStatus.document, firstPage.page ? (firstPage.preview.small.phase === 'ready' ? 'ready' : 'placeholder') : 'waiting', documentLabel);
+      setStatus(screenStatus['page-list'], pageListKind, pageListLabel);
+    }
+
+    function render() {
+      if (!state.ready) return;
+
+      const lifecycle = getLifecycle();
+      const currentStep = getCurrentStep(lifecycle);
+      setStep(currentStep);
+      setScreen(state.screen);
+      renderTimeline(lifecycle);
+      renderScreenMap(lifecycle);
+      renderCameraFrame(lifecycle);
+      renderDocumentFrame(lifecycle);
+      renderPageListFrame(lifecycle);
+    }
+
+    async function initializeDemo({ reload = false } = {}) {
+      state.ready = false;
+      state.screen = 'camera';
+      state.captures = [];
+
+      if (reload) {
+        [cameraFrame, documentFrame, pageListFrame].forEach((frame) => {
+          const url = new URL(frame.getAttribute('src'), window.location.origin);
+          url.searchParams.set('lifecycleReset', String(Date.now()));
+          frame.src = `${url.pathname}${url.search}`;
+        });
+      }
+
+      await Promise.all([waitForFrame(cameraFrame), waitForFrame(documentFrame), waitForFrame(pageListFrame)]);
+
+      configureCameraFrame();
+      configureDocumentFrame();
+      configurePageListFrame();
+
+      state.ready = true;
+      render();
+    }
+
+    resetBtn.addEventListener('click', () => {
+      initializeDemo({ reload: true });
+    });
+
+    initializeDemo();
+    renderTimer = window.setInterval(render, 200);
+  </script>
+</body>
+</html>

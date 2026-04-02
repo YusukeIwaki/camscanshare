@@ -22,7 +22,7 @@ import Layout from '../layouts/Layout.astro';
     </div>
     <div class="header-meta">
       <span class="badge badge-info">v0.1 Draft</span>
-      <span class="meta-date">最終更新: 2026-03-28</span>
+      <span class="meta-date">最終更新: 2026-04-01</span>
     </div>
   </div>
 </header>
@@ -37,7 +37,8 @@ import Layout from '../layouts/Layout.astro';
     <a href="#screen-camera-retake" class="nav-link">撮り直し</a>
     <a href="#screen-page-list" class="nav-link">ページ一覧</a>
     <a href="#screen-page-edit" class="nav-link">ページ編集</a>
-    <a href="/filters" class="nav-link nav-link-end">フィルタ解説</a>
+    <a href="/image_lifecycle/" class="nav-link nav-link-end">画像ライフサイクル</a>
+    <a href="/filters" class="nav-link">フィルタ設計</a>
   </div>
 </nav>
 
@@ -183,7 +184,7 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list">
             <li>
               <span class="spec-element">文書リスト</span>
-              <span class="spec-detail">ステータスバー直下から画面全体を使う縦スクロールのリストビュー。各行は左にアイコンサムネイル（48×48、1ページ目のプレビュー）、右に文書名・ページ数・作成日を表示。リスト末尾にはホームインジケーター（ジェスチャーバー）領域分のパディングを設け、最終行がジェスチャーバーに重ならないようにする。</span>
+              <span class="spec-detail">ステータスバー直下から画面全体を使う縦スクロールのリストビュー。各行は左にアイコンサムネイル（48×48 の正方形 small preview）、右に文書名・ページ数・作成日を表示。small preview が未生成ならプレイスホルダーを表示し、生成完了後に差し替える。リスト末尾にはホームインジケーター（ジェスチャーバー）領域分のパディングを設け、最終行がジェスチャーバーに重ならないようにする。</span>
             </li>
             <li>
               <span class="spec-element">選択モードアクションバー</span>
@@ -227,7 +228,7 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list">
             <li>
               <span class="spec-element">表示情報</span>
-              <span class="spec-detail">文書名、作成日、ページ数、アイコンサムネイル（1ページ目のプレビュー）</span>
+              <span class="spec-detail">文書名、作成日、ページ数、アイコンサムネイル（1ページ目の small preview。未生成時はプレイスホルダー）</span>
             </li>
             <li>
               <span class="spec-element">ソート順</span>
@@ -278,7 +279,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">左下アクションエリア</span>
-              <span class="spec-detail">撮影枚数に応じて表示が切り替わる。0枚時は閉じるボタン（✕アイコン）、1枚以上ではサムネイルスタック（枚数バッジ付き）を表示。最新の撮影ページがサムネイルの最前面に反映される。</span>
+              <span class="spec-detail">撮影枚数に応じて表示が切り替わる。0枚時は閉じるボタン（✕アイコン）、1枚以上ではサムネイルスタック（枚数バッジ付き）を表示。最新の撮影ページがサムネイルの最前面に反映され、small preview がまだ無ければプレイスホルダーを出す。</span>
             </li>
           </ul>
         </div>
@@ -288,7 +289,7 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list interaction-list">
             <li>
               <span class="interaction-trigger">撮影ボタンをタップ</span>
-              <span class="interaction-result">フラッシュエフェクト → 撮影画像が縮小しながら左下のサムネイルスタックへ飛んでいくアニメーション → 枚数バッジがインクリメント</span>
+              <span class="interaction-result">フラッシュエフェクト → source image を保存 → small / large preview 生成ジョブを投入 → 左下スタックにはまずプレイスホルダーが入り、small preview 完成後に差し替わる。枚数バッジは即時インクリメント。</span>
             </li>
             <li>
               <span class="interaction-trigger">閉じるボタンをタップ（0枚時）</span>
@@ -296,7 +297,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="interaction-trigger">サムネイルスタックをタップ（1枚以上）</span>
-              <span class="interaction-result">スキャンを終了し、ページ一覧画面へ遷移。クロップ処理が実行される。</span>
+              <span class="interaction-result">スキャンを終了し、ページ一覧画面へ遷移。large preview がまだ無ければ各カードはプレイスホルダー表示から始まり、バックグラウンド生成完了後に置き換わる。</span>
             </li>
             <li>
               <span class="interaction-trigger">紙の検出</span>
@@ -322,11 +323,11 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">保存時の Step 0 生成</span>
-              <span class="spec-detail">シャッター押下後は、保存対象となる高解像度画像に対してあらためて紙検出を実行し、その四角形を使って射影変換を行う。これがページ画像の基準となる Step 0 であり、「台形補正済み・正面化済みの元画像」として保存される。ファインダー中の低解像度検出結果はガイド表示のためだけに使い、保存時の補正には流用しない。</span>
+              <span class="spec-detail">シャッター押下後は、保存対象となる高解像度画像に対してあらためて紙検出を実行し、その四角形を使って射影変換を行う。これがページ画像の基準となる source image であり、「台形補正済み・正面化済みの元画像」として保存される。ファインダー中の低解像度検出結果はガイド表示のためだけに使い、保存時の補正には流用しない。</span>
             </li>
             <li>
               <span class="spec-element">Step 1 以降との関係</span>
-              <span class="spec-detail">文書処理パイプラインは、保存基準画像となる Step 0 の後に、必要に応じて「A4 に近い文書だけ比率を正規化する Step 1」を挟み、その後にフィルタ処理へ進む設計とする。カメラスキャン画面の責務は Step 0 を安定して作ることであり、Step 1 以降は編集・表示パイプライン側で扱えるよう段階を分離する。</span>
+              <span class="spec-detail">source image 保存後は、small preview（正方形）と large preview（ページ用）をバックグラウンドジョブで生成する。small はカメラ左下スタックと文書一覧、large はページ一覧とページ詳細の初期表示に使う。PDF 用の派生画像はここでは作らない。</span>
             </li>
             <li>
               <span class="spec-element">連続撮影</span>
@@ -440,7 +441,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">ページグリッド</span>
-              <span class="spec-detail">2カラムのグリッドでクロップ済みのページ画像を表示。各サムネイルの下にページ番号を表示。</span>
+              <span class="spec-detail">2カラムのグリッドで large preview を表示。各カードの下にページ番号を表示し、large preview が未生成ならプレイスホルダーで待たせる。</span>
             </li>
             <li>
               <span class="spec-element">ページ追加FAB</span>
@@ -478,7 +479,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="interaction-trigger">共有ボタンをタップ</span>
-              <span class="interaction-result">全ページをPDFに変換 → 共有シート（ボトムシート）が表示。Google Drive / AirDrop / その他の共有先を選択。</span>
+              <span class="interaction-result">各ページの source image と保存済み metadata（filter / rotation）だけを使って PDF を再生成 → 共有シート（ボトムシート）が表示。small / large / working preview は入力に使わない。</span>
             </li>
             <li>
               <span class="interaction-trigger">ページ追加FABをタップ</span>
@@ -522,7 +523,7 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list">
             <li>
               <span class="spec-element">PDF変換</span>
-              <span class="spec-detail">全ページを順番にPDFドキュメントへ統合。A4サイズにフィットさせる。</span>
+              <span class="spec-detail">各ページの source image を読み込み、保存済みの filter / rotation を適用して PDF ドキュメントへ統合。A4サイズにフィットさせる。preview 画像は使わない。</span>
             </li>
             <li>
               <span class="spec-element">共有シート</span>
@@ -557,7 +558,7 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list">
             <li>
               <span class="spec-element">ページプレビュー（スワイプ式）</span>
-              <span class="spec-detail">左右スワイプで文書内の全ページを切り替え可能。回転やフィルタの適用結果がページごとにリアルタイムで反映される。下部にページインジケータ（例: 1 / 3）を表示。</span>
+              <span class="spec-detail">左右スワイプで文書内の全ページを切り替え可能。通常表示は保存済み large preview を使い、フィルタ確認中だけ working preview を上に重ねて表示する。下部にページインジケータ（例: 1 / 3）を表示。</span>
             </li>
             <li>
               <span class="spec-element">アクションツールバー</span>
@@ -569,7 +570,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">適用ボタン</span>
-              <span class="spec-detail">右上に配置。編集内容（フィルタ・回転）を永続化する。永続化されるのは編集前の画像と編集パラメータであり、編集後の画像自体ではない。</span>
+              <span class="spec-detail">右上に配置。編集内容（フィルタ・回転）を永続化する。適用時は working preview を large preview に反映し、metadata を保存する。PDF 用には編集後画像を保存せず、source image と metadata の組み合わせを維持する。</span>
             </li>
           </ul>
         </div>
@@ -595,7 +596,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="interaction-trigger">フィルタを選択</span>
-              <span class="interaction-result">タップで現在ページにフィルタをリアルタイム適用。選択中フィルタは青枠でハイライト。</span>
+              <span class="interaction-result">タップで現在ページの working preview 生成を開始。重いフィルタ（白黒 / マジック / ホワイトボード）は約6.5秒、その他は1秒未満で確認画像を更新する。loading は画像領域上の spinner のみで、スワイプや別フィルタ選択は継続できる。</span>
             </li>
             <li>
               <span class="interaction-trigger">フィルタを長押し</span>
@@ -603,7 +604,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="interaction-trigger">適用ボタン</span>
-              <span class="interaction-result">全ページの編集内容（フィルタ・回転）を永続化し、ページ一覧画面へ戻る。</span>
+              <span class="interaction-result">全ページの編集内容（フィルタ・回転）を永続化し、確定した working preview を large preview にコピーしてからページ一覧画面へ戻る。</span>
             </li>
             <li>
               <span class="interaction-trigger">戻るボタン</span>
@@ -621,11 +622,11 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">永続化の対象</span>
-              <span class="spec-detail">編集後の画像ではなく、編集前の原画像＋編集パラメータ（フィルタ・回転）を保存。プレビュー画像はキャッシュのみで永続化しない。</span>
+              <span class="spec-detail">source image と編集パラメータ（フィルタ・回転）を保存する。表示用には永続化された small / large preview を持ち、編集中だけ working preview を別管理する。</span>
             </li>
             <li>
               <span class="spec-element">ページ編集の基準画像</span>
-              <span class="spec-detail">ページ編集が扱う原画像は、撮影時に生成された Step 0 とする。つまり、台形補正と正面化が終わった画像を基準に、回転・フィルタの編集状態を重ねていく。編集画面は撮影前の生画像には戻らない。</span>
+              <span class="spec-detail">ページ編集が扱う基準画像は、撮影時に生成された source image と保存済み large preview である。重いフィルタ確認では large preview 自体を直接書き換えず、working preview に対して変換結果を載せる。</span>
             </li>
           </ul>
         </div>
@@ -634,24 +635,24 @@ import Layout from '../layouts/Layout.astro';
           <h3>プレビュー生成パイプライン</h3>
           <ul class="spec-list">
             <li>
-              <span class="spec-element">オリジナル表示</span>
-              <span class="spec-detail">保存済みの Step 0 画像を読み込み、必要な回転だけを反映して表示する。これが全フィルタの共通の出発点になる。</span>
+              <span class="spec-element">通常表示</span>
+              <span class="spec-detail">保存済みの large preview を読み込み、必要な回転を反映して表示する。これがページ一覧・ページ詳細で共有する基準プレビューになる。</span>
             </li>
             <li>
-              <span class="spec-element">マジック以外のフィルタ</span>
-              <span class="spec-detail">くっきり・白黒・ホワイトボード・鮮やかは、Step 0 画像に対して軽量な色変換をその場で適用してプレビューする。フィルタ切り替え時は画像ファイルを作り直すのではなく、表示用ビットマップを再生成する。</span>
+              <span class="spec-element">working preview</span>
+              <span class="spec-detail">フィルタ確認時は large preview とは別に working preview を生成・表示する。キャンセルなら破棄、適用なら large preview にコピーし、その後 working 自体は破棄対象にできる。</span>
             </li>
             <li>
-              <span class="spec-element">マジックフィルタ</span>
-              <span class="spec-detail">マジックは Step 0 または Step 1 を入力として、文書向けの画像補正を適用してプレビューする。概念的には docs の Step 2・Step 3 に近い処理であり、照明ムラの補正、トーンの自動伸長、紙面の白化、色アクセントの保持をまとめて行う。A4 に近い文書では、必要に応じて Step 1 の比率正規化を経由してからマジック処理に入れる。</span>
+              <span class="spec-element">working preview cache</span>
+              <span class="spec-detail">working preview はページ詳細を開くたびに作り直さず、LRUキャッシュとして保持する。容量上限を超えたら古いページ単位で破棄し、再訪時のみ再生成する。</span>
             </li>
           </ul>
         </div>
 
         <div class="spec-group">
           <h3>フィルタプリセット</h3>
-          <p>オリジナル / くっきり / 白黒 / マジック（既定） / ホワイトボード / 鮮やか の6種。</p>
-          <p>各フィルタの効果・パラメータの詳細は <a href="/filters">フィルタ解説ページ</a> を参照。</p>
+          <p>オリジナル（既定） / くっきり / 白黒 / マジック / ホワイトボード / 鮮やか の6種。</p>
+          <p>各フィルタの効果・パラメータの詳細は <a href="/filters">フィルタ設計ページ</a> を参照。</p>
           <p class="spec-note">※ フィルタは今後の要件に応じて追加可能な拡張設計とする。</p>
         </div>
       </div>

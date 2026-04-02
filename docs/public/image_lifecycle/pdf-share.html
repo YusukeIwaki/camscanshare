@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>PDF 共有時の画像フロー</title>
+  <style>
+    :root {
+      --bg: #eef3f9;
+      --text: #17304d;
+      --subtle: #61758c;
+      --surface: rgba(255, 255, 255, 0.95);
+      --surface-soft: #f6f9fc;
+      --line: rgba(23, 48, 77, 0.1);
+      --brand: #0c66e4;
+      --brand-soft: rgba(12, 102, 228, 0.12);
+      --success: #1f845a;
+      --success-soft: rgba(31, 132, 90, 0.12);
+      --warn: #c25100;
+      --warn-soft: rgba(194, 81, 0, 0.12);
+      --shadow: 0 28px 72px rgba(15, 23, 42, 0.14);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: "Noto Sans JP", system-ui, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(12, 102, 228, 0.12), transparent 28%),
+        radial-gradient(circle at bottom right, rgba(31, 132, 90, 0.1), transparent 24%),
+        var(--bg);
+    }
+
+    .demo {
+      display: grid;
+      gap: 16px;
+    }
+
+    .step-header {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .step-controls {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid var(--line);
+      box-shadow: 0 16px 32px rgba(15, 23, 42, 0.08);
+    }
+
+    .step-nav-btn {
+      width: 36px;
+      height: 36px;
+      border: 0;
+      border-radius: 50%;
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-size: 20px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform 0.2s ease, opacity 0.2s ease, background 0.2s ease;
+    }
+
+    .step-nav-btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      background: rgba(12, 102, 228, 0.18);
+    }
+
+    .step-nav-btn:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+
+    .step-indicator {
+      min-width: 52px;
+      text-align: center;
+      color: var(--subtle);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .step-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .step-card,
+    .panel-card {
+      padding: 14px;
+      border-radius: 18px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      transition: transform 0.28s ease, border-color 0.28s ease, box-shadow 0.28s ease, opacity 0.28s ease;
+    }
+
+    .step-card {
+      display: grid;
+      gap: 6px;
+      opacity: 0.58;
+    }
+
+    .step-card.active {
+      opacity: 1;
+      transform: translateY(-2px);
+      border-color: rgba(12, 102, 228, 0.24);
+      box-shadow: 0 18px 36px rgba(12, 102, 228, 0.14);
+    }
+
+    .step-kicker {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--subtle);
+    }
+
+    .step-title {
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .step-copy,
+    .panel-card p,
+    .panel-card li {
+      margin: 0;
+      color: var(--subtle);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .stage {
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .phone-wrap {
+      display: flex;
+      justify-content: center;
+    }
+
+    .phone-frame {
+      width: 300px;
+      height: 620px;
+      background: #1a1a1a;
+      border-radius: 36px;
+      padding: 12px;
+      position: relative;
+      box-shadow: 0 24px 56px rgba(15, 23, 42, 0.22), inset 0 0 0 2px #333;
+    }
+
+    .phone-notch {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 80px;
+      height: 22px;
+      background: #1a1a1a;
+      border-radius: 0 0 12px 12px;
+      z-index: 10;
+    }
+
+    .screen-stack {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      border-radius: 24px;
+      background: #fff;
+    }
+
+    .screen-stack iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #fff;
+      pointer-events: none;
+    }
+
+    .side {
+      display: grid;
+      gap: 12px;
+    }
+
+    .panel-card h2 {
+      margin: 0 0 10px;
+      font-size: 15px;
+    }
+
+    .job-grid,
+    .asset-grid {
+      display: grid;
+      gap: 8px;
+    }
+
+    .job-row,
+    .asset-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: var(--surface-soft);
+      border: 1px solid var(--line);
+      transition: transform 0.28s ease, border-color 0.28s ease, box-shadow 0.28s ease, opacity 0.28s ease;
+      opacity: 0.58;
+    }
+
+    .job-row.active,
+    .asset-row.active {
+      opacity: 1;
+      transform: translateY(-1px);
+      border-color: rgba(12, 102, 228, 0.22);
+      box-shadow: 0 12px 24px rgba(12, 102, 228, 0.12);
+    }
+
+    .job-copy strong,
+    .asset-copy strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+
+    .job-copy span,
+    .asset-copy span {
+      display: block;
+      color: var(--subtle);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 90px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .status-pill.ready {
+      background: var(--success-soft);
+      color: var(--success);
+    }
+
+    .status-pill.pending {
+      background: var(--brand-soft);
+      color: var(--brand);
+    }
+
+    .status-pill.skipped {
+      background: rgba(9, 30, 66, 0.08);
+      color: var(--subtle);
+    }
+
+    .logic-list {
+      margin: 0;
+      padding-left: 18px;
+      display: grid;
+      gap: 6px;
+    }
+
+    @media (max-width: 900px) {
+      body { padding: 16px; }
+      .step-strip,
+      .stage { grid-template-columns: 1fr; }
+      .phone-frame {
+        width: min(300px, 100%);
+        height: 620px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="demo">
+    <div class="step-header">
+      <div class="step-controls">
+        <button type="button" class="step-nav-btn" id="prevBtn" aria-label="前のステップ">&lt;</button>
+        <span class="step-indicator" id="stepIndicator">1 / 4</span>
+        <button type="button" class="step-nav-btn" id="nextBtn" aria-label="次のステップ">&gt;</button>
+      </div>
+    </div>
+
+    <div class="step-strip">
+      <article class="step-card active" id="step-0">
+        <div class="step-kicker">Step 1</div>
+        <div class="step-title">Open Share</div>
+        <p class="step-copy">ページ一覧の share sheet を開く。</p>
+      </article>
+      <article class="step-card" id="step-1">
+        <div class="step-kicker">Step 2</div>
+        <div class="step-title">Read Source</div>
+        <p class="step-copy">preview を読まず、source image と metadata を列挙する。</p>
+      </article>
+      <article class="step-card" id="step-2">
+        <div class="step-kicker">Step 3</div>
+        <div class="step-title">Render Queue</div>
+        <p class="step-copy">heavy filter を含むページを順に PDF へ描画する。</p>
+      </article>
+      <article class="step-card" id="step-3">
+        <div class="step-kicker">Step 4</div>
+        <div class="step-title">Temp PDF</div>
+        <p class="step-copy">共有対象は temp PDF のみ。preview 系は関与しない。</p>
+      </article>
+    </div>
+
+    <div class="stage">
+      <div class="phone-wrap">
+        <div class="phone-frame">
+          <div class="phone-notch"></div>
+          <div class="screen-stack">
+            <iframe id="pageListFrame" src="/mockups/page-list.html" title="page list"></iframe>
+          </div>
+        </div>
+      </div>
+
+      <div class="side">
+        <section class="panel-card">
+          <h2>Render Queue</h2>
+          <div class="job-grid">
+            <div class="job-row active" id="job-1">
+              <div class="job-copy">
+                <strong>Page 1 · original</strong>
+                <span>軽いページはすぐに描画できる。</span>
+              </div>
+              <span class="status-pill pending" id="job-1-status">queued</span>
+            </div>
+            <div class="job-row" id="job-2">
+              <div class="job-copy">
+                <strong>Page 2 · whiteboard</strong>
+                <span>重い filter でも source image から直接描画する。</span>
+              </div>
+              <span class="status-pill pending" id="job-2-status">queued</span>
+            </div>
+            <div class="job-row" id="job-3">
+              <div class="job-copy">
+                <strong>Page 3 · color-limit</strong>
+                <span>metadata だけ見ればよく、preview cache は参照しない。</span>
+              </div>
+              <span class="status-pill pending" id="job-3-status">queued</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel-card">
+          <h2>Assets Used / Ignored</h2>
+          <div class="asset-grid">
+            <div class="asset-row active" id="asset-source">
+              <div class="asset-copy">
+                <strong>source image</strong>
+                <span>PDF の唯一の画素入力。</span>
+              </div>
+              <span class="status-pill ready" id="asset-source-status">used</span>
+            </div>
+            <div class="asset-row active" id="asset-metadata">
+              <div class="asset-copy">
+                <strong>saved metadata</strong>
+                <span>filter / rotation は保存済みの値だけを採用する。</span>
+              </div>
+              <span class="status-pill ready" id="asset-metadata-status">used</span>
+            </div>
+            <div class="asset-row" id="asset-previews">
+              <div class="asset-copy">
+                <strong>small / large / working</strong>
+                <span>画面用 preview。render queue では一切読まない。</span>
+              </div>
+              <span class="status-pill skipped" id="asset-previews-status">ignored</span>
+            </div>
+            <div class="asset-row" id="asset-pdf">
+              <div class="asset-copy">
+                <strong>temp PDF</strong>
+                <span>共有直前だけ cache に生成し、終わったら破棄対象。</span>
+              </div>
+              <span class="status-pill pending" id="asset-pdf-status">building</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel-card">
+          <h2>Rules</h2>
+          <ul class="logic-list">
+            <li>未 apply の working preview は共有結果に反映しない。使うのは保存済み metadata のみ。</li>
+            <li>preview cache が壊れていても、source と metadata が正しければ PDF は正しく作れる。</li>
+            <li>temp PDF は preview refresh と独立に再生成できる。</li>
+          </ul>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const steps = [...document.querySelectorAll('.step-card')];
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const stepIndicator = document.getElementById('stepIndicator');
+    const rows = {
+      job1: document.getElementById('job-1'),
+      job2: document.getElementById('job-2'),
+      job3: document.getElementById('job-3'),
+      source: document.getElementById('asset-source'),
+      metadata: document.getElementById('asset-metadata'),
+      previews: document.getElementById('asset-previews'),
+      pdf: document.getElementById('asset-pdf'),
+    };
+    const statuses = {
+      job1: document.getElementById('job-1-status'),
+      job2: document.getElementById('job-2-status'),
+      job3: document.getElementById('job-3-status'),
+      source: document.getElementById('asset-source-status'),
+      metadata: document.getElementById('asset-metadata-status'),
+      previews: document.getElementById('asset-previews-status'),
+      pdf: document.getElementById('asset-pdf-status'),
+    };
+    const pageListFrame = document.getElementById('pageListFrame');
+    let currentStep = 0;
+    let isReady = false;
+
+    function waitForFrame(frame) {
+      return new Promise((resolve) => {
+        const done = () => resolve(frame.contentDocument);
+        if (frame.contentDocument?.readyState === 'complete') {
+          done();
+        } else {
+          frame.addEventListener('load', done, { once: true });
+        }
+      });
+    }
+
+    function setStep(index) {
+      currentStep = index;
+      steps.forEach((step, stepIndex) => step.classList.toggle('active', stepIndex === index));
+      stepIndicator.textContent = `${index + 1} / ${steps.length}`;
+      prevBtn.disabled = !isReady || index === 0;
+      nextBtn.disabled = !isReady || index === steps.length - 1;
+    }
+
+    function setStatus(key, kind, label) {
+      const el = statuses[key];
+      if (!el) return;
+      el.className = `status-pill ${kind}`;
+      el.textContent = label;
+    }
+
+    function setActiveRows(keys) {
+      Object.entries(rows).forEach(([key, row]) => {
+        row.classList.toggle('active', keys.includes(key));
+      });
+    }
+
+    function applyScene(index) {
+      if (!isReady) return;
+      const win = pageListFrame.contentWindow;
+      const doc = pageListFrame.contentDocument;
+
+      setStep(index);
+      setStatus('job1', 'pending', 'queued');
+      setStatus('job2', 'pending', 'queued');
+      setStatus('job3', 'pending', 'queued');
+      setStatus('source', 'ready', 'used');
+      setStatus('metadata', 'ready', 'used');
+      setStatus('previews', 'skipped', 'ignored');
+      setStatus('pdf', 'pending', 'queued');
+      setActiveRows(['source', 'metadata', 'previews', 'pdf', 'job1']);
+      doc?.getElementById('shareSheet')?.classList.add('visible');
+
+      switch (index) {
+        case 0:
+          break;
+        case 1:
+          setActiveRows(['source', 'metadata', 'job1']);
+          setStatus('job1', 'pending', 'rendering');
+          setStatus('pdf', 'pending', 'building');
+          break;
+        case 2:
+          setStatus('job1', 'ready', 'done');
+          setStatus('job2', 'pending', 'rendering');
+          setStatus('pdf', 'pending', 'building');
+          setActiveRows(['source', 'metadata', 'job2']);
+          break;
+        case 3:
+          setStatus('job1', 'ready', 'done');
+          setStatus('job2', 'ready', 'done');
+          setStatus('job3', 'ready', 'done');
+          setStatus('pdf', 'ready', 'ready');
+          setActiveRows(['source', 'metadata', 'previews', 'pdf', 'job1', 'job2', 'job3']);
+          break;
+      }
+    }
+
+    prevBtn.addEventListener('click', () => applyScene(Math.max(0, currentStep - 1)));
+    nextBtn.addEventListener('click', () => applyScene(Math.min(steps.length - 1, currentStep + 1)));
+
+    waitForFrame(pageListFrame).then(() => {
+      isReady = true;
+      applyScene(0);
+    });
+  </script>
+</body>
+</html>

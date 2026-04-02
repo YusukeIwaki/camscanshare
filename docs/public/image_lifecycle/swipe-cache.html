@@ -1,0 +1,615 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>横スワイプ時の working preview cache</title>
+  <style>
+    :root {
+      --bg: #eef3f9;
+      --text: #17304d;
+      --subtle: #61758c;
+      --surface: rgba(255, 255, 255, 0.95);
+      --surface-soft: #f6f9fc;
+      --line: rgba(23, 48, 77, 0.1);
+      --brand: #0c66e4;
+      --brand-soft: rgba(12, 102, 228, 0.12);
+      --success: #1f845a;
+      --success-soft: rgba(31, 132, 90, 0.12);
+      --warn: #c25100;
+      --warn-soft: rgba(194, 81, 0, 0.12);
+      --cache: #6554c0;
+      --cache-soft: rgba(101, 84, 192, 0.12);
+      --shadow: 0 28px 72px rgba(15, 23, 42, 0.14);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: "Noto Sans JP", system-ui, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(12, 102, 228, 0.12), transparent 28%),
+        radial-gradient(circle at bottom right, rgba(101, 84, 192, 0.1), transparent 24%),
+        var(--bg);
+    }
+
+    .demo {
+      display: grid;
+      gap: 16px;
+    }
+
+    .step-header {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .step-controls {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid var(--line);
+      box-shadow: 0 16px 32px rgba(15, 23, 42, 0.08);
+    }
+
+    .step-nav-btn {
+      width: 36px;
+      height: 36px;
+      border: 0;
+      border-radius: 50%;
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-size: 20px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform 0.2s ease, opacity 0.2s ease, background 0.2s ease;
+    }
+
+    .step-nav-btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      background: rgba(12, 102, 228, 0.18);
+    }
+
+    .step-nav-btn:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+
+    .step-indicator {
+      min-width: 52px;
+      text-align: center;
+      color: var(--subtle);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .step-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .step-card,
+    .panel-card {
+      padding: 14px;
+      border-radius: 18px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      transition: transform 0.28s ease, border-color 0.28s ease, box-shadow 0.28s ease, opacity 0.28s ease;
+    }
+
+    .step-card {
+      display: grid;
+      gap: 6px;
+      opacity: 0.58;
+    }
+
+    .step-card.active {
+      opacity: 1;
+      transform: translateY(-2px);
+      border-color: rgba(12, 102, 228, 0.24);
+      box-shadow: 0 18px 36px rgba(12, 102, 228, 0.14);
+    }
+
+    .step-kicker {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--subtle);
+    }
+
+    .step-title {
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .step-copy,
+    .panel-card p,
+    .panel-card li {
+      margin: 0;
+      color: var(--subtle);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .stage {
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .phone-wrap {
+      display: flex;
+      justify-content: center;
+    }
+
+    .phone-frame {
+      width: 300px;
+      height: 620px;
+      background: #1a1a1a;
+      border-radius: 36px;
+      padding: 12px;
+      position: relative;
+      box-shadow: 0 24px 56px rgba(15, 23, 42, 0.22), inset 0 0 0 2px #333;
+    }
+
+    .phone-notch {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 80px;
+      height: 22px;
+      background: #1a1a1a;
+      border-radius: 0 0 12px 12px;
+      z-index: 10;
+    }
+
+    .screen-stack {
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      border-radius: 24px;
+      background: #fff;
+    }
+
+    .screen-stack iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #fff;
+      pointer-events: none;
+    }
+
+    .side {
+      display: grid;
+      gap: 12px;
+    }
+
+    .panel-card h2 {
+      margin: 0 0 10px;
+      font-size: 15px;
+    }
+
+    .cache-grid,
+    .status-grid {
+      display: grid;
+      gap: 8px;
+    }
+
+    .cache-row,
+    .status-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: var(--surface-soft);
+      border: 1px solid var(--line);
+      transition: transform 0.28s ease, border-color 0.28s ease, box-shadow 0.28s ease, opacity 0.28s ease;
+      opacity: 0.58;
+    }
+
+    .cache-row.active,
+    .status-row.active {
+      opacity: 1;
+      transform: translateY(-1px);
+      border-color: rgba(12, 102, 228, 0.22);
+      box-shadow: 0 12px 24px rgba(12, 102, 228, 0.12);
+    }
+
+    .cache-copy strong,
+    .status-copy strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+
+    .cache-copy span,
+    .status-copy span {
+      display: block;
+      color: var(--subtle);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 86px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .status-pill.ready {
+      background: var(--success-soft);
+      color: var(--success);
+    }
+
+    .status-pill.pending {
+      background: var(--brand-soft);
+      color: var(--brand);
+    }
+
+    .status-pill.cache {
+      background: var(--cache-soft);
+      color: var(--cache);
+    }
+
+    .status-pill.evicted {
+      background: var(--warn-soft);
+      color: var(--warn);
+    }
+
+    .status-pill.idle {
+      background: rgba(9, 30, 66, 0.08);
+      color: var(--subtle);
+    }
+
+    .logic-list {
+      margin: 0;
+      padding-left: 18px;
+      display: grid;
+      gap: 6px;
+    }
+
+    @media (max-width: 900px) {
+      body { padding: 16px; }
+      .step-strip,
+      .stage { grid-template-columns: 1fr; }
+      .phone-frame {
+        width: min(300px, 100%);
+        height: 620px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="demo">
+    <div class="step-header">
+      <div class="step-controls">
+        <button type="button" class="step-nav-btn" id="prevBtn" aria-label="前のステップ">&lt;</button>
+        <span class="step-indicator" id="stepIndicator">1 / 4</span>
+        <button type="button" class="step-nav-btn" id="nextBtn" aria-label="次のステップ">&gt;</button>
+      </div>
+    </div>
+
+    <div class="step-strip">
+      <article class="step-card active" id="step-0">
+        <div class="step-kicker">Step 1</div>
+        <div class="step-title">P1 Hit</div>
+        <p class="step-copy">page 1 は working preview cache が温まっている。</p>
+      </article>
+      <article class="step-card" id="step-1">
+        <div class="step-kicker">Step 2</div>
+        <div class="step-title">P2 Miss</div>
+        <p class="step-copy">spinner を画像上だけに出して swipe は止めない。</p>
+      </article>
+      <article class="step-card" id="step-2">
+        <div class="step-kicker">Step 3</div>
+        <div class="step-title">P3 Miss</div>
+        <p class="step-copy">P2 の job 実行中でも次 page に進める。</p>
+      </article>
+      <article class="step-card" id="step-3">
+        <div class="step-kicker">Step 4</div>
+        <div class="step-title">Evict & Revisit</div>
+        <p class="step-copy">budget 超過で page 単位 eviction。戻ると再計算になる。</p>
+      </article>
+    </div>
+
+    <div class="stage">
+      <div class="phone-wrap">
+        <div class="phone-frame">
+          <div class="phone-notch"></div>
+          <div class="screen-stack">
+            <iframe id="pageEditFrame" src="/mockups/page-edit.html" title="page edit"></iframe>
+          </div>
+        </div>
+      </div>
+
+      <div class="side">
+        <section class="panel-card">
+          <h2>Working Cache (budget = 2 pages)</h2>
+          <div class="cache-grid">
+            <div class="cache-row active" id="cache-p1">
+              <div class="cache-copy">
+                <strong>Page 1 · whiteboard</strong>
+                <span>直前の詳細セッションで作成済み。</span>
+              </div>
+              <span class="status-pill cache" id="cache-p1-status">hot</span>
+            </div>
+            <div class="cache-row" id="cache-p2">
+              <div class="cache-copy">
+                <strong>Page 2 · whiteboard</strong>
+                <span>初回訪問時は miss。裏で生成を続ける。</span>
+              </div>
+              <span class="status-pill idle" id="cache-p2-status">cold</span>
+            </div>
+            <div class="cache-row" id="cache-p3">
+              <div class="cache-copy">
+                <strong>Page 3 · whiteboard</strong>
+                <span>P2 の job 中でも別 job として起動できる。</span>
+              </div>
+              <span class="status-pill idle" id="cache-p3-status">cold</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel-card">
+          <h2>Current Screen</h2>
+          <div class="status-grid">
+            <div class="status-row active" id="row-current-page">
+              <div class="status-copy">
+                <strong>visible page</strong>
+                <span>現在の page は committed large の上に working を重ねる。</span>
+              </div>
+              <span class="status-pill ready" id="current-page-status">P1 hit</span>
+            </div>
+            <div class="status-row" id="row-active-job">
+              <div class="status-copy">
+                <strong>active render job</strong>
+                <span>spinner は image area のみ。別 page へ swipe 可能。</span>
+              </div>
+              <span class="status-pill idle" id="active-job-status">none</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel-card">
+          <h2>Rules</h2>
+          <ul class="logic-list">
+            <li>working preview の正しさは committed large に依存しない。cache miss 時だけ再計算する。</li>
+            <li>late result は page id と request token が一致したときだけ前面に出す。</li>
+            <li>eviction は entry 単位ではなく page 単位でまとめて行う。</li>
+          </ul>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const WHITEBOARD_FILTER = 'brightness(1.3) contrast(1.6) saturate(0)';
+    const steps = [...document.querySelectorAll('.step-card')];
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const stepIndicator = document.getElementById('stepIndicator');
+    const cacheRows = {
+      p1: document.getElementById('cache-p1'),
+      p2: document.getElementById('cache-p2'),
+      p3: document.getElementById('cache-p3'),
+      current: document.getElementById('row-current-page'),
+      job: document.getElementById('row-active-job'),
+    };
+    const statuses = {
+      p1: document.getElementById('cache-p1-status'),
+      p2: document.getElementById('cache-p2-status'),
+      p3: document.getElementById('cache-p3-status'),
+      current: document.getElementById('current-page-status'),
+      job: document.getElementById('active-job-status'),
+    };
+    const pageEditFrame = document.getElementById('pageEditFrame');
+    let currentStep = 0;
+    let isReady = false;
+
+    function waitForFrame(frame) {
+      return new Promise((resolve) => {
+        const done = () => resolve(frame.contentDocument);
+        if (frame.contentDocument?.readyState === 'complete') {
+          done();
+        } else {
+          frame.addEventListener('load', done, { once: true });
+        }
+      });
+    }
+
+    function setStep(index) {
+      currentStep = index;
+      steps.forEach((step, stepIndex) => step.classList.toggle('active', stepIndex === index));
+      stepIndicator.textContent = `${index + 1} / ${steps.length}`;
+      prevBtn.disabled = !isReady || index === 0;
+      nextBtn.disabled = !isReady || index === steps.length - 1;
+    }
+
+    function setStatus(key, kind, label) {
+      const el = statuses[key];
+      if (!el) return;
+      el.className = `status-pill ${kind}`;
+      el.textContent = label;
+    }
+
+    function setActiveRows(keys) {
+      Object.entries(cacheRows).forEach(([key, row]) => {
+        row.classList.toggle('active', keys.includes(key));
+      });
+    }
+
+    function ensureInnerStyles(doc) {
+      if (doc.getElementById('lifecycle-swipe-style')) return;
+      const style = doc.createElement('style');
+      style.id = 'lifecycle-swipe-style';
+      style.textContent = `
+        .lifecycle-spinner-overlay,
+        .lifecycle-working-layer {
+          position: absolute;
+          inset: 0;
+          border-radius: inherit;
+          z-index: 40;
+        }
+        .lifecycle-spinner-overlay {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: rgba(255, 255, 255, 0.72);
+          backdrop-filter: blur(4px);
+        }
+        .lifecycle-spinner {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          border: 3px solid rgba(12, 102, 228, 0.18);
+          border-top-color: #0c66e4;
+          animation: lifecycle-spin 0.9s linear infinite;
+        }
+        .lifecycle-working-layer {
+          overflow: hidden;
+          pointer-events: none;
+          opacity: 0;
+          transition: opacity 0.25s ease;
+        }
+        .lifecycle-working-layer.ready { opacity: 1; }
+        @keyframes lifecycle-spin { to { transform: rotate(360deg); } }
+      `;
+      doc.head.appendChild(style);
+    }
+
+    function previewTarget(doc, pageIndex) {
+      return doc.getElementById(`preview-${pageIndex}`);
+    }
+
+    function clearPreviewArtifacts(doc, pageIndex) {
+      const target = previewTarget(doc, pageIndex);
+      if (!target) return;
+      target.querySelectorAll('.lifecycle-spinner-overlay, .lifecycle-working-layer').forEach((node) => node.remove());
+      target.style.filter = '';
+    }
+
+    function showSpinner(doc, pageIndex) {
+      const target = previewTarget(doc, pageIndex);
+      if (!target) return;
+      ensureInnerStyles(doc);
+      clearPreviewArtifacts(doc, pageIndex);
+      const overlay = doc.createElement('div');
+      overlay.className = 'lifecycle-spinner-overlay';
+      overlay.innerHTML = '<div class="lifecycle-spinner"></div>';
+      target.appendChild(overlay);
+    }
+
+    function showWorking(doc, pageIndex) {
+      const target = previewTarget(doc, pageIndex);
+      if (!target) return;
+      ensureInnerStyles(doc);
+      clearPreviewArtifacts(doc, pageIndex);
+      const layer = doc.createElement('div');
+      layer.className = 'lifecycle-working-layer';
+      layer.style.filter = WHITEBOARD_FILTER;
+      layer.innerHTML = target.innerHTML;
+      target.appendChild(layer);
+      requestAnimationFrame(() => layer.classList.add('ready'));
+    }
+
+    function setFilterActive(doc, filterName) {
+      doc.querySelectorAll('.filter-item').forEach((item) => {
+        item.classList.toggle('active', item.dataset.filter === filterName);
+      });
+    }
+
+    function ensureFilterPanelOpen() {
+      const win = pageEditFrame.contentWindow;
+      const doc = pageEditFrame.contentDocument;
+      const panel = doc?.getElementById('filterPanel');
+      if (win && panel && !panel.classList.contains('open') && typeof win.toggleFilter === 'function') {
+        win.toggleFilter();
+      }
+    }
+
+    function resetScene(doc) {
+      for (let i = 0; i < 3; i += 1) clearPreviewArtifacts(doc, i);
+      setFilterActive(doc, 'whiteboard');
+      ensureFilterPanelOpen();
+      setStatus('p1', 'cache', 'hot');
+      setStatus('p2', 'idle', 'cold');
+      setStatus('p3', 'idle', 'cold');
+      setStatus('current', 'ready', 'P1 hit');
+      setStatus('job', 'idle', 'none');
+      setActiveRows(['p1', 'current']);
+      showWorking(doc, 0);
+    }
+
+    function applyScene(index) {
+      if (!isReady) return;
+      const doc = pageEditFrame.contentDocument;
+      const win = pageEditFrame.contentWindow;
+      if (typeof win?.goToPage === 'function') win.goToPage(0);
+      resetScene(doc);
+      setStep(index);
+
+      switch (index) {
+        case 0:
+          break;
+        case 1:
+          if (typeof win?.goToPage === 'function') win.goToPage(1);
+          showSpinner(doc, 1);
+          setStatus('p2', 'pending', 'rendering');
+          setStatus('current', 'pending', 'P2 miss');
+          setStatus('job', 'pending', 'P2 · 6.5s');
+          setActiveRows(['p2', 'current', 'job']);
+          break;
+        case 2:
+          if (typeof win?.goToPage === 'function') win.goToPage(2);
+          showSpinner(doc, 2);
+          setStatus('p2', 'pending', 'rendering');
+          setStatus('p3', 'pending', 'rendering');
+          setStatus('current', 'pending', 'P3 miss');
+          setStatus('job', 'pending', 'P2 + P3');
+          setActiveRows(['p2', 'p3', 'current', 'job']);
+          break;
+        case 3:
+          clearPreviewArtifacts(doc, 0);
+          if (typeof win?.goToPage === 'function') win.goToPage(0);
+          showSpinner(doc, 0);
+          setStatus('p1', 'pending', 'rebuild');
+          setStatus('p2', 'evicted', 'evicted');
+          setStatus('p3', 'ready', 'ready');
+          setStatus('current', 'pending', 'P1 miss');
+          setStatus('job', 'pending', 'P1 · 6.5s');
+          setActiveRows(['p1', 'p2', 'p3', 'current', 'job']);
+          break;
+      }
+    }
+
+    prevBtn.addEventListener('click', () => applyScene(Math.max(0, currentStep - 1)));
+    nextBtn.addEventListener('click', () => applyScene(Math.min(steps.length - 1, currentStep + 1)));
+
+    waitForFrame(pageEditFrame).then(() => {
+      isReady = true;
+      applyScene(0);
+    });
+  </script>
+</body>
+</html>

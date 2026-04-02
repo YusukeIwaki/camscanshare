@@ -1,0 +1,681 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>ページ詳細での filter 確認</title>
+  <style>
+    :root {
+      --bg: #eef3f9;
+      --text: #17304d;
+      --subtle: #61758c;
+      --surface: rgba(255, 255, 255, 0.95);
+      --surface-soft: #f6f9fc;
+      --line: rgba(23, 48, 77, 0.1);
+      --brand: #0c66e4;
+      --brand-soft: rgba(12, 102, 228, 0.12);
+      --success: #1f845a;
+      --success-soft: rgba(31, 132, 90, 0.12);
+      --warn: #c25100;
+      --warn-soft: rgba(194, 81, 0, 0.12);
+      --cache: #6554c0;
+      --cache-soft: rgba(101, 84, 192, 0.12);
+      --shadow: 0 28px 72px rgba(15, 23, 42, 0.14);
+    }
+
+    * { box-sizing: border-box; }
+
+    body {
+      margin: 0;
+      padding: 20px;
+      font-family: "Noto Sans JP", system-ui, sans-serif;
+      color: var(--text);
+      background:
+        radial-gradient(circle at top left, rgba(12, 102, 228, 0.12), transparent 28%),
+        radial-gradient(circle at bottom right, rgba(101, 84, 192, 0.08), transparent 24%),
+        var(--bg);
+    }
+
+    .demo {
+      display: grid;
+      gap: 16px;
+    }
+
+    .step-header {
+      display: flex;
+      justify-content: flex-end;
+    }
+
+    .step-controls {
+      display: inline-flex;
+      align-items: center;
+      gap: 10px;
+      padding: 8px 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.9);
+      border: 1px solid var(--line);
+      box-shadow: 0 16px 32px rgba(15, 23, 42, 0.08);
+    }
+
+    .step-nav-btn {
+      width: 36px;
+      height: 36px;
+      border: 0;
+      border-radius: 50%;
+      background: var(--brand-soft);
+      color: var(--brand);
+      font-size: 20px;
+      font-weight: 800;
+      cursor: pointer;
+      transition: transform 0.2s ease, opacity 0.2s ease, background 0.2s ease;
+    }
+
+    .step-nav-btn:hover:not(:disabled) {
+      transform: translateY(-1px);
+      background: rgba(12, 102, 228, 0.18);
+    }
+
+    .step-nav-btn:disabled {
+      opacity: 0.35;
+      cursor: default;
+    }
+
+    .step-indicator {
+      min-width: 52px;
+      text-align: center;
+      color: var(--subtle);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .step-strip {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 10px;
+    }
+
+    .step-card,
+    .panel-card {
+      padding: 14px;
+      border-radius: 18px;
+      background: var(--surface);
+      border: 1px solid var(--line);
+      box-shadow: var(--shadow);
+      transition: transform 0.28s ease, border-color 0.28s ease, box-shadow 0.28s ease, opacity 0.28s ease;
+    }
+
+    .step-card {
+      display: grid;
+      gap: 6px;
+      opacity: 0.58;
+    }
+
+    .step-card.active {
+      opacity: 1;
+      transform: translateY(-2px);
+      border-color: rgba(12, 102, 228, 0.24);
+      box-shadow: 0 18px 36px rgba(12, 102, 228, 0.14);
+    }
+
+    .step-kicker {
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.05em;
+      text-transform: uppercase;
+      color: var(--subtle);
+    }
+
+    .step-title {
+      font-size: 14px;
+      font-weight: 800;
+    }
+
+    .step-copy,
+    .panel-card p,
+    .panel-card li {
+      margin: 0;
+      color: var(--subtle);
+      font-size: 12px;
+      line-height: 1.55;
+    }
+
+    .stage {
+      display: grid;
+      grid-template-columns: 300px minmax(0, 1fr);
+      gap: 16px;
+      align-items: start;
+    }
+
+    .phone-wrap {
+      display: flex;
+      justify-content: center;
+    }
+
+    .phone-frame {
+      width: 300px;
+      height: 620px;
+      background: #1a1a1a;
+      border-radius: 36px;
+      padding: 12px;
+      position: relative;
+      box-shadow: 0 24px 56px rgba(15, 23, 42, 0.22), inset 0 0 0 2px #333;
+    }
+
+    .phone-notch {
+      position: absolute;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      width: 80px;
+      height: 22px;
+      background: #1a1a1a;
+      border-radius: 0 0 12px 12px;
+      z-index: 10;
+    }
+
+    .screen-stack {
+      position: relative;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      border-radius: 24px;
+      background: #fff;
+    }
+
+    .screen-state {
+      position: absolute;
+      inset: 0;
+      opacity: 0;
+      transform: scale(0.985);
+      transition: opacity 0.4s ease, transform 0.4s ease;
+      pointer-events: none;
+    }
+
+    .screen-state.active {
+      opacity: 1;
+      transform: none;
+    }
+
+    .screen-state iframe {
+      width: 100%;
+      height: 100%;
+      border: 0;
+      background: #fff;
+      pointer-events: none;
+    }
+
+    .side {
+      display: grid;
+      gap: 12px;
+    }
+
+    .panel-card h2 {
+      margin: 0 0 10px;
+      font-size: 15px;
+    }
+
+    .state-grid,
+    .slot-grid {
+      display: grid;
+      gap: 8px;
+    }
+
+    .state-row,
+    .slot-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      gap: 10px;
+      align-items: center;
+      padding: 10px 12px;
+      border-radius: 14px;
+      background: var(--surface-soft);
+      border: 1px solid var(--line);
+      transition: transform 0.28s ease, border-color 0.28s ease, box-shadow 0.28s ease, opacity 0.28s ease;
+      opacity: 0.58;
+    }
+
+    .state-row.active,
+    .slot-row.active {
+      opacity: 1;
+      transform: translateY(-1px);
+      border-color: rgba(12, 102, 228, 0.22);
+      box-shadow: 0 12px 24px rgba(12, 102, 228, 0.12);
+    }
+
+    .state-copy strong,
+    .slot-copy strong {
+      display: block;
+      margin-bottom: 4px;
+      font-size: 13px;
+    }
+
+    .state-copy span,
+    .slot-copy span {
+      display: block;
+      color: var(--subtle);
+      font-size: 12px;
+      line-height: 1.5;
+    }
+
+    .status-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 92px;
+      padding: 6px 10px;
+      border-radius: 999px;
+      font-size: 11px;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .status-pill.ready {
+      background: var(--success-soft);
+      color: var(--success);
+    }
+
+    .status-pill.pending {
+      background: var(--brand-soft);
+      color: var(--brand);
+    }
+
+    .status-pill.idle,
+    .status-pill.waiting {
+      background: rgba(9, 30, 66, 0.08);
+      color: var(--subtle);
+    }
+
+    .status-pill.cache {
+      background: var(--cache-soft);
+      color: var(--cache);
+    }
+
+    .status-pill.discarded {
+      background: var(--warn-soft);
+      color: var(--warn);
+    }
+
+    .logic-list {
+      margin: 0;
+      padding-left: 18px;
+      display: grid;
+      gap: 6px;
+    }
+
+    @media (max-width: 900px) {
+      body { padding: 16px; }
+      .step-strip,
+      .stage { grid-template-columns: 1fr; }
+      .phone-frame {
+        width: min(300px, 100%);
+        height: 620px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="demo">
+    <div class="step-header">
+      <div class="step-controls">
+        <button type="button" class="step-nav-btn" id="prevBtn" aria-label="前のステップ">&lt;</button>
+        <span class="step-indicator" id="stepIndicator">1 / 4</span>
+        <button type="button" class="step-nav-btn" id="nextBtn" aria-label="次のステップ">&gt;</button>
+      </div>
+    </div>
+
+    <div class="step-strip">
+      <article class="step-card active" id="step-0">
+        <div class="step-kicker">Step 1</div>
+        <div class="step-title">Open Detail</div>
+        <p class="step-copy">ページ一覧の large preview をそのまま基準表示に使う。</p>
+      </article>
+      <article class="step-card" id="step-1">
+        <div class="step-kicker">Step 2</div>
+        <div class="step-title">Heavy Filter</div>
+        <p class="step-copy">working preview を 6.5 秒かけて生成し、large は汚さない。</p>
+      </article>
+      <article class="step-card" id="step-2">
+        <div class="step-kicker">Step 3</div>
+        <div class="step-title">Cancel</div>
+        <p class="step-copy">active working は捨てるが、cache は残す。</p>
+      </article>
+      <article class="step-card" id="step-3">
+        <div class="step-kicker">Step 4</div>
+        <div class="step-title">Reopen & Apply</div>
+        <p class="step-copy">cache hit の working を large にコピーして確定する。</p>
+      </article>
+    </div>
+
+    <div class="stage">
+      <div class="phone-wrap">
+        <div class="phone-frame">
+          <div class="phone-notch"></div>
+          <div class="screen-stack">
+            <div class="screen-state active" data-screen="list">
+              <iframe id="pageListFrame" src="/mockups/page-list.html" title="page list"></iframe>
+            </div>
+            <div class="screen-state" data-screen="edit">
+              <iframe id="pageEditFrame" src="/mockups/page-edit.html" title="page edit"></iframe>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="side">
+        <section class="panel-card">
+          <h2>State</h2>
+          <div class="state-grid">
+            <div class="state-row active" id="row-large">
+              <div class="state-copy">
+                <strong>committed large preview</strong>
+                <span>ページ一覧と詳細の通常表示に使う確定画像。</span>
+              </div>
+              <span class="status-pill idle" id="status-large">original</span>
+            </div>
+            <div class="state-row" id="row-working">
+              <div class="state-copy">
+                <strong>active working preview</strong>
+                <span>filter 確認用。spinner はこの slot のみを覆う。</span>
+              </div>
+              <span class="status-pill waiting" id="status-working">empty</span>
+            </div>
+            <div class="state-row" id="row-cache">
+              <div class="state-copy">
+                <strong>working preview cache</strong>
+                <span>`page-1 + whiteboard` の結果を再訪に使う。</span>
+              </div>
+              <span class="status-pill waiting" id="status-cache">cold</span>
+            </div>
+            <div class="state-row" id="row-small-refresh">
+              <div class="state-copy">
+                <strong>small refresh job</strong>
+                <span>small preview 面が必要なら apply 後に別ジョブで更新。</span>
+              </div>
+              <span class="status-pill waiting" id="status-small-refresh">idle</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel-card">
+          <h2>Decision</h2>
+          <div class="slot-grid">
+            <div class="slot-row active" id="slot-list">
+              <div class="slot-copy">
+                <strong>ページ一覧</strong>
+                <span>常に committed large preview だけを見る。</span>
+              </div>
+              <span class="status-pill ready" id="slot-list-status">original</span>
+            </div>
+            <div class="slot-row" id="slot-edit">
+              <div class="slot-copy">
+                <strong>ページ詳細</strong>
+                <span>large の上に working preview を重ねて確認する。</span>
+              </div>
+              <span class="status-pill waiting" id="slot-edit-status">waiting</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel-card">
+          <h2>Rules</h2>
+          <ul class="logic-list">
+            <li>loading は画像の上の spinner のみで、swipe と filter 再選択は止めない。</li>
+            <li>新しい filter 要求が来たら古い request token の結果は捨てる。</li>
+            <li>キャンセル時は active working を外すが、計算済み結果は cache として残してよい。</li>
+          </ul>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const WHITEBOARD_FILTER = 'brightness(1.3) contrast(1.6) saturate(0)';
+    const steps = [...document.querySelectorAll('.step-card')];
+    const prevBtn = document.getElementById('prevBtn');
+    const nextBtn = document.getElementById('nextBtn');
+    const stepIndicator = document.getElementById('stepIndicator');
+    const screens = [...document.querySelectorAll('.screen-state')];
+
+    const rows = {
+      large: document.getElementById('row-large'),
+      working: document.getElementById('row-working'),
+      cache: document.getElementById('row-cache'),
+      smallRefresh: document.getElementById('row-small-refresh'),
+      list: document.getElementById('slot-list'),
+      edit: document.getElementById('slot-edit'),
+    };
+
+    const statuses = {
+      large: document.getElementById('status-large'),
+      working: document.getElementById('status-working'),
+      cache: document.getElementById('status-cache'),
+      smallRefresh: document.getElementById('status-small-refresh'),
+      list: document.getElementById('slot-list-status'),
+      edit: document.getElementById('slot-edit-status'),
+    };
+
+    const pageListFrame = document.getElementById('pageListFrame');
+    const pageEditFrame = document.getElementById('pageEditFrame');
+    let currentStep = 0;
+    let isReady = false;
+
+    function waitForFrame(frame) {
+      return new Promise((resolve) => {
+        const done = () => resolve(frame.contentDocument);
+        if (frame.contentDocument?.readyState === 'complete') {
+          done();
+        } else {
+          frame.addEventListener('load', done, { once: true });
+        }
+      });
+    }
+
+    function setStep(index) {
+      currentStep = index;
+      steps.forEach((step, stepIndex) => step.classList.toggle('active', stepIndex === index));
+      stepIndicator.textContent = `${index + 1} / ${steps.length}`;
+      prevBtn.disabled = !isReady || index === 0;
+      nextBtn.disabled = !isReady || index === steps.length - 1;
+    }
+
+    function setScreen(name) {
+      screens.forEach((screen) => screen.classList.toggle('active', screen.dataset.screen === name));
+      rows.list.classList.toggle('active', name === 'list');
+      rows.edit.classList.toggle('active', name === 'edit');
+    }
+
+    function setStatus(key, kind, label) {
+      const el = statuses[key];
+      if (!el) return;
+      el.className = `status-pill ${kind}`;
+      el.textContent = label;
+    }
+
+    function setActiveRows(keys) {
+      Object.entries(rows).forEach(([key, row]) => {
+        row.classList.toggle('active', keys.includes(key));
+      });
+    }
+
+    function ensureInnerStyles(doc) {
+      if (doc.getElementById('lifecycle-filter-style')) return;
+      const style = doc.createElement('style');
+      style.id = 'lifecycle-filter-style';
+      style.textContent = `
+        .lifecycle-spinner-overlay,
+        .lifecycle-working-layer {
+          position: absolute;
+          inset: 0;
+          border-radius: inherit;
+          z-index: 40;
+        }
+        .lifecycle-spinner-overlay {
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          background: rgba(255, 255, 255, 0.72);
+          backdrop-filter: blur(4px);
+        }
+        .lifecycle-spinner {
+          width: 32px;
+          height: 32px;
+          border-radius: 50%;
+          border: 3px solid rgba(12, 102, 228, 0.18);
+          border-top-color: #0c66e4;
+          animation: lifecycle-spin 0.9s linear infinite;
+        }
+        .lifecycle-working-layer {
+          overflow: hidden;
+          pointer-events: none;
+          opacity: 0;
+          transition: opacity 0.25s ease;
+        }
+        .lifecycle-working-layer.ready { opacity: 1; }
+        @keyframes lifecycle-spin { to { transform: rotate(360deg); } }
+      `;
+      doc.head.appendChild(style);
+    }
+
+    function listPreviewTarget(doc) {
+      return doc.querySelector('.page-card[data-page="0"] .scanned-page');
+    }
+
+    function editPreviewTarget(doc) {
+      return doc.getElementById('preview-0');
+    }
+
+    function setListCommitted(doc, filterCss) {
+      const target = listPreviewTarget(doc);
+      if (target) target.style.filter = filterCss || '';
+    }
+
+    function setEditCommitted(doc, filterCss) {
+      const target = editPreviewTarget(doc);
+      if (target) target.style.filter = filterCss || '';
+    }
+
+    function setFilterActive(doc, filterName) {
+      doc.querySelectorAll('.filter-item').forEach((item) => {
+        item.classList.toggle('active', item.dataset.filter === filterName);
+      });
+    }
+
+    function ensureFilterPanelOpen() {
+      const win = pageEditFrame.contentWindow;
+      const doc = pageEditFrame.contentDocument;
+      const panel = doc?.getElementById('filterPanel');
+      if (win && panel && !panel.classList.contains('open') && typeof win.toggleFilter === 'function') {
+        win.toggleFilter();
+      }
+    }
+
+    function clearEditArtifacts(doc) {
+      const target = editPreviewTarget(doc);
+      if (!target) return;
+      target.querySelectorAll('.lifecycle-spinner-overlay, .lifecycle-working-layer').forEach((node) => node.remove());
+      target.style.filter = target.dataset.committedFilter || '';
+    }
+
+    function showEditSpinner(doc) {
+      const target = editPreviewTarget(doc);
+      if (!target) return;
+      ensureInnerStyles(doc);
+      clearEditArtifacts(doc);
+      const overlay = doc.createElement('div');
+      overlay.className = 'lifecycle-spinner-overlay';
+      overlay.innerHTML = '<div class="lifecycle-spinner"></div>';
+      target.appendChild(overlay);
+    }
+
+    function showWorkingLayer(doc, filterCss) {
+      const target = editPreviewTarget(doc);
+      if (!target) return;
+      ensureInnerStyles(doc);
+      clearEditArtifacts(doc);
+      const layer = doc.createElement('div');
+      layer.className = 'lifecycle-working-layer';
+      layer.style.filter = filterCss;
+      layer.innerHTML = target.innerHTML;
+      target.appendChild(layer);
+      requestAnimationFrame(() => layer.classList.add('ready'));
+    }
+
+    function resetScene(listDoc, editDoc) {
+      setListCommitted(listDoc, '');
+      setEditCommitted(editDoc, '');
+      const preview = editPreviewTarget(editDoc);
+      if (preview) preview.dataset.committedFilter = '';
+      clearEditArtifacts(editDoc);
+      setFilterActive(editDoc, 'original');
+      ensureFilterPanelOpen();
+    }
+
+    function applyScene(index) {
+      if (!isReady) return;
+      const listDoc = pageListFrame.contentDocument;
+      const editDoc = pageEditFrame.contentDocument;
+      const editWin = pageEditFrame.contentWindow;
+
+      resetScene(listDoc, editDoc);
+      if (typeof editWin?.goToPage === 'function') editWin.goToPage(0);
+
+      setStep(index);
+      setScreen('list');
+      setActiveRows(['large', 'list']);
+      setStatus('large', 'ready', 'original');
+      setStatus('working', 'waiting', 'empty');
+      setStatus('cache', 'waiting', 'cold');
+      setStatus('smallRefresh', 'waiting', 'idle');
+      setStatus('list', 'ready', 'original');
+      setStatus('edit', 'waiting', 'waiting');
+
+      switch (index) {
+        case 0:
+          break;
+        case 1:
+          setScreen('edit');
+          ensureFilterPanelOpen();
+          setFilterActive(editDoc, 'whiteboard');
+          showEditSpinner(editDoc);
+          setStatus('working', 'pending', 'rendering');
+          setStatus('cache', 'pending', 'building');
+          setStatus('edit', 'pending', 'spinner only');
+          setActiveRows(['working', 'cache', 'edit']);
+          break;
+        case 2:
+          setStatus('working', 'discarded', 'discarded');
+          setStatus('cache', 'cache', 'stored');
+          setStatus('edit', 'waiting', 'closed');
+          setActiveRows(['large', 'cache', 'list']);
+          break;
+        case 3: {
+          const preview = editPreviewTarget(editDoc);
+          if (preview) preview.dataset.committedFilter = WHITEBOARD_FILTER;
+          setEditCommitted(editDoc, WHITEBOARD_FILTER);
+          clearEditArtifacts(editDoc);
+          setListCommitted(listDoc, WHITEBOARD_FILTER);
+          setStatus('large', 'ready', 'whiteboard');
+          setStatus('working', 'discarded', 'promoted');
+          setStatus('cache', 'cache', 'stored');
+          setStatus('smallRefresh', 'pending', 'queued');
+          setStatus('list', 'ready', 'updated');
+          setStatus('edit', 'waiting', 'applied');
+          setActiveRows(['large', 'cache', 'smallRefresh', 'list']);
+          break;
+        }
+      }
+    }
+
+    prevBtn.addEventListener('click', () => applyScene(Math.max(0, currentStep - 1)));
+    nextBtn.addEventListener('click', () => applyScene(Math.min(steps.length - 1, currentStep + 1)));
+
+    Promise.all([waitForFrame(pageListFrame), waitForFrame(pageEditFrame)]).then(() => {
+      isReady = true;
+      applyScene(0);
+    });
+  </script>
+</body>
+</html>
