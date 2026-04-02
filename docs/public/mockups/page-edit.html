@@ -548,7 +548,7 @@
       <span class="filter-name">白黒</span>
     </button>
 
-    <button class="filter-item active" data-filter="magic" data-css="brightness(1.4) contrast(2) saturate(0.3)" >
+    <button class="filter-item" data-filter="magic" data-css="brightness(1.4) contrast(2) saturate(0.3)" >
       <div class="filter-preview magic">
         <div class="fline" style="width:50%"></div>
         <div class="fline" style="width:85%"></div>
@@ -596,8 +596,8 @@ let currentPage = 0;
 let filterOpen = false;
 
 // Default filter
-const DEFAULT_FILTER = 'magic';
-const DEFAULT_FILTER_CSS = 'brightness(1.4) contrast(2) saturate(0.3)';
+const DEFAULT_FILTER = 'original';
+const DEFAULT_FILTER_CSS = '';
 
 // Per-page edit state: tracks pending (unsaved) changes
 const editState = Array.from({ length: TOTAL_PAGES }, () => ({

@@ -20,7 +20,7 @@ const filters = [
   {
     key: 'magic',
     name: 'マジック',
-    description: 'OpenCV による比率正規化・照明補正・自動トーン伸長・紙面白化・色保持を組み合わせた決定的パイプライン。既定フィルタ。',
+    description: 'OpenCV による比率正規化・照明補正・自動トーン伸長・紙面白化・色保持を組み合わせた決定的パイプライン。重いが効果の強い文書向けフィルタ。',
     formula: 'A4 ratio normalization → Flat-field correction → Auto RMODE → Paper whitening + color-aware saturation restore',
     detail: 'A4 に近い比率の文書は、画素数をほぼ維持したまま正確な A4 比率へ寄せる（Step 1）。その後、Lab 色空間の L チャンネルをぼかし面で割り戻して照明ムラを除去し（Step 2）、ヒストグラムの黒白点で自動ストレッチする。最終段では紙領域だけを白化しつつ、紙色を中和した参照画像から彩度を一部戻す。色ペンや罫線だけでなく、色付きセルや色付き紙面が一定量ある資料では、その色面を白化しすぎずに残す。',
     steps: [
