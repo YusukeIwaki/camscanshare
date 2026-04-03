@@ -1,3 +1,4 @@
 CamScanShare.xcodeproj/project.xcworkspace/xcuserdata/
 CamScanShare.xcodeproj/xcuserdata/
 *.xcuserstate
+Vendor/opencv2.xcframework/
