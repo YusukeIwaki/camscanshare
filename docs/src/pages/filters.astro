@@ -13,9 +13,9 @@ const filters = [
   {
     key: 'bw',
     name: '白黒',
-    description: '照明補正後のヒストグラム傾向を見て 2色 / 3色 / 4色 を自動選択する適応型モノクロ化。',
-    formula: 'Flat-field correction → Histogram analysis → choose 2/3/4 tones → grayscale quantization',
-    detail: 'Lab の L チャンネルを照明補正してから、平坦化された輝度ヒストグラムの下側テール量と中間調の占有率を見て、2色・3色・4色のどれが安全かを先に決める。量子化の前段では Sauvola 系の局所しきい値を紙面保護用マスクとして使い、清潔なフォームは 2色、通常文書は 3色、手書きや低コントラスト文書は 4色へ寄せる。',
+    description: '照明補正 + 局所平均による適応的二値化で、背景を白飛ばしし文字をくっきり黒にする。',
+    formula: 'Flat-field correction → Local-mean normalization → Global threshold → Small-component removal',
+    detail: 'Lab の L チャンネルを照明補正・ヒストグラムストレッチしてからメディアンフィルタでノイズ除去。大きなガウシアンカーネル（71×71）で局所平均を求め、各画素を局所平均で除算して正規化する。正規化画像にグローバル閾値を適用して二値化し、最後に連結成分分析で面積 8px 未満の孤立黒点を除去する。',
   },
   {
     key: 'magic',

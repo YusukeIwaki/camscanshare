@@ -13,7 +13,7 @@ FILTERS = {
         "ops": [("contrast", 1.4), ("brightness", 1.05)],
     },
     "bw": {
-        # illumination correction + Sauvola-like text mask + multitone grayscale quantization
+        # illumination correction + local-mean adaptive threshold
         "pipeline": "document_bw",
     },
     "whiteboard": {
@@ -824,57 +824,27 @@ def apply_document_bw_pipeline(image: np.ndarray) -> np.ndarray:
 
     rgb = cv2.cvtColor(working, cv2.COLOR_BGR2RGB)
     lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)
-    luminance, a_channel, b_channel = cv2.split(lab)
+    luminance = cv2.split(lab)[0]
 
     illumination = estimate_illumination(luminance)
     flattened_l = flat_field_correct(luminance, illumination)
     stretched_l = auto_stretch_luminance(flattened_l)
     denoised_l = cv2.medianBlur(stretched_l, 3)
-    emphasized_l = apply_channel_contrast(denoised_l, 1.48)
 
-    paper_mask = build_paper_mask(denoised_l, a_channel, b_channel)
-    soft_structure, strong_structure = build_sauvola_structure_masks(emphasized_l)
-    _, dark_mask = cv2.threshold(
-        denoised_l,
-        max(70, int(np.percentile(denoised_l, 12))),
-        255,
-        cv2.THRESH_BINARY_INV,
+    local_mean = cv2.GaussianBlur(denoised_l.astype(np.float32), (71, 71), 0)
+    normalized = (denoised_l.astype(np.float32) / (local_mean + 1.0)) * 255.0
+    normalized = np.clip(normalized, 0, 255).astype(np.uint8)
+    _, binary = cv2.threshold(normalized, 228, 255, cv2.THRESH_BINARY)
+
+    black_mask = cv2.bitwise_not(binary)
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(
+        black_mask, connectivity=8,
     )
-    strong_structure = cv2.bitwise_or(strong_structure, dark_mask)
-    kernel3 = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
-    soft_structure = cv2.dilate(soft_structure, kernel3, iterations=1)
-    strong_structure = cv2.dilate(strong_structure, kernel3, iterations=1)
-    structure_mask = cv2.bitwise_or(soft_structure, strong_structure)
-    structure_mask = cv2.medianBlur(structure_mask, 3)
-    paper_mask = cv2.bitwise_and(paper_mask, cv2.bitwise_not(structure_mask))
-    paper_mask = cv2.morphologyEx(
-        paper_mask,
-        cv2.MORPH_CLOSE,
-        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (5, 5)),
-        iterations=2,
-    )
+    for label in range(1, num_labels):
+        if stats[label, cv2.CC_STAT_AREA] < 8:
+            binary[labels == label] = 255
 
-    toned_l = blend_toward_value(emphasized_l, paper_mask, 246.0, 0.44)
-    toned_l32 = toned_l.astype(np.float32)
-    structure_idx = structure_mask > 0
-    toned_l32[structure_idx] = np.minimum(toned_l32[structure_idx], emphasized_l[structure_idx].astype(np.float32) * 0.92)
-    toned_l = np.clip(toned_l32, 0, 255).astype(np.uint8)
-    _, bright_background = cv2.threshold(toned_l, 182, 255, cv2.THRESH_BINARY)
-    bright_background = cv2.bitwise_and(bright_background, cv2.bitwise_not(structure_mask))
-    toned_l = blend_toward_value(toned_l, bright_background, 236.0, 0.32)
-    quantize_source = cv2.GaussianBlur(toned_l, (3, 3), 0)
-    tone_count = estimate_bw_tone_count(quantize_source)
-    sample = build_quantization_sample(quantize_source)
-    levels = fit_quantization_levels(sample, tone_count)
-    quantized = quantize_with_levels(quantize_source, levels)
-
-    if tone_count >= 3:
-        paper_floor = levels[-2]
-        quantized[paper_mask > 0] = np.maximum(quantized[paper_mask > 0], paper_floor)
-    else:
-        quantized[paper_mask > 0] = levels[-1]
-
-    bw = cv2.merge([quantized, quantized, quantized])
+    bw = cv2.merge([binary, binary, binary])
     if upscale:
         bw = cv2.resize(bw, (original_width, original_height), interpolation=cv2.INTER_AREA)
     return bw

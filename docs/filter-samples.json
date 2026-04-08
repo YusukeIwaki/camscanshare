@@ -161,6 +161,38 @@
     }
   },
   {
+    "id": "school-handout-portrait",
+    "title": "木目の床で斜め撮影した学校配布プリント",
+    "description": "暖色の木目背景が大きく写り込み、紙は斜め配置。細かい本文と図版、QRコードが混在する。",
+    "source": "docs/public/algorithm/user-samples/20260407_201908.jpg",
+    "step0": "docs/public/algorithm/steps/user-samples/20260407_201908-step0.png",
+    "step1": "docs/public/algorithm/steps/user-samples/20260407_201908-step1.png",
+    "magic_step2": "docs/public/algorithm/steps/user-samples/20260407_201908-step2.png",
+    "magic_step3": "docs/public/algorithm/steps/user-samples/20260407_201908-step3.png",
+    "filters": {
+      "sharpen": "docs/public/algorithm/filters/sharpen/20260407_201908.png",
+      "bw": "docs/public/algorithm/filters/bw/20260407_201908.png",
+      "whiteboard": "docs/public/algorithm/filters/whiteboard/20260407_201908.png",
+      "vivid": "docs/public/algorithm/filters/vivid/20260407_201908.png"
+    }
+  },
+  {
+    "id": "school-handout-landscape",
+    "title": "横向きで撮影した学校配布プリント",
+    "description": "同系統のプリントを横向きのまま撮影した例。木目背景と反射があり、紙面は回転した状態で写っている。",
+    "source": "docs/public/algorithm/user-samples/20260407_201920.jpg",
+    "step0": "docs/public/algorithm/steps/user-samples/20260407_201920-step0.png",
+    "step1": "docs/public/algorithm/steps/user-samples/20260407_201920-step1.png",
+    "magic_step2": "docs/public/algorithm/steps/user-samples/20260407_201920-step2.png",
+    "magic_step3": "docs/public/algorithm/steps/user-samples/20260407_201920-step3.png",
+    "filters": {
+      "sharpen": "docs/public/algorithm/filters/sharpen/20260407_201920.png",
+      "bw": "docs/public/algorithm/filters/bw/20260407_201920.png",
+      "whiteboard": "docs/public/algorithm/filters/whiteboard/20260407_201920.png",
+      "vivid": "docs/public/algorithm/filters/vivid/20260407_201920.png"
+    }
+  },
+  {
     "id": "whiteboard-facilitation",
     "title": "暗所気味のホワイトボード落書き",
     "description": "古い携帯写真らしい低解像度・周辺減光・黒縁つきのホワイトボード。色マーカーの細線が多い。",
