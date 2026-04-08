@@ -19,6 +19,10 @@ using cv::Point;
 using cv::Scalar;
 using cv::Size;
 
+Mat applyDocumentBwFilter(const Mat& sourceRgb);
+Mat applyMagicFilter(const Mat& sourceRgb);
+Mat applyWhiteboardFilter(const Mat& sourceRgb);
+
 std::vector<uint8_t> bytesOfMat(const Mat& mat) {
     Mat continuous = mat.isContinuous() ? mat : mat.clone();
     return std::vector<uint8_t>(
@@ -102,6 +106,19 @@ UIImage* uiImageFromRGBMat(const Mat& rgb) {
     CGColorSpaceRelease(colorSpace);
     CGDataProviderRelease(provider);
     return image;
+}
+
+Mat applyNamedFilter(const NSString* filterName, const Mat& rgb) {
+    if ([filterName isEqualToString:@"magic"]) {
+        return applyMagicFilter(rgb);
+    }
+    if ([filterName isEqualToString:@"bw"]) {
+        return applyDocumentBwFilter(rgb);
+    }
+    if ([filterName isEqualToString:@"whiteboard"]) {
+        return applyWhiteboardFilter(rgb);
+    }
+    return Mat();
 }
 
 Mat rotateRGBMat(const Mat& rgb, NSInteger rotationDegrees) {
@@ -1000,59 +1017,58 @@ Mat applyDocumentBwFilter(const Mat& sourceRgb) {
 
     Mat lab;
     cv::cvtColor(workingRgb, lab, cv::COLOR_RGB2Lab);
-    std::vector<Mat> channels;
-    cv::split(lab, channels);
-    const Mat& luminance = channels[0];
-    const Mat& aChannel = channels[1];
-    const Mat& bChannel = channels[2];
+    Mat luminance;
+    cv::extractChannel(lab, luminance, 0);
 
     Mat illumination = estimateIllumination(luminance);
     Mat flattenedL = flatFieldCorrect(luminance, illumination);
     Mat stretchedL = autoStretchLuminance(flattenedL);
     Mat denoisedL;
     cv::medianBlur(stretchedL, denoisedL, 3);
-    Mat emphasizedL = applyChannelContrast(denoisedL, 1.48);
+    Mat denoisedFloat;
+    denoisedL.convertTo(denoisedFloat, CV_32F);
 
-    Mat paperMask = buildPaperMask(denoisedL, aChannel, bChannel);
-    auto [softStructure0, strongStructure0] = buildSauvolaStructureMasks(emphasizedL);
+    Mat localMean;
+    cv::GaussianBlur(denoisedFloat, localMean, Size(71, 71), 0.0);
 
-    Mat darkMask;
-    const double darkThreshold = std::max(70.0, percentileOfMat(denoisedL, 0.12));
-    cv::threshold(denoisedL, darkMask, darkThreshold, 255.0, cv::THRESH_BINARY_INV);
+    Mat denominator;
+    cv::add(localMean, Scalar::all(1.0), denominator);
 
-    Mat strongStructure;
-    cv::bitwise_or(strongStructure0, darkMask, strongStructure);
-    Mat softStructure = softStructure0.clone();
-    Mat kernel3 = cv::getStructuringElement(cv::MORPH_ELLIPSE, Size(3, 3));
-    cv::dilate(softStructure, softStructure, kernel3, Point(-1, -1), 1);
-    cv::dilate(strongStructure, strongStructure, kernel3, Point(-1, -1), 1);
+    Mat normalizedFloat;
+    cv::divide(denoisedFloat, denominator, normalizedFloat, 255.0);
 
-    Mat structureMask;
-    cv::bitwise_or(softStructure, strongStructure, structureMask);
-    cv::medianBlur(structureMask, structureMask, 3);
+    Mat normalized;
+    normalizedFloat.convertTo(normalized, CV_8U);
 
-    Mat invertedStructureMask = invertMask(structureMask);
-    cv::bitwise_and(paperMask, invertedStructureMask, paperMask);
-    Mat kernel5 = cv::getStructuringElement(cv::MORPH_ELLIPSE, Size(5, 5));
-    cv::morphologyEx(paperMask, paperMask, cv::MORPH_CLOSE, kernel5, Point(-1, -1), 2);
+    Mat binary;
+    cv::threshold(normalized, binary, 228.0, 255.0, cv::THRESH_BINARY);
 
-    Mat tonedL0 = blendTowardValue(emphasizedL, paperMask, 246.0, 0.44);
-    Mat tonedL = maskedMinScaled(tonedL0, emphasizedL, structureMask, 0.92);
+    Mat blackMask;
+    cv::bitwise_not(binary, blackMask);
 
-    Mat brightBackground;
-    cv::threshold(tonedL, brightBackground, 182.0, 255.0, cv::THRESH_BINARY);
-    cv::bitwise_and(brightBackground, invertedStructureMask, brightBackground);
-    Mat quantizeSource = blendTowardValue(tonedL, brightBackground, 236.0, 0.32);
-    cv::GaussianBlur(quantizeSource, quantizeSource, Size(3, 3), 0.0);
+    Mat labels;
+    Mat stats;
+    Mat centroids;
+    const int numLabels = cv::connectedComponentsWithStats(
+        blackMask,
+        labels,
+        stats,
+        centroids,
+        8,
+        CV_32S);
 
-    const int toneCount = estimateBwToneCount(quantizeSource);
-    const std::vector<float> sample = buildQuantizationSample(quantizeSource);
-    const std::vector<int> levels = fitQuantizationLevels(sample, toneCount);
-    Mat quantized = quantizeWithLevels(quantizeSource, levels);
-    applyPaperFloor(quantized, paperMask, levels, toneCount);
+    for (int label = 1; label < numLabels; ++label) {
+        const int area = stats.at<int>(label, cv::CC_STAT_AREA);
+        if (area >= 8) {
+            continue;
+        }
+        Mat componentMask;
+        cv::compare(labels, Scalar::all(label), componentMask, cv::CMP_EQ);
+        binary.setTo(Scalar::all(255), componentMask);
+    }
 
     Mat bwRgb;
-    cv::merge(std::vector<Mat>{quantized, quantized, quantized}, bwRgb);
+    cv::merge(std::vector<Mat>{binary, binary, binary}, bwRgb);
 
     Mat outputRgb;
     if (upscale) {
@@ -1158,6 +1174,22 @@ Mat applyWhiteboardFilter(const Mat& sourceRgb) {
 
 @implementation OpenCVDocumentFilterBridge
 
++ (nullable UIImage *)applyFilterNamed:(NSString *)filterName
+                               toImage:(UIImage *)image
+                       rotationDegrees:(NSInteger)rotationDegrees {
+    Mat sourceRgb = rgbMatFromUIImage(image);
+    if (sourceRgb.empty()) {
+        return nil;
+    }
+
+    Mat rotated = rotateRGBMat(sourceRgb, rotationDegrees);
+    Mat filtered = applyNamedFilter(filterName, rotated);
+    if (filtered.empty()) {
+        return nil;
+    }
+    return uiImageFromRGBMat(filtered);
+}
+
 + (nullable UIImage *)applyPreviewFilterNamed:(NSString *)filterName
                                       toImage:(UIImage *)image
                               rotationDegrees:(NSInteger)rotationDegrees
@@ -1169,15 +1201,8 @@ Mat applyWhiteboardFilter(const Mat& sourceRgb) {
 
     Mat rotated = rotateRGBMat(sourceRgb, rotationDegrees);
     Mat working = resizeToMaxDimension(rotated, maxDimension);
-
-    Mat filtered;
-    if ([filterName isEqualToString:@"magic"]) {
-        filtered = applyMagicFilter(working);
-    } else if ([filterName isEqualToString:@"bw"]) {
-        filtered = applyDocumentBwFilter(working);
-    } else if ([filterName isEqualToString:@"whiteboard"]) {
-        filtered = applyWhiteboardFilter(working);
-    } else {
+    Mat filtered = applyNamedFilter(filterName, working);
+    if (filtered.empty()) {
         return nil;
     }
 

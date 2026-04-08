@@ -264,67 +264,57 @@ class ImageProcessor @Inject constructor() {
 
         val lab = Mat()
         Imgproc.cvtColor(workingRgb, lab, Imgproc.COLOR_RGB2Lab)
-        val channels = ArrayList<Mat>(3)
-        Core.split(lab, channels)
-        val luminance = channels[0]
-        val aChannel = channels[1]
-        val bChannel = channels[2]
+        val luminance = Mat()
+        Core.extractChannel(lab, luminance, 0)
 
         val illumination = estimateIllumination(luminance)
         val flattenedL = flatFieldCorrect(luminance, illumination)
         val stretchedL = autoStretchLuminance(flattenedL)
         val denoisedL = Mat()
         Imgproc.medianBlur(stretchedL, denoisedL, 3)
-        val emphasizedL = applyChannelContrast(denoisedL, 1.48)
+        val denoisedFloat = Mat()
+        denoisedL.convertTo(denoisedFloat, CvType.CV_32F)
 
-        val paperMask = buildPaperMask(denoisedL, aChannel, bChannel)
-        val (softStructure0, strongStructure0) = buildSauvolaStructureMasks(emphasizedL)
+        val localMean = Mat()
+        Imgproc.GaussianBlur(denoisedFloat, localMean, Size(71.0, 71.0), 0.0)
 
-        val darkMask = Mat()
-        val darkThreshold = maxOf(70.0, percentileOfMat(denoisedL, 0.12))
-        Imgproc.threshold(denoisedL, darkMask, darkThreshold, 255.0, Imgproc.THRESH_BINARY_INV)
+        val denominator = Mat()
+        Core.add(localMean, Scalar.all(1.0), denominator)
 
-        val strongStructure = Mat()
-        Core.bitwise_or(strongStructure0, darkMask, strongStructure)
-        val softStructure = softStructure0.clone()
+        val normalizedFloat = Mat()
+        Core.divide(denoisedFloat, denominator, normalizedFloat, 255.0)
 
-        val kernel3 = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(3.0, 3.0))
-        Imgproc.dilate(softStructure, softStructure, kernel3, org.opencv.core.Point(-1.0, -1.0), 1)
-        Imgproc.dilate(strongStructure, strongStructure, kernel3, org.opencv.core.Point(-1.0, -1.0), 1)
+        val normalized = Mat()
+        normalizedFloat.convertTo(normalized, CvType.CV_8U)
 
-        val structureMask = Mat()
-        Core.bitwise_or(softStructure, strongStructure, structureMask)
-        Imgproc.medianBlur(structureMask, structureMask, 3)
+        val binary = Mat()
+        Imgproc.threshold(normalized, binary, 228.0, 255.0, Imgproc.THRESH_BINARY)
 
-        val invertedStructureMask = invertMask(structureMask)
-        Core.bitwise_and(paperMask, invertedStructureMask, paperMask)
-        val kernel5 = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(5.0, 5.0))
-        Imgproc.morphologyEx(
-            paperMask,
-            paperMask,
-            Imgproc.MORPH_CLOSE,
-            kernel5,
-            org.opencv.core.Point(-1.0, -1.0),
-            2,
+        val blackMask = Mat()
+        Core.bitwise_not(binary, blackMask)
+
+        val labels = Mat()
+        val stats = Mat()
+        val centroids = Mat()
+        val numLabels = Imgproc.connectedComponentsWithStats(
+            blackMask,
+            labels,
+            stats,
+            centroids,
+            8,
+            CvType.CV_32S,
         )
 
-        val tonedL0 = blendTowardValue(emphasizedL, paperMask, 246.0, 0.44)
-        val tonedL = maskedMinScaled(tonedL0, emphasizedL, structureMask, 0.92)
-
-        val brightBackground = Mat()
-        Imgproc.threshold(tonedL, brightBackground, 182.0, 255.0, Imgproc.THRESH_BINARY)
-        Core.bitwise_and(brightBackground, invertedStructureMask, brightBackground)
-        val quantizeSource = blendTowardValue(tonedL, brightBackground, 236.0, 0.32)
-        Imgproc.GaussianBlur(quantizeSource, quantizeSource, Size(3.0, 3.0), 0.0)
-
-        val toneCount = estimateBwToneCount(quantizeSource)
-        val sample = buildQuantizationSample(quantizeSource)
-        val levels = fitQuantizationLevels(sample, toneCount)
-        val quantized = quantizeWithLevels(quantizeSource, levels)
-        applyPaperFloor(quantized, paperMask, levels, toneCount)
+        val componentMask = Mat()
+        for (label in 1 until numLabels) {
+            val area = stats.get(label, Imgproc.CC_STAT_AREA)?.getOrNull(0)?.toInt() ?: continue
+            if (area >= 8) continue
+            Core.compare(labels, Scalar.all(label.toDouble()), componentMask, Core.CMP_EQ)
+            binary.setTo(Scalar.all(255.0), componentMask)
+        }
 
         val bwRgb = Mat()
-        Core.merge(listOf(quantized, quantized, quantized), bwRgb)
+        Core.merge(listOf(binary, binary, binary), bwRgb)
 
         val outputRgb = Mat()
         if (upscale) {
@@ -340,28 +330,21 @@ class ImageProcessor @Inject constructor() {
         workingRgb.release()
         lab.release()
         luminance.release()
-        aChannel.release()
-        bChannel.release()
         illumination.release()
         flattenedL.release()
         stretchedL.release()
         denoisedL.release()
-        emphasizedL.release()
-        paperMask.release()
-        softStructure0.release()
-        strongStructure0.release()
-        darkMask.release()
-        strongStructure.release()
-        softStructure.release()
-        kernel3.release()
-        structureMask.release()
-        invertedStructureMask.release()
-        kernel5.release()
-        tonedL0.release()
-        tonedL.release()
-        brightBackground.release()
-        quantizeSource.release()
-        quantized.release()
+        denoisedFloat.release()
+        localMean.release()
+        denominator.release()
+        normalizedFloat.release()
+        normalized.release()
+        binary.release()
+        blackMask.release()
+        labels.release()
+        stats.release()
+        centroids.release()
+        componentMask.release()
         bwRgb.release()
         outputRgb.release()
 

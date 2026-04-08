@@ -31,6 +31,26 @@ enum ImageFilterService {
         previewMaxDimension: CGFloat = 1800
     ) -> UIImage? {
         let normalizedRotation = ((rotation % 360) + 360) % 360
+        if preset == .bw {
+            if intent == .preview,
+                let renderedPreview = OpenCVDocumentFilterBridge.applyPreviewFilterNamed(
+                    preset.rawValue,
+                    to: image,
+                    rotationDegrees: normalizedRotation,
+                    maxDimension: previewMaxDimension
+                )
+            {
+                return renderedPreview
+            }
+            if let rendered = OpenCVDocumentFilterBridge.applyFilterNamed(
+                preset.rawValue,
+                to: image,
+                rotationDegrees: normalizedRotation
+            ) {
+                return rendered
+            }
+        }
+
         if intent == .preview,
             shouldUseOpenCVPreviewPipeline(for: preset),
             let renderedPreview = OpenCVDocumentFilterBridge.applyPreviewFilterNamed(
