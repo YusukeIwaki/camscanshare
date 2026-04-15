@@ -74,6 +74,12 @@ agent-browser scrollintoview "#screen-page-edit .phone-frame" && agent-browser s
 - CSSトークンは `--ds-*` プレフィックスで Layout.astro に定義済み
 - 新しい画面セクションを追加する場合は、既存セクションの構造（`screen-section`）に倣う
 
+### iOSプロジェクト生成ルール
+
+- `iosapp/project.yml` が iOS のプロジェクト定義の source of truth。`iosapp/CamScanShare.xcodeproj/project.pbxproj` は XcodeGen の生成物として扱い、Git には含めない。
+- iOS アプリをビルドする前は毎回 `xcodegen --spec iosapp/project.yml --project iosapp` を実行して `.xcodeproj` を再生成すること。
+- Xcode の project 設定を変えたい場合は `project.pbxproj` を直接編集せず、`iosapp/project.yml` を更新してから XcodeGen を再実行すること。
+
 ## 画面一覧
 
 | 画面名 | モックファイル | 概要 |

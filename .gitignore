@@ -1,4 +1,8 @@
 tmp/
 .envrc
 /.codex
-/iosbuild.sh
+/ios_debug_build.sh
+/ios_adhoc_build.sh
+/iosapp/CamScanShare.xcodeproj/project.pbxproj
+/iosapp/build/
+/iosapp/ExportOptions.plist
