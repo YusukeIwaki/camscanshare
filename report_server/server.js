@@ -7,6 +7,7 @@ import QRCode from "qrcode";
 import AdmZip from "adm-zip";
 
 const app = express();
+app.set("trust proxy", true);
 const port = Number.parseInt(process.env.PORT ?? "3030", 10);
 const reportToken = process.env.REPORT_SERVER_TOKEN ?? crypto.randomBytes(24).toString("hex");
 const reportsDir = path.resolve("reports");
@@ -27,7 +28,12 @@ app.get("/", (_req, res) => {
 });
 
 app.get("/qr", async (req, res) => {
-  res.send(await renderQrPage({ ngrokUrl: "", qrDataUrl: null, qrPayload: null, errorMessage: null }));
+  res.send(await renderQrPage({
+    ngrokUrl: inferDefaultPublicBaseUrl(req),
+    qrDataUrl: null,
+    qrPayload: null,
+    errorMessage: null,
+  }));
 });
 
 app.get("/reports", async (_req, res) => {
@@ -168,6 +174,22 @@ function normalizePublicBaseUrl(value) {
   parsed.search = "";
   parsed.hash = "";
   return parsed.toString().replace(/\/$/, "");
+}
+
+function inferDefaultPublicBaseUrl(req) {
+  const host = (req.get("host") ?? "").trim();
+  if (!host) return "";
+
+  const hostname = host
+    .replace(/:\d+$/, "")
+    .replace(/^\[(.*)\]$/, "$1")
+    .toLowerCase();
+
+  if (hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1") {
+    return "";
+  }
+
+  return `${req.protocol}://${host}`;
 }
 
 function buildQrPayload(reportEndpoint, token) {
@@ -347,23 +369,30 @@ async function renderQrPage({ ngrokUrl, qrDataUrl, qrPayload, errorMessage }) {
       color: var(--text);
     }
     .wrap {
-      max-width: 760px;
+      max-width: 1080px;
       margin: 0 auto;
       padding: 32px 20px 48px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
     }
     .card {
       background: var(--card);
       border: 1px solid var(--line);
-      border-radius: 24px;
-      padding: 24px;
-      box-shadow: 0 12px 28px rgba(19, 36, 64, 0.06);
+      border-radius: 20px;
+      padding: 18px 20px;
+      box-shadow: 0 12px 28px rgba(19, 36, 64, 0.05);
     }
     h1 {
-      margin: 0 0 8px;
+      margin: 0 0 6px;
       font-size: 28px;
     }
     .lead {
-      margin: 0 0 24px;
+      margin: 0;
       color: var(--muted);
       line-height: 1.6;
     }
@@ -415,11 +444,16 @@ async function renderQrPage({ ngrokUrl, qrDataUrl, qrPayload, errorMessage }) {
       line-height: 1.5;
     }
     .result {
-      margin-top: 28px;
-      padding-top: 28px;
-      border-top: 1px solid var(--line);
       display: grid;
-      gap: 20px;
+      gap: 16px;
+      margin-top: 16px;
+    }
+    .grid {
+      display: grid;
+      gap: 16px;
+    }
+    .form-card {
+      max-width: 720px;
     }
     .qr-box {
       display: inline-flex;
@@ -438,14 +472,31 @@ async function renderQrPage({ ngrokUrl, qrDataUrl, qrPayload, errorMessage }) {
       font-size: 13px;
       line-height: 1.6;
     }
+    .result-link {
+      margin-top: 4px;
+      font-size: 14px;
+    }
+    .result-link a {
+      color: var(--primary);
+      text-decoration: none;
+      font-weight: 600;
+    }
+    .result-link a:hover {
+      text-decoration: underline;
+    }
   </style>
 </head>
 <body>
   <main class="wrap">
-    <section class="card">
-      <h1>改善レポート QR 発行</h1>
-      <p class="lead">Android アプリが読み取る QR コードを生成します。ngrok で公開した URL を手入力し、アクセストークン入りのカスタム URI を発行します。</p>
-      ${errorMessage ? `<div class="error">${escapeHtml(errorMessage)}</div>` : ""}
+    <div class="header">
+      <div>
+        <h1>改善レポート QR 発行</h1>
+        <p class="lead">Android / iOS アプリが読み取る QR コードを生成します。ngrok で公開した URL を入力し、アクセストークン入りのカスタム URI を発行します。</p>
+      </div>
+    </div>
+    <section class="grid">
+      <section class="card form-card">
+        ${errorMessage ? `<div class="error">${escapeHtml(errorMessage)}</div>` : ""}
       <form method="post" action="/qr">
         <div class="field">
           <label for="ngrokUrl">ngrok の URL</label>
@@ -459,15 +510,19 @@ async function renderQrPage({ ngrokUrl, qrDataUrl, qrPayload, errorMessage }) {
         </div>
         <button type="submit">QRコード作成</button>
       </form>
+      </section>
       ${qrDataUrl ? `
-        <section class="result">
-          <div>
-            <label>生成された QR コード</label>
-            <div class="qr-box"><img src="${qrDataUrl}" alt="改善レポート送信用 QR コード" width="320" height="320"></div>
-          </div>
-          <div>
-            <label>カスタム URI</label>
-            <div class="payload">${escapeHtml(qrPayload ?? "")}</div>
+        <section class="card">
+          <div class="result">
+            <div>
+              <label>生成された QR コード</label>
+              <div class="qr-box"><img src="${qrDataUrl}" alt="改善レポート送信用 QR コード" width="320" height="320"></div>
+            </div>
+            <div>
+              <label>カスタム URI</label>
+              <div class="payload">${escapeHtml(qrPayload ?? "")}</div>
+            </div>
+            <div class="result-link"><a href="/reports">レポート一覧へ</a></div>
           </div>
         </section>
       ` : ""}
