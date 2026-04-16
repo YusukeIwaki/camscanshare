@@ -7,6 +7,7 @@ import androidx.navigation.compose.rememberNavController
 import androidx.navigation.toRoute
 import io.github.yusukeiwaki.camscanshare.ui.camerascan.CameraScanScreen
 import io.github.yusukeiwaki.camscanshare.ui.documentlist.DocumentListScreen
+import io.github.yusukeiwaki.camscanshare.ui.improvementreport.ImprovementReportScreen
 import io.github.yusukeiwaki.camscanshare.ui.pageedit.PageEditScreen
 import io.github.yusukeiwaki.camscanshare.ui.pagelist.PageListScreen
 import kotlinx.serialization.Serializable
@@ -23,6 +24,14 @@ data class PageList(val documentId: Long)
 
 @Serializable
 data class PageEdit(val documentId: Long, val initialPageIndex: Int = 0)
+
+@Serializable
+data class ImprovementReport(
+    val pageId: Long,
+    val sourceImagePath: String,
+    val rotationDegrees: Int,
+    val currentFilterKey: String,
+)
 
 @Composable
 fun AppNavigation() {
@@ -77,6 +86,27 @@ fun AppNavigation() {
                 onRetake = { pageId ->
                     navController.navigate(CameraScan(route.documentId, retakePageId = pageId))
                 },
+                onImprovementReport = { page ->
+                    navController.navigate(
+                        ImprovementReport(
+                            pageId = page.pageId,
+                            sourceImagePath = page.imagePath,
+                            rotationDegrees = page.rotationDegrees,
+                            currentFilterKey = page.filterKey,
+                        )
+                    )
+                },
+            )
+        }
+
+        composable<ImprovementReport> { backStackEntry ->
+            val route = backStackEntry.toRoute<ImprovementReport>()
+            ImprovementReportScreen(
+                pageId = route.pageId,
+                sourceImagePath = route.sourceImagePath,
+                rotationDegrees = route.rotationDegrees,
+                currentFilterKey = route.currentFilterKey,
+                onClose = { navController.popBackStack() },
             )
         }
     }

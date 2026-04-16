@@ -37,6 +37,7 @@ import Layout from '../layouts/Layout.astro';
     <a href="#screen-camera-retake" class="nav-link">撮り直し</a>
     <a href="#screen-page-list" class="nav-link">ページ一覧</a>
     <a href="#screen-page-edit" class="nav-link">ページ編集</a>
+    <a href="#screen-improvement-report" class="nav-link">改善レポート送信</a>
     <a href="/filters" class="nav-link nav-link-end">フィルタ解説</a>
   </div>
 </nav>
@@ -151,6 +152,7 @@ import Layout from '../layouts/Layout.astro';
         </div>
         <div class="flow-node-sub">回転 / 撮り直し / フィルタ</div>
         <div class="flow-node-sub" style="font-size:11px; color:var(--ds-text-subtlest,#626f86); margin-top:4px;">撮り直し → カメラ（単発撮影）→ 自動で戻る</div>
+        <div class="flow-node-sub" style="font-size:11px; color:var(--ds-text-subtlest,#626f86); margin-top:4px;">フィルタ右端の「開発元に改善要望」→ 改善レポート送信 → QR読取で送信完了</div>
       </div>
 
       <div class="flow-return">
@@ -158,6 +160,7 @@ import Layout from '../layouts/Layout.astro';
         <span class="flow-return-label">← 戻る（文書一覧へ）</span>
       </div>
     </div>
+    <p class="flow-note">改善レポート送信はページ編集から派生する専用フロー。全フィルタの大プレビュー生成完了後に QR コードで送信先を読み取り、送信完了でページ編集へ戻る。</p>
   </section>
 
   <!-- Screen 1: Document List -->
@@ -548,7 +551,7 @@ import Layout from '../layouts/Layout.astro';
           <div class="phone-notch"></div>
           <iframe src="/mockups/page-edit.html" title="ページ編集画面"></iframe>
         </div>
-        <p class="mockup-hint">左右スワイプでページ切替、回転・フィルタを操作できます</p>
+        <p class="mockup-hint">左右スワイプでページ切替、回転・フィルタ操作に加えて右端の「開発元に改善要望」からレポート送信導線も確認できます</p>
       </div>
 
       <div class="screen-spec">
@@ -565,7 +568,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">フィルタパネル</span>
-              <span class="spec-detail">フィルタボタンをタップすると下部からスライドイン。横スクロールでプリセットフィルタを選択。タップで現在ページのみ、長押しで全ページ一括適用の確認ダイアログを表示。</span>
+              <span class="spec-detail">フィルタボタンをタップすると下部からスライドイン。横スクロールでプリセットフィルタを選択。通常フィルタはタップで現在ページのみ、長押しで全ページ一括適用の確認ダイアログを表示。パネル最右端には「開発元に改善要望」を置き、この項目だけはフィルタ適用を行わず改善レポート送信フローへ遷移する。</span>
             </li>
             <li>
               <span class="spec-element">適用ボタン</span>
@@ -600,6 +603,10 @@ import Layout from '../layouts/Layout.astro';
             <li>
               <span class="interaction-trigger">フィルタを長押し</span>
               <span class="interaction-result">「全ページに適用しますか？」確認ダイアログを表示。適用を選ぶと全ページに同じフィルタを一括適用。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">「開発元に改善要望」を選択</span>
+              <span class="interaction-result">フィルタ適用は行わず、「現在の元画像とフィルタ後の画像を開発元にすべて送信します。よろしいですか？」確認ダイアログを表示。OK を選ぶと改善レポート送信画面へ遷移する。</span>
             </li>
             <li>
               <span class="interaction-trigger">適用ボタン</span>
@@ -651,8 +658,116 @@ import Layout from '../layouts/Layout.astro';
         <div class="spec-group">
           <h3>フィルタプリセット</h3>
           <p>オリジナル（既定） / くっきり / 白黒 / マジック / ホワイトボード / 鮮やか の6種。</p>
+          <p>この6種に加えて、フィルタパネル右端にフィルタ適用を伴わない補助アクション「開発元に改善要望」を配置する。</p>
           <p>各フィルタの効果・パラメータの詳細は <a href="/filters">フィルタ解説ページ</a> を参照。</p>
           <p class="spec-note">※ フィルタは今後の要件に応じて追加可能な拡張設計とする。</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Screen 4b: Improvement Report -->
+  <section class="doc-section screen-section" id="screen-improvement-report">
+    <div class="section-header">
+      <div class="screen-number">画面 4b</div>
+      <h2>改善レポート送信</h2>
+      <p class="section-description">ページ編集のフィルタパネル最右端「開発元に改善要望」から遷移する専用画面。元画像と全フィルタの大プレビューを確認し、必要なら比較用の写真を追加したうえで、QR コードで送信先を読み取ってレポートを送信します。</p>
+    </div>
+
+    <div class="screen-layout">
+      <div class="screen-mockup">
+        <div class="phone-frame">
+          <div class="phone-notch"></div>
+          <iframe src="/mockups/improvement-report.html" title="改善レポート送信画面"></iframe>
+        </div>
+        <p class="mockup-hint">コメント入力、追加写真の選択、全プレビュー生成完了でのボタン活性化、戻る時の未送信確認を操作できます。QR 読取成功/失敗の分岐ボタンと送信完了表示はモック確認用です</p>
+      </div>
+
+      <div class="screen-spec">
+        <div class="spec-group">
+          <h3>画面要素</h3>
+          <ul class="spec-list">
+            <li>
+              <span class="spec-element">レポート情報カード</span>
+              <span class="spec-detail">アプリのバージョン / ビルド番号と日時（JST）を読み取り専用で表示。コメント入力欄だけが編集可能で必須項目とする。</span>
+            </li>
+            <li>
+              <span class="spec-element">追加写真セクション</span>
+              <span class="spec-detail">デフォルトで送られる元画像と全フィルタ画像とは別に、比較用の写真を任意で追加できる。OS 標準の写真ピッカーを開き、選択した画像だけを追加対象として一覧表示する。PDF など画像以外のファイルは選べない。</span>
+            </li>
+            <li>
+              <span class="spec-element">生成ステータス</span>
+              <span class="spec-detail">元画像を含む全フィルタ分の大プレビュー生成進捗を 0 / N 形式で表示。生成中だけローディング表示し、全件完了後はこの進捗カード自体を閉じる。</span>
+            </li>
+            <li>
+              <span class="spec-element">送信対象プレビュー一覧</span>
+              <span class="spec-detail">オリジナルを含む全フィルタの変換後プレビューを縦並びで大きく表示。各カードは個別に loading から実画像へ切り替わり、先に出来上がったものから順次確認できる。追加写真はこの一覧とは別管理だが、送信対象として同時に扱う。</span>
+            </li>
+            <li>
+              <span class="spec-element">フッターアクション</span>
+              <span class="spec-detail">左にキャンセル、右に「改善レポートサーバーへ」ボタンを配置。送信ボタンは全プレビュー生成完了かつコメント入力済みになるまで disabled のまま保持する。追加写真の有無は任意で、送信ボタン活性条件には含めない。</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="spec-group">
+          <h3>インタラクション</h3>
+          <ul class="spec-list interaction-list">
+            <li>
+              <span class="interaction-trigger">画面表示直後</span>
+              <span class="interaction-result">オリジナルと各フィルタの大プレビュー生成を並列で開始。共通の preview 生成コンポーネントを使い、出来上がったカードから順に実画像へ差し替える。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">「写真を追加」</span>
+              <span class="interaction-result">OS 標準の写真ピッカーを開く。画像を1枚選ぶと追加写真一覧へ即座に反映され、その写真も改善レポートに同梱される。この操作は全フィルタの生成中でも可能。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">生成中に戻る / キャンセル</span>
+              <span class="interaction-result">まだ送信可能状態に達していないため、そのまま前の画面へ戻る。未送信確認ダイアログは出さない。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">全プレビュー生成完了</span>
+              <span class="interaction-result">「改善レポートサーバーへ」ボタンを活性化。コメントが空欄の場合はボタンを disabled のままにし、コメント入力を促す補助文言へ切り替える。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">未送信のまま戻る / キャンセル</span>
+              <span class="interaction-result">全プレビュー生成完了後は「改善レポートを送信せずにもどりますか？」確認ダイアログを表示。OK を押した場合のみ改善レポートを破棄してページ編集へ戻る。破棄対象には追加した写真も含まれる。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">「改善レポートサーバーへ」ボタン</span>
+              <span class="interaction-result">QR コードリーダーを起動。カスタム URI 文字列を読み取れたらリーダーを閉じ、「改善レポートを送信中...」ローディングへ遷移して zip を送信する。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">QR 読取後の送信成功</span>
+              <span class="interaction-result">送信中表示のあと、中央に「✔」「レポート送信完了」を短時間だけ表示してから改善レポート送信画面を閉じ、ページ編集へ戻る。モックではこの完了フィードバックも含めて確認できるようにしている。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">QR 読取または送信エラー</span>
+              <span class="interaction-result">実際のアプリではエラー内容を表示し、「再試行」または「キャンセル」を選択可能にする。モックでは専用ボタンでこの状態を再現し、再試行は QR コードリーダー起動からやり直す。</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="spec-group">
+          <h3>送信ペイロード</h3>
+          <ul class="spec-list">
+            <li>
+              <span class="spec-element">必須データ</span>
+              <span class="spec-detail">コメント、アプリのバージョン / ビルド番号、日時（JST）、元画像、全フィルタの変換後画像をひとまとめにして改善レポートとして送信する。</span>
+            </li>
+            <li>
+              <span class="spec-element">任意の追加画像</span>
+              <span class="spec-detail">ユーザーが OS 標準の写真ピッカーで選んだ画像は、任意の追加データとして同じレポートに含める。画像だけを許可し、PDF など画像以外は追加対象にしない。</span>
+            </li>
+            <li>
+              <span class="spec-element">QR コード設定</span>
+              <span class="spec-detail">QR には改善レポートサーバーのカスタム URI 文字列を埋め込み、送信先エンドポイントと認証情報をアプリへ受け渡す。QR リーダーは読取成功時に自動で閉じる。</span>
+            </li>
+            <li>
+              <span class="spec-element">一時データの破棄</span>
+              <span class="spec-detail">未送信のまま OK で戻った場合に限り、生成済みプレビュー、追加した写真、入力済みコメントを破棄する。キャンセル時はその場に留まり、内容を保持する。</span>
+            </li>
+          </ul>
         </div>
       </div>
     </div>
@@ -694,6 +809,15 @@ import Layout from '../layouts/Layout.astro';
     display: flex;
     align-items: center;
     gap: var(--ds-space-150);
+  }
+
+  .flow-note {
+    max-width: 880px;
+    margin: var(--ds-space-150) auto 0;
+    font-size: 14px;
+    line-height: 1.6;
+    color: var(--ds-text-subtle, #44546f);
+    text-align: center;
   }
 
   .logo-icon {

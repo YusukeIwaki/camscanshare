@@ -33,6 +33,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.automirrored.filled.RotateLeft
 import androidx.compose.material.icons.filled.CameraAlt
+import androidx.compose.material.icons.filled.Feedback
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -82,10 +83,12 @@ fun PageEditScreen(
     initialPageIndex: Int,
     onBack: () -> Unit,
     onRetake: (pageId: Long) -> Unit,
+    onImprovementReport: (PageEditState) -> Unit,
     viewModel: PageEditViewModel = hiltViewModel(),
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val haptic = LocalHapticFeedback.current
+    var reportTargetPage by remember { mutableStateOf<PageEditState?>(null) }
 
     LaunchedEffect(documentId) {
         viewModel.initialize(documentId, initialPageIndex)
@@ -200,6 +203,9 @@ fun PageEditScreen(
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
                         viewModel.onFilterLongPressed(it.filterKey)
                     },
+                    onImprovementRequest = {
+                        reportTargetPage = uiState.pages.getOrNull(uiState.currentPageIndex)
+                    },
                 )
             }
         }
@@ -227,6 +233,25 @@ fun PageEditScreen(
             confirmText = "適用",
             onConfirm = { viewModel.onApplyAllConfirmed() },
             onDismiss = { viewModel.onApplyAllDismissed() },
+        )
+    }
+
+    if (reportTargetPage != null) {
+        ConfirmDialog(
+            title = "改善レポートを送信しますか？",
+            message = "現在の元画像とフィルタ後の画像を開発元にすべて送信します。よろしいですか？",
+            confirmText = "OK",
+            dismissText = "キャンセル",
+            onConfirm = {
+                val page = reportTargetPage
+                reportTargetPage = null
+                if (page != null) {
+                    onImprovementReport(page)
+                }
+            },
+            onDismiss = {
+                reportTargetPage = null
+            },
         )
     }
 }
@@ -401,6 +426,7 @@ private fun FilterPanel(
     currentFilterKey: String,
     onFilterSelected: (ImageFilter) -> Unit,
     onFilterLongPressed: (ImageFilter) -> Unit,
+    onImprovementRequest: () -> Unit,
 ) {
     Column(
         modifier = Modifier
@@ -437,6 +463,10 @@ private fun FilterPanel(
                     onClick = { onFilterSelected(filter) },
                     onLongClick = { onFilterLongPressed(filter) },
                 )
+            }
+
+            item {
+                ImprovementRequestItem(onClick = onImprovementRequest)
             }
         }
     }
@@ -483,6 +513,57 @@ private fun FilterItem(
             fontSize = 11.sp,
             fontWeight = if (isActive) FontWeight.Bold else FontWeight.Medium,
             color = if (isActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
+            textAlign = TextAlign.Center,
+        )
+    }
+}
+
+@Composable
+private fun ImprovementRequestItem(
+    onClick: () -> Unit,
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier.clickable(onClick = onClick),
+    ) {
+        Box(
+            modifier = Modifier
+                .size(width = 64.dp, height = 80.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.45f))
+                .border(
+                    1.dp,
+                    MaterialTheme.colorScheme.outlineVariant,
+                    RoundedCornerShape(8.dp),
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(6.dp),
+                modifier = Modifier.padding(horizontal = 8.dp),
+            ) {
+                Icon(
+                    imageVector = Icons.Default.Feedback,
+                    contentDescription = "開発元に改善要望",
+                    tint = MaterialTheme.colorScheme.primary,
+                )
+                Text(
+                    "画像とコメントを送信",
+                    fontSize = 9.sp,
+                    lineHeight = 11.sp,
+                    textAlign = TextAlign.Center,
+                    color = MaterialTheme.colorScheme.primary,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Text(
+            "開発元に改善要望",
+            fontSize = 11.sp,
+            fontWeight = FontWeight.Medium,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
             textAlign = TextAlign.Center,
         )
     }

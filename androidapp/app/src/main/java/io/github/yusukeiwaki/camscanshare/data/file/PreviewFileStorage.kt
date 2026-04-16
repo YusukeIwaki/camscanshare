@@ -89,6 +89,9 @@ class PreviewFileStorage @Inject constructor(
         return bitmap
     }
 
+    fun getWorkingAbsolutePath(pageId: Long, filterKey: String, rotation: Int): String =
+        workingFile(pageId, filterKey, rotation).absolutePath
+
     fun deleteWorkingForPage(pageId: Long) {
         workingDir.listFiles()
             ?.filter { it.name.startsWith("${pageId}_") }

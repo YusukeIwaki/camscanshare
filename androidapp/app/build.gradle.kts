@@ -92,6 +92,9 @@ dependencies {
     // WorkManager
     implementation(libs.work.runtime.ktx)
 
+    // QR code scanner
+    implementation(libs.play.services.code.scanner)
+
     // Testing
     testImplementation(libs.junit)
     testImplementation(libs.turbine)

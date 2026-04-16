@@ -4,6 +4,7 @@
 
     <uses-feature android:name="android.hardware.camera" android:required="true" />
     <uses-permission android:name="android.permission.CAMERA" />
+    <uses-permission android:name="android.permission.INTERNET" />
 
     <application
         android:name=".CamScanShareApp"
@@ -32,6 +33,10 @@
                 android:value="androidx.startup"
                 tools:node="remove" />
         </provider>
+
+        <meta-data
+            android:name="com.google.mlkit.vision.DEPENDENCIES"
+            android:value="barcode_ui" />
 
         <provider
             android:name="androidx.core.content.FileProvider"

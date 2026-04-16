@@ -1,0 +1,1195 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>改善レポート送信</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@24,400,0,0">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&display=swap">
+<style>
+  :root {
+    --md-sys-color-primary: #1a73e8;
+    --md-sys-color-on-primary: #ffffff;
+    --md-sys-color-primary-container: #d3e3fd;
+    --md-sys-color-surface: #f8f9fa;
+    --md-sys-color-surface-container: #ffffff;
+    --md-sys-color-surface-container-high: #f1f3f4;
+    --md-sys-color-surface-container-highest: #eceff1;
+    --md-sys-color-on-surface: #1f1f1f;
+    --md-sys-color-on-surface-variant: #5f6368;
+    --md-sys-color-outline: #dadce0;
+    --md-sys-color-outline-variant: #e8eaed;
+    --md-sys-color-error: #d93025;
+    --md-sys-color-success: #137333;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    font-family: 'Noto Sans JP', 'Roboto', sans-serif;
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+    height: 100vh;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .top-app-bar {
+    background: var(--md-sys-color-surface-container);
+    padding: 12px 8px;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    height: 64px;
+    z-index: 10;
+    border-bottom: 1px solid var(--md-sys-color-outline-variant);
+  }
+
+  .icon-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    border-radius: 50%;
+    width: 40px;
+    height: 40px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--md-sys-color-on-surface);
+    transition: background 0.2s;
+    font-family: inherit;
+  }
+
+  .icon-btn:hover { background: rgba(0,0,0,0.06); }
+  .icon-btn:active { background: rgba(0,0,0,0.1); }
+
+  .title-wrap {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .title {
+    font-size: 18px;
+    font-weight: 500;
+  }
+
+  .title-sub {
+    margin-top: 2px;
+    font-size: 11px;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+
+  .content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 16px 16px 120px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+
+  .card {
+    background: var(--md-sys-color-surface-container);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: 20px;
+    padding: 16px;
+  }
+
+  .card-title {
+    font-size: 14px;
+    font-weight: 700;
+    margin-bottom: 12px;
+  }
+
+  .meta-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .field-label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--md-sys-color-on-surface-variant);
+    margin-bottom: 6px;
+  }
+
+  .field-value,
+  .comment-input {
+    width: 100%;
+    border-radius: 14px;
+    border: 1px solid var(--md-sys-color-outline);
+    background: var(--md-sys-color-surface);
+    color: var(--md-sys-color-on-surface);
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.5;
+    padding: 12px 14px;
+  }
+
+  .field-value {
+    min-height: 48px;
+    display: flex;
+    align-items: center;
+  }
+
+  .comment-input {
+    min-height: 108px;
+    resize: none;
+  }
+
+  .comment-counter {
+    margin-top: 8px;
+    font-size: 11px;
+    color: var(--md-sys-color-on-surface-variant);
+    text-align: right;
+  }
+
+  .attachment-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+
+  .attachment-action {
+    min-height: 38px;
+    padding: 0 14px;
+    border: none;
+    border-radius: 12px;
+    background: var(--md-sys-color-primary-container);
+    color: var(--md-sys-color-primary);
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .attachment-note {
+    font-size: 12px;
+    color: var(--md-sys-color-on-surface-variant);
+    line-height: 1.5;
+    margin-bottom: 12px;
+  }
+
+  .attachment-list {
+    display: grid;
+    gap: 12px;
+  }
+
+  .attachment-empty {
+    padding: 16px;
+    border: 1px dashed var(--md-sys-color-outline);
+    border-radius: 16px;
+    background: var(--md-sys-color-surface);
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--md-sys-color-on-surface-variant);
+    text-align: center;
+  }
+
+  .attachment-item {
+    display: grid;
+    grid-template-columns: 84px minmax(0, 1fr);
+    gap: 12px;
+    align-items: center;
+    padding: 12px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: 16px;
+    background: var(--md-sys-color-surface);
+  }
+
+  .attachment-thumb {
+    width: 84px;
+    aspect-ratio: 1;
+    border-radius: 12px;
+    border: 1px solid var(--md-sys-color-outline-variant);
+    background:
+      linear-gradient(135deg, #cddffd 0%, #f2f7ff 48%, #ffe7d2 100%);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .attachment-thumb::before,
+  .attachment-thumb::after {
+    content: "";
+    position: absolute;
+    border-radius: 999px;
+    opacity: 0.82;
+  }
+
+  .attachment-thumb::before {
+    width: 52px;
+    height: 52px;
+    background: rgba(255,255,255,0.88);
+    left: -8px;
+    top: 8px;
+  }
+
+  .attachment-thumb::after {
+    width: 64px;
+    height: 64px;
+    background: rgba(255,197,128,0.86);
+    right: -12px;
+    bottom: -10px;
+  }
+
+  .attachment-meta-title {
+    font-size: 13px;
+    font-weight: 700;
+    margin-bottom: 4px;
+    word-break: break-word;
+  }
+
+  .attachment-meta-sub {
+    font-size: 12px;
+    line-height: 1.5;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+
+  .status-card {
+    background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+    border-color: #d3e3fd;
+  }
+
+  .status-card.hidden {
+    display: none;
+  }
+
+  .status-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+
+  .spinner {
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    border: 2px solid rgba(26,115,232,0.18);
+    border-top-color: var(--md-sys-color-primary);
+    animation: spin 0.8s linear infinite;
+    flex: 0 0 auto;
+  }
+
+  .status-title {
+    font-size: 13px;
+    font-weight: 700;
+  }
+
+  .status-sub {
+    margin-top: 4px;
+    font-size: 12px;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+
+  .preview-list {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .preview-card {
+    background: var(--md-sys-color-surface-container);
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: 20px;
+    padding: 14px;
+  }
+
+  .preview-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+
+  .preview-label {
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .status-chip {
+    font-size: 11px;
+    font-weight: 700;
+    padding: 5px 8px;
+    border-radius: 999px;
+    background: var(--md-sys-color-surface-container-high);
+    color: var(--md-sys-color-on-surface-variant);
+  }
+
+  .status-chip.ready {
+    background: #e6f4ea;
+    color: var(--md-sys-color-success);
+  }
+
+  .preview-shell {
+    width: 100%;
+    aspect-ratio: 210 / 297;
+    max-height: 320px;
+    margin: 0 auto;
+    border-radius: 16px;
+    overflow: hidden;
+    background: var(--md-sys-color-surface-container-high);
+    box-shadow: 0 4px 18px rgba(0,0,0,0.08);
+    position: relative;
+  }
+
+  .preview-loading {
+    position: absolute;
+    inset: 0;
+    background:
+      linear-gradient(90deg, rgba(255,255,255,0) 0%, rgba(255,255,255,0.72) 50%, rgba(255,255,255,0) 100%),
+      linear-gradient(180deg, #e9eef3 0%, #f4f7fa 100%);
+    background-size: 180px 100%, 100% 100%;
+    animation: shimmer 1.2s linear infinite;
+  }
+
+  .preview-page {
+    width: 100%;
+    height: 100%;
+    background: #fefefe;
+    display: flex;
+    flex-direction: column;
+    padding: 18px;
+    gap: 7px;
+  }
+
+  .preview-page .line {
+    height: 4px;
+    border-radius: 999px;
+    background: #313131;
+    opacity: 0.58;
+  }
+
+  .preview-page .line.heading {
+    height: 8px;
+    width: 54%;
+    opacity: 0.82;
+    margin-bottom: 6px;
+  }
+
+  .preview-meta {
+    margin-top: 10px;
+    font-size: 12px;
+    color: var(--md-sys-color-on-surface-variant);
+    line-height: 1.5;
+  }
+
+  .footer-bar {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(255,255,255,0.96);
+    backdrop-filter: blur(10px);
+    border-top: 1px solid var(--md-sys-color-outline-variant);
+    padding: 12px 16px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .footer-note {
+    font-size: 11px;
+    color: var(--md-sys-color-on-surface-variant);
+    line-height: 1.4;
+  }
+
+  .footer-actions {
+    display: flex;
+    gap: 10px;
+  }
+
+  .text-btn,
+  .filled-btn {
+    min-height: 48px;
+    border-radius: 16px;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    border: none;
+    cursor: pointer;
+  }
+
+  .text-btn {
+    flex: 0 0 92px;
+    background: #eef1f3;
+    color: var(--md-sys-color-on-surface-variant);
+  }
+
+  .filled-btn {
+    flex: 1;
+    background: var(--md-sys-color-primary);
+    color: var(--md-sys-color-on-primary);
+    transition: opacity 0.2s, transform 0.2s;
+  }
+
+  .filled-btn:disabled {
+    background: #c6dafc;
+    color: rgba(255,255,255,0.9);
+    cursor: default;
+  }
+
+  .dialog-overlay,
+  .scanner-overlay,
+  .progress-overlay,
+  .picker-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.42);
+    z-index: 200;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    animation: fadeIn 0.2s ease;
+  }
+
+  .dialog-box,
+  .progress-box {
+    width: 292px;
+    background: var(--md-sys-color-surface-container);
+    border-radius: 28px;
+    padding: 24px;
+  }
+
+  .dialog-title,
+  .progress-title {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 10px;
+  }
+
+  .dialog-body,
+  .progress-body {
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--md-sys-color-on-surface-variant);
+    margin-bottom: 20px;
+  }
+
+  .dialog-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .dialog-btn {
+    background: none;
+    border: none;
+    font-family: inherit;
+    font-size: 14px;
+    font-weight: 700;
+    padding: 8px 14px;
+    border-radius: 18px;
+    cursor: pointer;
+  }
+
+  .dialog-btn-cancel { color: var(--md-sys-color-on-surface-variant); }
+  .dialog-btn-confirm { color: var(--md-sys-color-primary); }
+  .dialog-btn-danger { color: var(--md-sys-color-error); }
+
+  .scanner-sheet {
+    width: calc(100% - 32px);
+    max-width: 340px;
+    border-radius: 28px;
+    background: #0f1720;
+    color: #f7f9fc;
+    padding: 18px 18px 20px;
+    box-shadow: 0 12px 48px rgba(0,0,0,0.36);
+  }
+
+  .picker-sheet {
+    width: calc(100% - 32px);
+    max-width: 360px;
+    border-radius: 28px;
+    background: var(--md-sys-color-surface-container);
+    padding: 20px;
+    box-shadow: 0 12px 48px rgba(0,0,0,0.28);
+  }
+
+  .picker-title {
+    font-size: 16px;
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+
+  .picker-sub {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--md-sys-color-on-surface-variant);
+    margin-bottom: 14px;
+  }
+
+  .picker-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+
+  .picker-photo {
+    border: 1px solid var(--md-sys-color-outline-variant);
+    border-radius: 16px;
+    background: none;
+    padding: 0;
+    overflow: hidden;
+    cursor: pointer;
+  }
+
+  .picker-photo-thumb {
+    width: 100%;
+    aspect-ratio: 1;
+    background:
+      linear-gradient(135deg, #d4e4ff 0%, #f4f7fa 50%, #ffd9b5 100%);
+    position: relative;
+  }
+
+  .picker-photo-thumb::before,
+  .picker-photo-thumb::after {
+    content: "";
+    position: absolute;
+    border-radius: 999px;
+  }
+
+  .picker-photo-thumb::before {
+    width: 30px;
+    height: 30px;
+    background: rgba(255,255,255,0.85);
+    top: 10px;
+    left: 10px;
+  }
+
+  .picker-photo-thumb::after {
+    width: 44px;
+    height: 44px;
+    background: rgba(255,193,132,0.82);
+    right: -4px;
+    bottom: -6px;
+  }
+
+  .picker-photo-label {
+    padding: 8px;
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--md-sys-color-on-surface);
+    background: var(--md-sys-color-surface);
+  }
+
+  .picker-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+
+  .scanner-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 18px;
+  }
+
+  .scanner-title {
+    font-size: 16px;
+    font-weight: 700;
+  }
+
+  .scanner-close {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    border: none;
+    background: rgba(255,255,255,0.08);
+    color: #f7f9fc;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+  }
+
+  .finder {
+    width: 100%;
+    aspect-ratio: 1;
+    border-radius: 28px;
+    background:
+      linear-gradient(135deg, rgba(28,39,52,0.86), rgba(10,14,21,0.98)),
+      radial-gradient(circle at center, rgba(43,88,165,0.2), transparent 60%);
+    position: relative;
+    overflow: hidden;
+    margin-bottom: 16px;
+  }
+
+  .finder-frame {
+    position: absolute;
+    inset: 18% 18%;
+    border: 2px solid rgba(255,255,255,0.92);
+    border-radius: 24px;
+  }
+
+  .finder-frame::before,
+  .finder-frame::after {
+    content: "";
+    position: absolute;
+    left: 10%;
+    right: 10%;
+    height: 2px;
+    background: #78a9ff;
+    box-shadow: 0 0 14px rgba(120,169,255,0.82);
+  }
+
+  .finder-frame::before {
+    top: 45%;
+    animation: scan 2s ease-in-out infinite;
+  }
+
+  .finder-frame::after {
+    display: none;
+  }
+
+  .finder-corners span {
+    position: absolute;
+    width: 26px;
+    height: 26px;
+    border-color: #ffffff;
+    border-style: solid;
+    border-width: 0;
+  }
+
+  .finder-corners span:nth-child(1) { top: calc(18% - 1px); left: calc(18% - 1px); border-top-width: 4px; border-left-width: 4px; border-top-left-radius: 12px; }
+  .finder-corners span:nth-child(2) { top: calc(18% - 1px); right: calc(18% - 1px); border-top-width: 4px; border-right-width: 4px; border-top-right-radius: 12px; }
+  .finder-corners span:nth-child(3) { bottom: calc(18% - 1px); left: calc(18% - 1px); border-bottom-width: 4px; border-left-width: 4px; border-bottom-left-radius: 12px; }
+  .finder-corners span:nth-child(4) { bottom: calc(18% - 1px); right: calc(18% - 1px); border-bottom-width: 4px; border-right-width: 4px; border-bottom-right-radius: 12px; }
+
+  .uri-preview {
+    font-size: 12px;
+    line-height: 1.5;
+    color: rgba(247,249,252,0.74);
+    margin-bottom: 14px;
+  }
+
+  .mock-note {
+    margin-top: 10px;
+    font-size: 11px;
+    line-height: 1.5;
+    color: rgba(247,249,252,0.62);
+  }
+
+  .scanner-actions {
+    display: flex;
+    gap: 10px;
+  }
+
+  .scanner-btn {
+    flex: 1;
+    min-height: 44px;
+    border-radius: 14px;
+    border: none;
+    font-family: inherit;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+
+  .scanner-btn.secondary {
+    background: rgba(255,255,255,0.1);
+    color: #f7f9fc;
+  }
+
+  .scanner-btn.primary {
+    background: #78a9ff;
+    color: #0f1720;
+  }
+
+  .progress-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .progress-box.success-feedback {
+    text-align: center;
+  }
+
+  .progress-box.success-feedback .progress-row {
+    flex-direction: column;
+    gap: 14px;
+  }
+
+  .success-mark {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #e6f4ea;
+    color: var(--md-sys-color-success);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    font-weight: 700;
+  }
+
+  .progress-box.success-feedback .success-mark {
+    width: 52px;
+    height: 52px;
+    font-size: 30px;
+  }
+
+  .progress-box.success-feedback .progress-title,
+  .progress-box.success-feedback .progress-body {
+    margin-bottom: 0;
+  }
+
+  .filter-original {}
+  .filter-crisp { filter: contrast(1.4) brightness(1.05); }
+  .filter-bw { filter: grayscale(1) contrast(1.3); }
+  .filter-magic { filter: brightness(1.4) contrast(2) saturate(0.3); }
+  .filter-whiteboard { filter: brightness(1.3) contrast(1.6) saturate(0); }
+  .filter-vivid { filter: saturate(2) contrast(1.2); }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes shimmer { from { background-position: -180px 0, 0 0; } to { background-position: 180px 0, 0 0; } }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  @keyframes scan {
+    0% { transform: translateY(-44px); }
+    50% { transform: translateY(44px); }
+    100% { transform: translateY(-44px); }
+  }
+</style>
+</head>
+<body>
+
+<div class="top-app-bar">
+  <button class="icon-btn" onclick="handleExit()">
+    <span class="material-symbols-outlined">arrow_back</span>
+  </button>
+  <div class="title-wrap">
+    <div class="title">改善レポート送信</div>
+    <div class="title-sub">元画像と全フィルタ結果をまとめて送信</div>
+  </div>
+</div>
+
+<main class="content">
+  <section class="card">
+    <div class="card-title">レポート情報</div>
+    <div class="meta-grid">
+      <div>
+        <div class="field-label">アプリのバージョン / ビルド番号</div>
+        <div class="field-value" id="versionField">v0.1.0 (10012)</div>
+      </div>
+      <div>
+        <div class="field-label">日時 (JST)</div>
+        <div class="field-value" id="timestampField">2026-04-16 21:07:32 JST</div>
+      </div>
+      <div>
+        <div class="field-label">コメント (必須)</div>
+        <textarea class="comment-input" id="commentInput" placeholder="例: 斜めに撮った請求書で「ホワイトボード」を選ぶと薄い灰色の文字が消えて読めなくなります。"></textarea>
+        <div class="comment-counter" id="commentCounter">0 / 300</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card status-card">
+    <div class="status-row">
+      <div class="spinner" id="generationSpinner"></div>
+      <div>
+        <div class="status-title" id="generationTitle">変換プレビューを生成中...</div>
+        <div class="status-sub" id="generationSub">0 / 6 件の画像を準備しました。すべて完了すると送信ボタンが活性化します。</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="attachment-header">
+      <div class="card-title" style="margin-bottom:0;">追加で送る写真</div>
+      <button class="attachment-action" onclick="openPhotoPicker()">写真を追加</button>
+    </div>
+    <div class="attachment-note">比較用の写真を追加できます。画像のみ追加可能で、PDF などは選択できません。全フィルタの生成中でも追加操作できます。</div>
+    <div class="attachment-list" id="attachmentList"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-title">送信対象プレビュー</div>
+    <div class="preview-list" id="previewList"></div>
+  </section>
+</main>
+
+<div class="footer-bar">
+  <div class="footer-note" id="footerNote">コメント入力と全プレビューの生成完了後に、QRコードで改善レポートサーバーを読み取って送信します。</div>
+  <div class="footer-actions">
+    <button class="text-btn" onclick="handleExit()">キャンセル</button>
+    <button class="filled-btn" id="sendButton" disabled onclick="startQrFlow()">改善レポートサーバーへ</button>
+  </div>
+</div>
+
+<script>
+const filters = [
+  { key: 'original', label: 'オリジナル', cssClass: 'filter-original', note: '基準となる元画像' },
+  { key: 'crisp', label: 'くっきり', cssClass: 'filter-crisp', note: 'コントラスト強調' },
+  { key: 'bw', label: '白黒', cssClass: 'filter-bw', note: '2値寄りの読み取り重視' },
+  { key: 'magic', label: 'マジック', cssClass: 'filter-magic', note: '照明ムラ補正 + 紙面白化' },
+  { key: 'whiteboard', label: 'ホワイトボード', cssClass: 'filter-whiteboard', note: '背景除去重視' },
+  { key: 'vivid', label: '鮮やか', cssClass: 'filter-vivid', note: '色付き資料向け' },
+];
+
+const previewState = filters.map(() => ({ ready: false }));
+const previewList = document.getElementById('previewList');
+const attachmentList = document.getElementById('attachmentList');
+const commentInput = document.getElementById('commentInput');
+const sendButton = document.getElementById('sendButton');
+const commentCounter = document.getElementById('commentCounter');
+const extraPhotos = [];
+let qrOpen = false;
+let reportSent = false;
+let sending = false;
+
+function buildPreviewMarkup(filter, ready) {
+  return `
+    <article class="preview-card" data-key="${filter.key}">
+      <div class="preview-header">
+        <div class="preview-label">${filter.label}</div>
+        <div class="status-chip ${ready ? 'ready' : ''}">${ready ? '準備完了' : '生成中'}</div>
+      </div>
+      <div class="preview-shell">
+        ${ready ? `
+          <div class="preview-page ${filter.cssClass}">
+            <div class="line heading"></div>
+            <div class="line" style="width:92%"></div>
+            <div class="line" style="width:76%"></div>
+            <div class="line" style="width:88%"></div>
+            <div class="line" style="width:65%"></div>
+            <div class="line" style="width:82%"></div>
+            <div class="line" style="width:94%"></div>
+            <div class="line" style="width:69%"></div>
+            <div class="line" style="width:86%"></div>
+            <div class="line" style="width:78%"></div>
+            <div class="line" style="width:91%"></div>
+            <div class="line" style="width:59%"></div>
+            <div class="line" style="width:84%"></div>
+            <div class="line" style="width:88%"></div>
+            <div class="line" style="width:72%"></div>
+          </div>
+        ` : '<div class="preview-loading"></div>'}
+      </div>
+      <div class="preview-meta">${filter.note}</div>
+    </article>
+  `;
+}
+
+function renderPreviews() {
+  previewList.innerHTML = filters.map((filter, index) => buildPreviewMarkup(filter, previewState[index].ready)).join('');
+}
+
+function renderAttachments() {
+  if (extraPhotos.length === 0) {
+    attachmentList.innerHTML = `
+      <div class="attachment-empty">
+        追加写真はまだありません。<br>
+        CamScanner との比較画像など、補足したい写真がある場合だけ追加します。
+      </div>
+    `;
+    return;
+  }
+
+  attachmentList.innerHTML = extraPhotos.map((photo, index) => `
+    <article class="attachment-item">
+      <div class="attachment-thumb" aria-hidden="true"></div>
+      <div>
+        <div class="attachment-meta-title">${photo.name}</div>
+        <div class="attachment-meta-sub">写真 ${index + 1} / 追加画像として一緒に送信<br>${photo.note}</div>
+      </div>
+    </article>
+  `).join('');
+}
+
+function readyCount() {
+  return previewState.filter(state => state.ready).length;
+}
+
+function allReady() {
+  return readyCount() === filters.length;
+}
+
+function updateStatus() {
+  const title = document.getElementById('generationTitle');
+  const sub = document.getElementById('generationSub');
+  const spinner = document.getElementById('generationSpinner');
+  const card = document.querySelector('.status-card');
+  const ready = readyCount();
+
+  if (allReady()) {
+    card.classList.add('hidden');
+  } else {
+    card.classList.remove('hidden');
+    title.textContent = '変換プレビューを生成中...';
+    sub.textContent = `${ready} / ${filters.length} 件の画像を準備しました。すべて完了すると送信ボタンが活性化します。`;
+    spinner.style.borderTopColor = 'var(--md-sys-color-primary)';
+  }
+
+  const hasComment = commentInput.value.trim().length > 0;
+  sendButton.disabled = !(allReady() && hasComment) || sending;
+  sendButton.textContent = sending ? '改善レポートを送信中...' : '改善レポートサーバーへ';
+
+  if (!allReady()) {
+    document.getElementById('footerNote').textContent = '変換プレビューが出そろうまで送信できません。途中で戻ると、この画面はそのまま閉じます。';
+  } else if (!hasComment) {
+    document.getElementById('footerNote').textContent = 'コメントを入力すると送信ボタンが有効になります。';
+  } else {
+    document.getElementById('footerNote').textContent = extraPhotos.length > 0
+      ? '追加写真も含めて送信されます。未送信のまま戻ると、この改善レポートは破棄されます。'
+      : '未送信のまま戻ると、この改善レポートは破棄されます。';
+  }
+}
+
+function updateCommentCounter() {
+  const value = commentInput.value.slice(0, 300);
+  if (value !== commentInput.value) commentInput.value = value;
+  commentCounter.textContent = `${commentInput.value.length} / 300`;
+  updateStatus();
+}
+
+function schedulePreviewGeneration() {
+  filters.forEach((_, index) => {
+    window.setTimeout(() => {
+      previewState[index].ready = true;
+      renderPreviews();
+      updateStatus();
+    }, 700 + index * 650);
+  });
+}
+
+function animateClose() {
+  const overlay = document.createElement('div');
+  overlay.className = 'progress-overlay';
+  overlay.innerHTML = `
+    <div class="progress-box">
+      <div class="progress-row">
+        <div class="success-mark">✓</div>
+        <div>
+          <div class="progress-title">画面を閉じます</div>
+          <div class="progress-body">モックではこのまま前の画面へ戻る動作を表現しています。</div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+  setTimeout(() => {
+    if (window.history.length > 1) {
+      window.history.back();
+      return;
+    }
+    overlay.remove();
+  }, 900);
+}
+
+function openPhotoPicker() {
+  const overlay = document.createElement('div');
+  overlay.className = 'picker-overlay';
+  overlay.innerHTML = `
+    <div class="picker-sheet">
+      <div class="picker-title">写真を追加</div>
+      <div class="picker-sub">OS 標準の写真ピッカーを開く想定です。モックでは選択結果だけを再現します。画像のみ選択でき、追加した写真は改善レポートと一緒に送信されます。</div>
+      <div class="picker-grid">
+        <button class="picker-photo" onclick="selectPhoto(this, 'camscanner-compare-1.jpg', 'CamScanner で出力した請求書の比較画像')">
+          <div class="picker-photo-thumb"></div>
+          <div class="picker-photo-label">比較画像 1</div>
+        </button>
+        <button class="picker-photo" onclick="selectPhoto(this, 'camscanner-compare-2.jpg', '別角度で撮った比較画像')">
+          <div class="picker-photo-thumb"></div>
+          <div class="picker-photo-label">比較画像 2</div>
+        </button>
+        <button class="picker-photo" onclick="selectPhoto(this, 'camscanner-compare-3.jpg', '補足したい別アプリの結果')">
+          <div class="picker-photo-thumb"></div>
+          <div class="picker-photo-label">比較画像 3</div>
+        </button>
+      </div>
+      <div class="picker-actions">
+        <button class="dialog-btn dialog-btn-cancel" onclick="dismissPicker(this)">キャンセル</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+function dismissPicker(btn) {
+  btn.closest('.picker-overlay').remove();
+}
+
+function selectPhoto(btn, name, note) {
+  btn.closest('.picker-overlay').remove();
+  extraPhotos.push({ name, note });
+  renderAttachments();
+  updateStatus();
+}
+
+function handleExit() {
+  if (qrOpen || sending) return;
+  if (allReady() && !reportSent) {
+    showDiscardReportDialog();
+    return;
+  }
+  animateClose();
+}
+
+function showDiscardReportDialog() {
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.innerHTML = `
+    <div class="dialog-box">
+      <div class="dialog-title">改善レポートを送信せずにもどりますか？</div>
+      <div class="dialog-body">生成済みのプレビュー、追加した写真、入力したコメントは破棄されます。未送信のまま前の画面に戻ります。</div>
+      <div class="dialog-actions">
+        <button class="dialog-btn dialog-btn-cancel" onclick="dismissOverlay(this)">キャンセル</button>
+        <button class="dialog-btn dialog-btn-danger" onclick="confirmExit(this)">OK</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+function dismissOverlay(btn) {
+  btn.closest('.dialog-overlay').remove();
+}
+
+function confirmExit(btn) {
+  btn.closest('.dialog-overlay').remove();
+  animateClose();
+}
+
+function startQrFlow() {
+  if (sendButton.disabled) return;
+  qrOpen = true;
+  const overlay = document.createElement('div');
+  overlay.className = 'scanner-overlay';
+  overlay.id = 'scannerOverlay';
+  overlay.innerHTML = `
+    <div class="scanner-sheet">
+      <div class="scanner-top">
+        <div class="scanner-title">QRコードを読み取る</div>
+        <button class="scanner-close" onclick="closeScanner()"><span class="material-symbols-outlined">close</span></button>
+      </div>
+      <div class="finder">
+        <div class="finder-frame"></div>
+        <div class="finder-corners">
+          <span></span><span></span><span></span><span></span>
+        </div>
+      </div>
+      <div class="uri-preview">期待する形式: <br>camscanshare://bug-report-config?u=https%3A%2F%2Fexample.ngrok.app%2Freport&t=br_demo_token&e=1770000000</div>
+      <div class="scanner-actions">
+        <button class="scanner-btn secondary" onclick="simulateScanError()">モック: 読み取りエラー</button>
+        <button class="scanner-btn primary" onclick="simulateScanSuccess()">モック: 読み取り成功</button>
+      </div>
+      <div class="mock-note">この2つのボタンはモック確認用です。実際のアプリではカメラで QR を読み取った結果に応じて自動的に次の状態へ進みます。</div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+function closeScanner() {
+  qrOpen = false;
+  const overlay = document.getElementById('scannerOverlay');
+  if (overlay) overlay.remove();
+}
+
+function simulateScanSuccess() {
+  closeScanner();
+  showSendingOverlay();
+}
+
+function simulateScanError() {
+  closeScanner();
+  showSendErrorDialog();
+}
+
+function showSendingOverlay() {
+  sending = true;
+  updateStatus();
+  const overlay = document.createElement('div');
+  overlay.className = 'progress-overlay';
+  overlay.id = 'sendingOverlay';
+  overlay.innerHTML = `
+    <div class="progress-box">
+      <div class="progress-row">
+        <div class="spinner"></div>
+        <div>
+          <div class="progress-title">改善レポートを送信中...</div>
+          <div class="progress-body">QRコードから取得した送信先へ zip をアップロードしています。送信が終わるとこの画面を閉じます。</div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+
+  setTimeout(() => {
+    reportSent = true;
+    sending = false;
+    updateStatus();
+    overlay.innerHTML = `
+      <div class="progress-box success-feedback">
+        <div class="progress-row">
+          <div class="success-mark">✓</div>
+          <div>
+            <div class="progress-title">レポート送信完了</div>
+            <div class="progress-body">モックではこの完了表示を短時間だけ出しています。実際のアプリでも、このあと自動で画面を閉じてページ編集へ戻ります。</div>
+          </div>
+        </div>
+      </div>
+    `;
+    setTimeout(() => {
+      overlay.remove();
+      animateClose();
+    }, 1100);
+  }, 1800);
+}
+
+function showSendErrorDialog() {
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.innerHTML = `
+    <div class="dialog-box">
+      <div class="dialog-title">モック: 送信に失敗しました</div>
+      <div class="dialog-body">このエラーダイアログはモック確認用です。実際のアプリでは QRコードの形式不正や改善レポートサーバーへの接続失敗時に同様のエラー表示を行い、再試行またはキャンセルを選べます。</div>
+      <div class="dialog-actions">
+        <button class="dialog-btn dialog-btn-cancel" onclick="dismissOverlay(this)">キャンセル</button>
+        <button class="dialog-btn dialog-btn-confirm" onclick="retrySend(this)">モック: 再試行</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+function retrySend(btn) {
+  btn.closest('.dialog-overlay').remove();
+  startQrFlow();
+}
+
+function setTimestamp() {
+  const formatter = new Intl.DateTimeFormat('ja-JP', {
+    timeZone: 'Asia/Tokyo',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hour12: false,
+  });
+  const parts = formatter.formatToParts(new Date());
+  const map = Object.fromEntries(parts.filter(part => part.type !== 'literal').map(part => [part.type, part.value]));
+  document.getElementById('timestampField').textContent = `${map.year}-${map.month}-${map.day} ${map.hour}:${map.minute}:${map.second} JST`;
+}
+
+commentInput.addEventListener('input', updateCommentCounter);
+
+renderPreviews();
+renderAttachments();
+setTimestamp();
+updateCommentCounter();
+schedulePreviewGeneration();
+</script>
+
+</body>
+</html>

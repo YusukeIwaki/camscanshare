@@ -226,7 +226,7 @@
   }
 
   .filter-panel.open {
-    max-height: 180px;
+    max-height: 210px;
     padding: 12px 0 16px;
   }
 
@@ -313,6 +313,13 @@
     transition: color 0.2s;
   }
 
+  .filter-item.report-item .filter-name {
+    white-space: normal;
+    text-align: center;
+    line-height: 1.2;
+    width: 78px;
+  }
+
   .filter-item.active .filter-name {
     color: var(--md-sys-color-primary);
     font-weight: 700;
@@ -325,6 +332,30 @@
   .filter-preview.whiteboard { filter: brightness(1.3) contrast(1.6) saturate(0); }
   .filter-preview.color-limit { filter: saturate(2) contrast(1.2); }
   .filter-preview.magic { filter: brightness(1.4) contrast(2) saturate(0.3); }
+
+  .filter-preview.report-preview {
+    border-style: dashed;
+    border-color: var(--md-sys-color-outline);
+    background: linear-gradient(180deg, #f8fbff 0%, #eef4ff 100%);
+    padding: 0;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+  }
+
+  .report-preview .material-symbols-outlined {
+    font-size: 26px;
+    color: var(--md-sys-color-primary);
+  }
+
+  .report-preview-note {
+    padding: 0 8px;
+    font-size: 9px;
+    font-weight: 700;
+    line-height: 1.25;
+    text-align: center;
+    color: var(--md-sys-color-primary);
+  }
 
   /* Confirm Dialog Overlay */
   .dialog-overlay {
@@ -584,6 +615,14 @@
       <span class="filter-name">鮮やか</span>
     </button>
 
+    <button class="filter-item report-item" data-action="report">
+      <div class="filter-preview report-preview">
+        <span class="material-symbols-outlined">feedback</span>
+        <span class="report-preview-note">画像とコメントを送信</span>
+      </div>
+      <span class="filter-name">開発元に改善要望</span>
+    </button>
+
   </div>
 </div>
 
@@ -776,6 +815,11 @@ function toggleFilter() {
 }
 
 function applyFilterToCurrentPage(item) {
+  if (item.dataset.action === 'report') {
+    showReportConfirmDialog();
+    return;
+  }
+
   const filterName = item.dataset.filter;
   const filterCSS = item.dataset.css;
 
@@ -822,6 +866,31 @@ function showAllPagesDialog(item) {
   });
 }
 
+function showReportConfirmDialog() {
+  const overlay = document.createElement('div');
+  overlay.className = 'dialog-overlay';
+  overlay.innerHTML = `
+    <div class="dialog-box">
+      <div class="dialog-title">改善レポートを送信しますか？</div>
+      <div class="dialog-body">現在の元画像とフィルタ後の画像を開発元にすべて送信します。よろしいですか？</div>
+      <div class="dialog-actions">
+        <button class="dialog-btn dialog-btn-cancel" onclick="dismissDialog(this)">キャンセル</button>
+        <button class="dialog-btn dialog-btn-confirm" onclick="openImprovementReport(this)">OK</button>
+      </div>
+    </div>
+  `;
+  document.body.appendChild(overlay);
+}
+
+function openImprovementReport(btn) {
+  const overlay = btn.closest('.dialog-overlay');
+  overlay.classList.add('hiding');
+  setTimeout(() => {
+    overlay.remove();
+    window.location.href = 'improvement-report.html';
+  }, 180);
+}
+
 // Long-press detection on filter items
 const LONG_PRESS_MS = 500;
 
@@ -830,6 +899,7 @@ document.querySelectorAll('.filter-item').forEach(item => {
   let longPressed = false;
 
   function startPress() {
+    if (item.dataset.action === 'report') return;
     longPressed = false;
     pressTimer = setTimeout(() => {
       longPressed = true;
@@ -838,6 +908,10 @@ document.querySelectorAll('.filter-item').forEach(item => {
   }
 
   function endPress(e) {
+    if (item.dataset.action === 'report') {
+      applyFilterToCurrentPage(item);
+      return;
+    }
     clearTimeout(pressTimer);
     if (!longPressed) {
       applyFilterToCurrentPage(item);
