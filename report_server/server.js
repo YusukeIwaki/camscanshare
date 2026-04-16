@@ -1,13 +1,22 @@
 import crypto from "node:crypto";
 import fs from "node:fs";
 import path from "node:path";
+import { createServer } from "node:http";
 import express from "express";
 import multer from "multer";
 import QRCode from "qrcode";
 import AdmZip from "adm-zip";
+import { Server as SocketIOServer } from "socket.io";
+import chokidar from "chokidar";
+
+// ── Config ──
 
 const app = express();
+const httpServer = createServer(app);
+const io = new SocketIOServer(httpServer);
+
 app.set("trust proxy", true);
+
 const port = Number.parseInt(process.env.PORT ?? "3030", 10);
 const reportToken = process.env.REPORT_SERVER_TOKEN ?? crypto.randomBytes(24).toString("hex");
 const reportsDir = path.resolve("reports");
@@ -16,29 +25,20 @@ fs.mkdirSync(reportsDir, { recursive: true });
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: {
-    fileSize: 100 * 1024 * 1024,
-  },
+  limits: { fileSize: 100 * 1024 * 1024 },
 });
 
 app.use(express.urlencoded({ extended: false }));
 
-app.get("/", (_req, res) => {
-  res.redirect("/qr");
-});
+// ── Page Routes ──
 
-app.get("/qr", async (req, res) => {
-  res.send(await renderQrPage({
-    ngrokUrl: inferDefaultPublicBaseUrl(req),
-    qrDataUrl: null,
-    qrPayload: null,
-    errorMessage: null,
-  }));
-});
+app.get("/", (_req, res) => res.redirect("/reports"));
 
-app.get("/reports", async (_req, res) => {
+app.get("/reports", (req, res) => {
+  res.set("Cache-Control", "no-store");
   const reports = loadReportIndex();
-  res.send(renderReportsIndexPage(reports));
+  const defaultUrl = inferDefaultPublicBaseUrl(req);
+  res.send(renderMainPage(reports, defaultUrl));
 });
 
 app.get("/reports/:reportId/files/:fileName", (req, res) => {
@@ -59,7 +59,7 @@ app.get("/reports/:reportId/files/:fileName", (req, res) => {
   res.sendFile(filePath);
 });
 
-app.get("/reports/:reportId", async (req, res) => {
+app.get("/reports/:reportId", (req, res) => {
   const detail = loadReportDetail(req.params.reportId);
   if (!detail) {
     res.status(404).send(renderSimpleMessagePage("レポートが見つかりませんでした。", "/reports", "レポート一覧へ戻る"));
@@ -69,29 +69,27 @@ app.get("/reports/:reportId", async (req, res) => {
   res.send(renderReportDetailPage(detail));
 });
 
-app.post("/qr", async (req, res) => {
-  const ngrokUrlInput = (req.body.ngrokUrl ?? "").trim();
-  if (!ngrokUrlInput) {
-    res.status(400).send(await renderQrPage({
-      ngrokUrl: "",
-      qrDataUrl: null,
-      qrPayload: null,
-      errorMessage: "ngrok の URL を入力してください。",
-    }));
+// ── API Routes ──
+
+app.get("/api/reports", (_req, res) => {
+  res.json(loadReportIndex());
+});
+
+app.post("/api/qr", express.json(), async (req, res) => {
+  const ngrokUrl = (req.body?.ngrokUrl ?? "").trim();
+  if (!ngrokUrl) {
+    res.status(400).json({ error: "ngrok の URL を入力してください。" });
     return;
   }
 
   let reportEndpoint;
   try {
-    const normalizedUrl = normalizePublicBaseUrl(ngrokUrlInput);
+    const normalizedUrl = normalizePublicBaseUrl(ngrokUrl);
     reportEndpoint = `${normalizedUrl}/reports`;
   } catch (error) {
-    res.status(400).send(await renderQrPage({
-      ngrokUrl: ngrokUrlInput,
-      qrDataUrl: null,
-      qrPayload: null,
-      errorMessage: error instanceof Error ? error.message : "ngrok URL の形式が不正です。",
-    }));
+    res.status(400).json({
+      error: error instanceof Error ? error.message : "ngrok URL の形式が不正です。",
+    });
     return;
   }
 
@@ -102,13 +100,10 @@ app.post("/qr", async (req, res) => {
     width: 320,
   });
 
-  res.send(await renderQrPage({
-    ngrokUrl: ngrokUrlInput,
-    qrDataUrl,
-    qrPayload,
-    errorMessage: null,
-  }));
+  res.json({ qrDataUrl, qrPayload });
 });
+
+// ── Upload Route ──
 
 app.post("/reports", upload.single("archive"), async (req, res) => {
   if (!isAuthorized(req)) {
@@ -153,10 +148,34 @@ app.post("/reports", upload.single("archive"), async (req, res) => {
   });
 });
 
-app.listen(port, () => {
+// ── Filesystem Watcher ──
+
+const watcher = chokidar.watch(reportsDir, {
+  ignoreInitial: true,
+  depth: 1,
+});
+
+let debounceTimer = null;
+function notifyReportsChanged() {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    io.emit("reports:update", loadReportIndex());
+  }, 500);
+}
+
+watcher.on("addDir", notifyReportsChanged);
+watcher.on("unlinkDir", notifyReportsChanged);
+watcher.on("add", notifyReportsChanged);
+watcher.on("unlink", notifyReportsChanged);
+
+// ── Start ──
+
+httpServer.listen(port, () => {
   console.log(`CamScanShare report server listening on http://localhost:${port}`);
   console.log(`Access token: ${reportToken}`);
 });
+
+// ── Auth / URL Helpers ──
 
 function isAuthorized(req) {
   const authHeader = req.get("authorization") ?? "";
@@ -199,6 +218,8 @@ function buildQrPayload(reportEndpoint, token) {
   });
   return `camscanshare://bug-report-config?${params.toString()}`;
 }
+
+// ── Report Directory Helpers ──
 
 function createReportDirectory() {
   const now = new Date();
@@ -342,13 +363,38 @@ function readSummaryFile(reportDir) {
   return fields;
 }
 
-async function renderQrPage({ ngrokUrl, qrDataUrl, qrPayload, errorMessage }) {
+// ── HTML Helpers ──
+
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+function safeJsonEmbed(data) {
+  return JSON.stringify(data).replace(/</g, "\\u003c").replace(/>/g, "\\u003e");
+}
+
+function renderMetaItem(label, value) {
+  return `
+    <div class="meta-item">
+      <span class="meta-label">${escapeHtml(label)}</span>
+      <span>${escapeHtml(value)}</span>
+    </div>
+  `;
+}
+
+// ── Main Page ──
+
+function renderMainPage(reports, defaultUrl) {
   return `<!DOCTYPE html>
 <html lang="ja">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CamScanShare 改善レポート QR 発行</title>
+  <title>CamScanShare 改善レポート</title>
   <style>
     :root {
       color-scheme: light;
@@ -379,7 +425,11 @@ async function renderQrPage({ ngrokUrl, qrDataUrl, qrPayload, errorMessage }) {
       justify-content: space-between;
       gap: 16px;
       margin-bottom: 24px;
+      flex-wrap: wrap;
     }
+    h1 { margin: 0 0 6px; font-size: 28px; }
+    .lead { margin: 0; color: var(--muted); line-height: 1.6; }
+    .grid { display: grid; gap: 16px; }
     .card {
       background: var(--card);
       border: 1px solid var(--line);
@@ -387,53 +437,133 @@ async function renderQrPage({ ngrokUrl, qrDataUrl, qrPayload, errorMessage }) {
       padding: 18px 20px;
       box-shadow: 0 12px 28px rgba(19, 36, 64, 0.05);
     }
-    h1 {
-      margin: 0 0 6px;
-      font-size: 28px;
+    .card-top {
+      display: flex;
+      align-items: baseline;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 12px;
+      flex-wrap: wrap;
     }
-    .lead {
-      margin: 0;
-      color: var(--muted);
+    .report-id { font-size: 18px; font-weight: 700; color: var(--primary); text-decoration: none; }
+    .report-id:hover { text-decoration: underline; }
+    .meta {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 10px 16px;
+      margin-bottom: 12px;
+    }
+    .meta-item { font-size: 14px; line-height: 1.5; }
+    .meta-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
+    .comment {
+      padding: 12px 14px;
+      border-radius: 14px;
+      background: #f7f9fc;
+      border: 1px solid var(--line);
+      font-size: 24px;
       line-height: 1.6;
+      white-space: pre-wrap;
+      word-break: break-word;
     }
-    label {
-      display: block;
-      margin-bottom: 8px;
+    .empty { padding: 28px; text-align: center; color: var(--muted); }
+
+    /* Buttons */
+    .primary-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 0 20px;
+      border: none;
+      border-radius: 12px;
+      background: var(--primary);
+      color: white;
       font-size: 14px;
       font-weight: 700;
+      cursor: pointer;
+      white-space: nowrap;
     }
-    input {
+    .primary-btn:hover { background: #1258c0; }
+    .primary-btn:disabled { opacity: 0.6; cursor: default; }
+    .secondary-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 42px;
+      padding: 0 20px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      background: white;
+      color: var(--text);
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      white-space: nowrap;
+    }
+    .secondary-btn:hover { background: #f7f9fc; }
+    .full-width { width: 100%; }
+
+    /* Dialog */
+    dialog {
+      border: none;
+      border-radius: 20px;
+      padding: 0;
+      max-width: 560px;
+      width: calc(100% - 40px);
+      box-shadow: 0 24px 48px rgba(0, 0, 0, 0.18);
+      overflow: hidden;
+    }
+    dialog::backdrop {
+      background: rgba(0, 0, 0, 0.4);
+      backdrop-filter: blur(4px);
+    }
+    dialog[open] {
+      animation: dialog-show 0.2s ease-out;
+    }
+    @keyframes dialog-show {
+      from { opacity: 0; transform: scale(0.96); }
+      to { opacity: 1; transform: scale(1); }
+    }
+    .dialog-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 20px 24px;
+      border-bottom: 1px solid var(--line);
+    }
+    .dialog-header h2 { margin: 0; font-size: 18px; }
+    .close-btn {
+      width: 36px;
+      height: 36px;
+      border: none;
+      background: none;
+      font-size: 24px;
+      color: var(--muted);
+      cursor: pointer;
+      border-radius: 8px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      line-height: 1;
+    }
+    .close-btn:hover { background: #f0f3f7; }
+    .dialog-body { padding: 24px; }
+    .dialog-lead { margin: 0 0 20px; font-size: 14px; color: var(--muted); line-height: 1.6; }
+    .field { margin-bottom: 20px; }
+    .field:last-child { margin-bottom: 0; }
+    label { display: block; margin-bottom: 8px; font-size: 14px; font-weight: 700; }
+    input[type="text"] {
       width: 100%;
       height: 48px;
       padding: 0 14px;
       border: 1px solid var(--line);
       border-radius: 14px;
       font-size: 15px;
+      background: white;
+      color: var(--text);
     }
-    input[readonly] {
-      background: #eef3fb;
-      color: #35465a;
-    }
-    .field {
-      margin-bottom: 20px;
-    }
-    .hint {
-      margin-top: 6px;
-      font-size: 13px;
-      color: var(--muted);
-      line-height: 1.5;
-    }
-    button {
-      height: 48px;
-      padding: 0 20px;
-      border: none;
-      border-radius: 14px;
-      background: var(--primary);
-      color: white;
-      font-size: 15px;
-      font-weight: 700;
-      cursor: pointer;
-    }
+    input[readonly] { background: #eef3fb; color: #35465a; }
+    .hint { margin-top: 6px; font-size: 13px; color: var(--muted); line-height: 1.5; }
     .error {
       margin-bottom: 20px;
       padding: 14px 16px;
@@ -443,18 +573,7 @@ async function renderQrPage({ ngrokUrl, qrDataUrl, qrPayload, errorMessage }) {
       font-size: 14px;
       line-height: 1.5;
     }
-    .result {
-      display: grid;
-      gap: 16px;
-      margin-top: 16px;
-    }
-    .grid {
-      display: grid;
-      gap: 16px;
-    }
-    .form-card {
-      max-width: 720px;
-    }
+    .qr-center { display: flex; justify-content: center; margin-bottom: 20px; }
     .qr-box {
       display: inline-flex;
       padding: 16px;
@@ -472,220 +591,226 @@ async function renderQrPage({ ngrokUrl, qrDataUrl, qrPayload, errorMessage }) {
       font-size: 13px;
       line-height: 1.6;
     }
-    .result-link {
-      margin-top: 4px;
-      font-size: 14px;
-    }
-    .result-link a {
-      color: var(--primary);
-      text-decoration: none;
-      font-weight: 600;
-    }
-    .result-link a:hover {
-      text-decoration: underline;
-    }
+    .btn-row { margin-top: 20px; }
   </style>
 </head>
 <body>
   <main class="wrap">
     <div class="header">
       <div>
-        <h1>改善レポート QR 発行</h1>
-        <p class="lead">Android / iOS アプリが読み取る QR コードを生成します。ngrok で公開した URL を入力し、アクセストークン入りのカスタム URI を発行します。</p>
+        <h1>改善レポート</h1>
+        <p class="lead">受信した改善レポートを表示します。</p>
+      </div>
+      <button id="qr-btn" class="primary-btn">QR</button>
+    </div>
+    <section id="report-list" class="grid"></section>
+  </main>
+
+  <dialog id="qr-dialog">
+    <div class="dialog-header">
+      <h2>QR コード作成</h2>
+      <button id="qr-close" class="close-btn" aria-label="閉じる">&times;</button>
+    </div>
+    <div id="qr-form-view" class="dialog-body">
+      <p class="dialog-lead">ngrok で公開した URL を入力し、アクセストークン入りの QR コードを作成します。</p>
+      <div id="qr-error" class="error" style="display:none"></div>
+      <form id="qr-form">
+        <div class="field">
+          <label for="qr-url">ngrok の URL</label>
+          <input id="qr-url" type="text" placeholder="https://xxxx.ngrok-free.app" autocomplete="off">
+          <div class="hint">末尾に <code>/reports</code> は不要です。</div>
+        </div>
+        <div class="field">
+          <label>アクセストークン</label>
+          <input id="qr-token" type="text" readonly>
+          <div class="hint">サーバー起動中は固定。環境変数 <code>REPORT_SERVER_TOKEN</code> で上書き可能。</div>
+        </div>
+        <button id="qr-submit" type="submit" class="primary-btn full-width">QR コード作成</button>
+      </form>
+    </div>
+    <div id="qr-result-view" class="dialog-body" style="display:none">
+      <div class="qr-center">
+        <div class="qr-box"><img id="qr-img" src="" alt="QR コード" width="320" height="320"></div>
+      </div>
+      <div class="field">
+        <label>カスタム URI</label>
+        <div class="payload" id="qr-payload"></div>
+      </div>
+      <div class="btn-row">
+        <button id="qr-back" class="secondary-btn full-width">別の URL で作成</button>
       </div>
     </div>
-    <section class="grid">
-      <section class="card form-card">
-        ${errorMessage ? `<div class="error">${escapeHtml(errorMessage)}</div>` : ""}
-      <form method="post" action="/qr">
-        <div class="field">
-          <label for="ngrokUrl">ngrok の URL</label>
-          <input id="ngrokUrl" name="ngrokUrl" type="text" value="${escapeHtml(ngrokUrl)}" placeholder="https://xxxx.ngrok-free.app" autocomplete="off">
-          <div class="hint">手入力。末尾に <code>/reports</code> は不要です。</div>
-        </div>
-        <div class="field">
-          <label for="token">アクセストークン</label>
-          <input id="token" type="text" value="${escapeHtml(reportToken)}" readonly>
-          <div class="hint">サーバー起動中は固定です。必要なら環境変数 <code>REPORT_SERVER_TOKEN</code> で上書きできます。</div>
-        </div>
-        <button type="submit">QRコード作成</button>
-      </form>
-      </section>
-      ${qrDataUrl ? `
-        <section class="card">
-          <div class="result">
-            <div>
-              <label>生成された QR コード</label>
-              <div class="qr-box"><img src="${qrDataUrl}" alt="改善レポート送信用 QR コード" width="320" height="320"></div>
-            </div>
-            <div>
-              <label>カスタム URI</label>
-              <div class="payload">${escapeHtml(qrPayload ?? "")}</div>
-            </div>
-            <div class="result-link"><a href="/reports">レポート一覧へ</a></div>
-          </div>
-        </section>
-      ` : ""}
-    </section>
-  </main>
+  </dialog>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+  (function() {
+    var REPORTS = ${safeJsonEmbed(reports)};
+    var DEFAULT_URL = ${safeJsonEmbed(defaultUrl)};
+    var TOKEN = ${safeJsonEmbed(reportToken)};
+
+    // ── Helpers ──
+
+    function esc(s) {
+      return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+    }
+
+    function metaHtml(label, value) {
+      return '<div class="meta-item"><span class="meta-label">' + esc(label) + '</span><span>' + esc(value) + '</span></div>';
+    }
+
+    function reportCardHtml(r) {
+      var s = r.summary || {};
+      return '<article class="card">' +
+        '<div class="card-top">' +
+        '<a class="report-id" href="/reports/' + encodeURIComponent(r.reportId) + '">' + esc(r.reportId) + '</a>' +
+        '<div>' + esc(String(r.fileCount)) + ' files</div>' +
+        '</div>' +
+        '<div class="meta">' +
+        metaHtml('日時 (JST)', s.timestampJst || '-') +
+        metaHtml('アプリ版', s.appVersion || '-') +
+        metaHtml('ビルド番号', s.buildNumber || '-') +
+        metaHtml('ページID', s.pageId || '-') +
+        metaHtml('現在フィルタ', s.currentFilter || '-') +
+        '</div>' +
+        '<div class="comment">' + esc(s.comment || '(comment not found)') + '</div>' +
+        '</article>';
+    }
+
+    // ── Report List ──
+
+    var listEl = document.getElementById('report-list');
+
+    function renderReportList(reports) {
+      if (reports.length === 0) {
+        listEl.innerHTML = '<div class="card empty">まだレポートはありません。</div>';
+        return;
+      }
+      listEl.innerHTML = reports.map(reportCardHtml).join('');
+    }
+
+    renderReportList(REPORTS);
+
+    // ── Socket.IO ──
+
+    var socket = io();
+    var wasConnected = false;
+
+    socket.on('connect', function() {
+      if (wasConnected) {
+        fetch('/api/reports')
+          .then(function(r) { return r.json(); })
+          .then(renderReportList)
+          .catch(function() {});
+      }
+      wasConnected = true;
+    });
+
+    socket.on('reports:update', renderReportList);
+
+    // ブラウザバック時に最新データを取得（bfcache・HTTPキャッシュ両対応）
+    window.addEventListener('pageshow', function(e) {
+      if (!e.persisted) return;
+      fetch('/api/reports')
+        .then(function(r) { return r.json(); })
+        .then(renderReportList)
+        .catch(function() {});
+      if (socket.disconnected) socket.connect();
+    });
+    window.addEventListener('visibilitychange', function() {
+      if (document.visibilityState !== 'visible') return;
+      fetch('/api/reports')
+        .then(function(r) { return r.json(); })
+        .then(renderReportList)
+        .catch(function() {});
+      if (socket.disconnected) socket.connect();
+    });
+
+    // ── QR Modal ──
+
+    var dialog = document.getElementById('qr-dialog');
+    var formView = document.getElementById('qr-form-view');
+    var resultView = document.getElementById('qr-result-view');
+    var errorEl = document.getElementById('qr-error');
+    var urlInput = document.getElementById('qr-url');
+    var submitBtn = document.getElementById('qr-submit');
+
+    document.getElementById('qr-token').value = TOKEN;
+    if (DEFAULT_URL) urlInput.value = DEFAULT_URL;
+
+    function submitQrForm() {
+      errorEl.style.display = 'none';
+      submitBtn.disabled = true;
+      submitBtn.textContent = '生成中...';
+
+      fetch('/api/qr', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ngrokUrl: urlInput.value.trim() })
+      })
+      .then(function(res) {
+        return res.json().then(function(data) { return { ok: res.ok, data: data }; });
+      })
+      .then(function(result) {
+        if (!result.ok) {
+          errorEl.textContent = result.data.error || 'エラーが発生しました。';
+          errorEl.style.display = '';
+          formView.style.display = '';
+          resultView.style.display = 'none';
+          return;
+        }
+        document.getElementById('qr-img').src = result.data.qrDataUrl;
+        document.getElementById('qr-payload').textContent = result.data.qrPayload;
+        formView.style.display = 'none';
+        resultView.style.display = '';
+      })
+      .catch(function() {
+        errorEl.textContent = '通信エラーが発生しました。';
+        errorEl.style.display = '';
+        formView.style.display = '';
+        resultView.style.display = 'none';
+      })
+      .finally(function() {
+        submitBtn.disabled = false;
+        submitBtn.textContent = 'QR コード作成';
+      });
+    }
+
+    document.getElementById('qr-btn').addEventListener('click', function() {
+      formView.style.display = '';
+      resultView.style.display = 'none';
+      errorEl.style.display = 'none';
+      dialog.showModal();
+      if (DEFAULT_URL) {
+        submitQrForm();
+      }
+    });
+
+    document.getElementById('qr-close').addEventListener('click', function() {
+      dialog.close();
+    });
+
+    dialog.addEventListener('click', function(e) {
+      if (e.target === dialog) dialog.close();
+    });
+
+    document.getElementById('qr-form').addEventListener('submit', function(e) {
+      e.preventDefault();
+      submitQrForm();
+    });
+
+    document.getElementById('qr-back').addEventListener('click', function() {
+      formView.style.display = '';
+      resultView.style.display = 'none';
+      errorEl.style.display = 'none';
+    });
+  })();
+  </script>
 </body>
 </html>`;
 }
 
-function renderReportsIndexPage(reports) {
-  return `<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>CamScanShare 改善レポート一覧</title>
-  <style>
-    :root {
-      color-scheme: light;
-      --bg: #f5f7fb;
-      --card: #ffffff;
-      --line: #d9e1ec;
-      --text: #17212c;
-      --muted: #526173;
-      --primary: #1769e0;
-    }
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      background: var(--bg);
-      color: var(--text);
-    }
-    .wrap {
-      max-width: 1080px;
-      margin: 0 auto;
-      padding: 32px 20px 48px;
-    }
-    .header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 16px;
-      margin-bottom: 24px;
-    }
-    .header-links {
-      display: flex;
-      gap: 12px;
-      flex-wrap: wrap;
-    }
-    .link-btn {
-      display: inline-flex;
-      align-items: center;
-      justify-content: center;
-      min-height: 42px;
-      padding: 0 16px;
-      border-radius: 12px;
-      border: 1px solid var(--line);
-      background: white;
-      color: var(--text);
-      text-decoration: none;
-      font-weight: 600;
-    }
-    h1 {
-      margin: 0 0 6px;
-      font-size: 28px;
-    }
-    .lead {
-      margin: 0;
-      color: var(--muted);
-      line-height: 1.6;
-    }
-    .grid {
-      display: grid;
-      gap: 16px;
-    }
-    .card {
-      background: var(--card);
-      border: 1px solid var(--line);
-      border-radius: 20px;
-      padding: 18px 20px;
-      box-shadow: 0 12px 28px rgba(19, 36, 64, 0.05);
-    }
-    .card-top {
-      display: flex;
-      align-items: baseline;
-      justify-content: space-between;
-      gap: 16px;
-      margin-bottom: 12px;
-      flex-wrap: wrap;
-    }
-    .report-id {
-      font-size: 18px;
-      font-weight: 700;
-    }
-    .meta {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-      gap: 10px 16px;
-      margin-bottom: 12px;
-    }
-    .meta-item {
-      font-size: 14px;
-      line-height: 1.5;
-    }
-    .meta-label {
-      display: block;
-      font-size: 12px;
-      color: var(--muted);
-      margin-bottom: 2px;
-    }
-    .comment {
-      padding: 12px 14px;
-      border-radius: 14px;
-      background: #f7f9fc;
-      border: 1px solid var(--line);
-      font-size: 14px;
-      line-height: 1.6;
-      white-space: pre-wrap;
-      word-break: break-word;
-    }
-    .empty {
-      padding: 28px;
-      text-align: center;
-      color: var(--muted);
-    }
-  </style>
-</head>
-<body>
-  <main class="wrap">
-    <div class="header">
-      <div>
-        <h1>改善レポート一覧</h1>
-        <p class="lead">POST /reports で受信したレポートを新しい順に表示します。各カードから詳細へ移動できます。</p>
-      </div>
-      <div class="header-links">
-        <a class="link-btn" href="/qr">QR 発行画面</a>
-      </div>
-    </div>
-    <section class="grid">
-      ${reports.length === 0 ? `
-        <div class="card empty">まだレポートはありません。</div>
-      ` : reports.map((report) => `
-        <article class="card">
-          <div class="card-top">
-            <a class="report-id" href="/reports/${encodeURIComponent(report.reportId)}">${escapeHtml(report.reportId)}</a>
-            <div>${escapeHtml(report.fileCount)} files</div>
-          </div>
-          <div class="meta">
-            ${renderMetaItem("日時 (JST)", report.summary.timestampJst ?? "-")}
-            ${renderMetaItem("アプリ版", report.summary.appVersion ?? "-")}
-            ${renderMetaItem("ビルド番号", report.summary.buildNumber ?? "-")}
-            ${renderMetaItem("ページID", report.summary.pageId ?? "-")}
-            ${renderMetaItem("現在フィルタ", report.summary.currentFilter ?? "-")}
-          </div>
-          <div class="comment">${escapeHtml(report.summary.comment ?? "(comment not found)")}</div>
-        </article>
-      `).join("")}
-    </section>
-  </main>
-</body>
-</html>`;
-}
+// ── Report Detail Page ──
 
 function renderReportDetailPage(detail) {
   const imageFiles = detail.files.filter((file) => file.isImage);
@@ -725,15 +850,8 @@ function renderReportDetailPage(detail) {
       flex-wrap: wrap;
       margin-bottom: 24px;
     }
-    h1 {
-      margin: 0 0 6px;
-      font-size: 28px;
-    }
-    .lead {
-      margin: 0;
-      color: var(--muted);
-      line-height: 1.6;
-    }
+    h1 { margin: 0 0 6px; font-size: 28px; }
+    .lead { margin: 0; color: var(--muted); line-height: 1.6; }
     .link-btn {
       display: inline-flex;
       align-items: center;
@@ -747,10 +865,7 @@ function renderReportDetailPage(detail) {
       text-decoration: none;
       font-weight: 600;
     }
-    .stack {
-      display: grid;
-      gap: 16px;
-    }
+    .stack { display: grid; gap: 16px; }
     .card {
       background: var(--card);
       border: 1px solid var(--line);
@@ -764,21 +879,14 @@ function renderReportDetailPage(detail) {
       gap: 12px 16px;
       margin-bottom: 16px;
     }
-    .meta-item {
-      font-size: 14px;
-      line-height: 1.5;
-    }
-    .meta-label {
-      display: block;
-      font-size: 12px;
-      color: var(--muted);
-      margin-bottom: 2px;
-    }
+    .meta-item { font-size: 14px; line-height: 1.5; }
+    .meta-label { display: block; font-size: 12px; color: var(--muted); margin-bottom: 2px; }
     .comment {
       padding: 14px 16px;
       border-radius: 14px;
       background: #f7f9fc;
       border: 1px solid var(--line);
+      font-size: 32px;
       line-height: 1.7;
       white-space: pre-wrap;
       word-break: break-word;
@@ -808,14 +916,8 @@ function renderReportDetailPage(detail) {
       font-weight: 700;
       word-break: break-all;
     }
-    .file-list {
-      margin: 0;
-      padding-left: 18px;
-      line-height: 1.8;
-    }
-    .file-list a {
-      color: inherit;
-    }
+    .file-list { margin: 0; padding-left: 18px; line-height: 1.8; }
+    .file-list a { color: inherit; }
   </style>
 </head>
 <body>
@@ -863,6 +965,8 @@ function renderReportDetailPage(detail) {
 </html>`;
 }
 
+// ── Simple Message Page ──
+
 function renderSimpleMessagePage(message, href, linkLabel) {
   return `<!DOCTYPE html>
 <html lang="ja">
@@ -887,11 +991,7 @@ function renderSimpleMessagePage(message, href, linkLabel) {
       max-width: 420px;
       text-align: center;
     }
-    a {
-      color: #1769e0;
-      text-decoration: none;
-      font-weight: 700;
-    }
+    a { color: #1769e0; text-decoration: none; font-weight: 700; }
   </style>
 </head>
 <body>
@@ -901,21 +1001,4 @@ function renderSimpleMessagePage(message, href, linkLabel) {
   </div>
 </body>
 </html>`;
-}
-
-function renderMetaItem(label, value) {
-  return `
-    <div class="meta-item">
-      <span class="meta-label">${escapeHtml(label)}</span>
-      <span>${escapeHtml(value)}</span>
-    </div>
-  `;
-}
-
-function escapeHtml(value) {
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;");
 }
