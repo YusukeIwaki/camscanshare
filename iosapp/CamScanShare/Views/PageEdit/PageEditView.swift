@@ -8,6 +8,7 @@ struct PageEditView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel = PageEditViewModel()
     @State private var workingPreviewManager = WorkingPreviewManager()
+    @State private var showImprovementReportDialog = false
 
     var body: some View {
         VStack(spacing: 0) {
@@ -54,6 +55,14 @@ struct PageEditView: View {
             if let filter = viewModel.pendingApplyAllFilter {
                 Text("「\(filter.displayName)」フィルタを全ページに適用しますか？")
             }
+        }
+        .alert("改善レポートを送信しますか？", isPresented: $showImprovementReportDialog) {
+            Button("キャンセル", role: .cancel) {}
+            Button("OK") {
+                navigateToImprovementReport()
+            }
+        } message: {
+            Text("現在の元画像とフィルタ後の画像を開発元にすべて送信します。よろしいですか？")
         }
     }
 
@@ -240,6 +249,7 @@ struct PageEditView: View {
                             ForEach(FilterPreset.allCases) { preset in
                                 filterItemView(preset: preset)
                             }
+                            improvementRequestItem
                         }
                         .padding(.horizontal, 16)
                     }
@@ -284,6 +294,33 @@ struct PageEditView: View {
         )
     }
 
+    private var improvementRequestItem: some View {
+        Button {
+            showImprovementReportDialog = true
+        } label: {
+            VStack(spacing: 6) {
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(Color.orange.opacity(0.14))
+                    .frame(width: 64, height: 80)
+                    .overlay {
+                        Image(systemName: "exclamationmark.bubble")
+                            .font(.system(size: 24, weight: .semibold))
+                            .foregroundStyle(Color.orange)
+                    }
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Color.orange.opacity(0.28), lineWidth: 1)
+                    )
+
+                Text("開発元に改善要望")
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .frame(width: 74)
+            }
+        }
+    }
+
     @ViewBuilder
     private func filterPreviewContent(preset: FilterPreset) -> some View {
         Image(preset.thumbnailAssetName)
@@ -316,6 +353,30 @@ struct PageEditView: View {
             aspectRatio: aspectRatio,
             isGeneratingWorkingPreview: viewModel.isRegeneratingPersistedPreview(for: page)
         )
+    }
+
+    private func navigateToImprovementReport() {
+        guard let currentPage = viewModel.currentPage,
+            let currentEditState = viewModel.currentEditState
+        else {
+            return
+        }
+
+        path.append(
+            AppRoute.improvementReport(
+                pageReportId: buildImprovementReportPageId(for: currentPage),
+                sourceImageFileName: currentPage.originalImageFileName,
+                rotationDegrees: currentEditState.rotationDegrees,
+                currentFilterRawValue: currentEditState.filterPreset.rawValue
+            )
+        )
+    }
+
+    private func buildImprovementReportPageId(for page: Page) -> String {
+        let fileStem = URL(fileURLWithPath: page.originalImageFileName)
+            .deletingPathExtension()
+            .lastPathComponent
+        return "page-\(page.sortOrder + 1)-\(fileStem)"
     }
 
     @MainActor

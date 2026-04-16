@@ -5,6 +5,12 @@ enum AppRoute: Hashable {
     case pageList(documentId: PersistentIdentifier)
     case cameraScan(documentId: PersistentIdentifier?, retakePageId: PersistentIdentifier? = nil)
     case pageEdit(documentId: PersistentIdentifier, initialPageIndex: Int)
+    case improvementReport(
+        pageReportId: String,
+        sourceImageFileName: String,
+        rotationDegrees: Int,
+        currentFilterRawValue: String
+    )
 }
 
 struct AppNavigation: View {
@@ -26,6 +32,19 @@ struct AppNavigation: View {
                     case .pageEdit(let documentId, let initialPageIndex):
                         PageEditView(
                             documentId: documentId, initialPageIndex: initialPageIndex, path: $path)
+                    case .improvementReport(
+                        let pageReportId,
+                        let sourceImageFileName,
+                        let rotationDegrees,
+                        let currentFilterRawValue
+                    ):
+                        ImprovementReportView(
+                            pageReportId: pageReportId,
+                            sourceImageFileName: sourceImageFileName,
+                            rotationDegrees: rotationDegrees,
+                            currentFilterRawValue: currentFilterRawValue,
+                            path: $path
+                        )
                     }
                 }
         }
