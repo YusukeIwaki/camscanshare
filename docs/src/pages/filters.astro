@@ -6,13 +6,31 @@ const filters = [
   {
     key: 'sharpen',
     name: 'くっきり',
+    navLabel: 'くっきり',
     description: 'コントラスト強調 + 明るさ微調整。一般的な文書をはっきり読みやすくする。',
     formula: 'contrast(1.4) * brightness(1.05)',
     detail: 'コントラストを 1.4 倍に引き上げ、明るさを 5% 上げることで、白い紙面と黒い文字の差を広げる。ColorMatrix のみで完結し、処理コストはほぼゼロ。',
   },
   {
+    key: 'enhance',
+    name: '強化',
+    navLabel: '強化',
+    description: '軽い紙面平坦化と文字コントラスト強調を両立し、カラー文書の見た目をあまり壊さずに読みやすさを上げる。',
+    formula: 'Flat-field correction → mild paper whitening → moderate text contrast boost → color restore',
+    detail: '改善レポートの比較から、白地は明るくするが紙の質感は少し残す、という性格に寄せた。背景補正は控えめで、色付きポスターや図版でも不自然な白飛びを避ける。',
+  },
+  {
+    key: 'eco',
+    name: '省エネ',
+    navLabel: '省エネ',
+    description: '紙面の白さをかなり整えつつ、文字と色面は Magic Pro ほど押し切らずに残す中強度フィルタ。',
+    formula: 'Conservative illumination flattening → paper-only cleanup → minimal chroma neutralization',
+    detail: '改善レポートでは見た目以上に紙面整形が強かったので、白地のしみや弱い影はかなり持ち上げる一方、色付きポスターや既に良い文書では Magic Pro ほど強く白化しない位置を狙っている。',
+  },
+  {
     key: 'bw',
     name: '白黒',
+    navLabel: '白黒',
     description: '照明補正 + 局所平均による適応的二値化で、背景を白飛ばしし文字をくっきり黒にする。',
     formula: 'Flat-field correction → Local-mean normalization → Global threshold → Small-component removal',
     detail: 'Lab の L チャンネルを照明補正・ヒストグラムストレッチしてからメディアンフィルタでノイズ除去。大きなガウシアンカーネル（71×71）で局所平均を求め、各画素を局所平均で除算して正規化する。正規化画像にグローバル閾値を適用して二値化し、最後に連結成分分析で面積 8px 未満の孤立黒点を除去する。',
@@ -20,6 +38,7 @@ const filters = [
   {
     key: 'magic',
     name: 'マジック',
+    navLabel: 'マジック',
     description: 'OpenCV による比率正規化・照明補正・自動トーン伸長・紙面白化・色保持を組み合わせた決定的パイプライン。',
     formula: 'A4 ratio normalization → Flat-field correction → Auto RMODE → Paper whitening + color-aware saturation restore',
     detail: 'A4 に近い比率の文書は、画素数をほぼ維持したまま正確な A4 比率へ寄せる（Step 1）。その後、Lab 色空間の L チャンネルをぼかし面で割り戻して照明ムラを除去し（Step 2）、ヒストグラムの黒白点で自動ストレッチする。最終段では紙領域だけを白化しつつ、紙色を中和した参照画像から彩度を一部戻す。色ペンや罫線だけでなく、色付きセルや色付き紙面が一定量ある資料では、その色面を白化しすぎずに残す。',
@@ -30,8 +49,17 @@ const filters = [
     ],
   },
   {
+    key: 'magic_pro',
+    name: 'Magic Pro',
+    navLabel: 'Magic Pro',
+    description: '既存 magic より強い紙面白化と影の平坦化を掛けつつ、強い文字と色面は残す。',
+    formula: 'Magic baseline → stronger paper whitening → shadow lift → texture suppression on paper',
+    detail: '改善レポートでは、「強化」より背景補正が強く、色付きポスターのような資料でも紙面全体のしわや影をかなり平坦化していた。ここでも strong-structure mask で印字を保護しながら、白地は強く白化し、色付き紙面も中強度で平坦化する。',
+  },
+  {
     key: 'whiteboard',
     name: 'ホワイトボード',
+    navLabel: 'ホワイトボード',
     description: '照明ムラ補正 + 背景白化 + マーカー色保持。ホワイトボード面を白く整えつつ、色ペンの線を残す。',
     formula: 'Flat-field correction → board mask → stronger whitening → accent color preservation',
     detail: 'Lab の L チャンネルで照明ムラを平坦化し、明るい低彩度領域をホワイトボード面として抽出して強めに白化する。構造マスクと色アクセントマスクでペン線を保護し、背景だけをほぼ無彩色へ寄せる。',
@@ -39,11 +67,21 @@ const filters = [
   {
     key: 'vivid',
     name: '鮮やか',
+    navLabel: '鮮やか',
     description: '彩度強調 + コントラスト微調整。カラー文書や図表の色を鮮やかにする。',
     formula: 'saturate(2.0) * contrast(1.2)',
     detail: '彩度を 2 倍に引き上げて色を強調し、コントラスト 1.2 倍で軽く引き締める。カラーの図表、ポスター、イラスト付き資料に効果的。',
   },
 ];
+
+function resolveFilterPath(sample, filterKey) {
+  const explicit = sample.filters?.[filterKey];
+  if (explicit) return explicit;
+
+  const step1File = sample.step1.split('/').pop() ?? '';
+  const base = step1File.replace(/-step1\.[^.]+$/, '').replace(/\.[^.]+$/, '');
+  return `docs/public/algorithm/filters/${filterKey}/${base}.png`;
+}
 
 function buildViewerForFilter(filterKey, sample) {
   const steps = [
@@ -56,7 +94,7 @@ function buildViewerForFilter(filterKey, sample) {
       { label: 'Step 3', src: '/' + sample.magic_step3.replace('docs/public/', ''), caption: 'Step 3: 最終出力。Auto RMODE + 紙面白化。' },
     );
   } else {
-    const filterPath = sample.filters[filterKey];
+    const filterPath = resolveFilterPath(sample, filterKey);
     steps.push(
       { label: 'フィルタ適用', src: '/' + filterPath.replace('docs/public/', ''), caption: `フィルタ適用後。` },
     );
@@ -77,6 +115,7 @@ function buildViewerForFilter(filterKey, sample) {
         <p class="algo-subtitle">
           各フィルタの処理パラメータとサンプル画像を掲載する。
           ここでアルゴリズムを検証・研究し、確定したパラメータをアプリに移植する。
+          改善レポートから逆算した `強化` / `省エネ` / `Magic Pro` も、docs とアプリ実装を同期してここで比較する。
         </p>
       </div>
     </div>
@@ -86,7 +125,7 @@ function buildViewerForFilter(filterKey, sample) {
     <div class="algo-nav-inner">
       <a href="#perspective" class="filter-tab" data-filter-key="perspective">台形選択</a>
       {filters.map((f) => (
-        <a href={`#filter-${f.key}`} class="filter-tab" data-filter-key={f.key}>{f.name}</a>
+        <a href={`#filter-${f.key}`} class="filter-tab" data-filter-key={f.key}>{f.navLabel ?? f.name}</a>
       ))}
     </div>
   </nav>

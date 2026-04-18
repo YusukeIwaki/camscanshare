@@ -110,7 +110,7 @@ agent-browser scrollintoview "#screen-page-edit .phone-frame" && agent-browser s
 
 ## フィルタプリセット
 
-オリジナル（既定） / くっきり / 白黒 / マジック / ホワイトボード / 鮮やか の6種。各フィルタの効果・パラメータの詳細は [フィルタ解説ページ](docs/src/pages/filters.astro) を参照。
+オリジナル（既定） / くっきり / 強化 / 省エネ / 白黒 / マジック / Magic Pro / ホワイトボード / 鮮やか の9種。各フィルタの効果・パラメータの詳細は [フィルタ解説ページ](docs/src/pages/filters.astro) を参照。
 
 フィルタは今後追加可能な拡張設計とする。
 
@@ -123,7 +123,7 @@ agent-browser scrollintoview "#screen-page-edit .phone-frame" && agent-browser s
    - `scripts/generate_step0_samples.py`: 全サンプルのStep 0画像を生成（台形選択 + 射影変換）
    - `scripts/generate_step1_aspect_samples.py`: Step 0を入力に、A4 に近い文書だけ比率正規化したStep 1画像を生成
    - `scripts/generate_magic_filter_steps.py`: Step 1を入力に、マジックフィルタのStep 2/3画像を生成（OpenCVパイプライン）
-   - `scripts/generate_simple_filter_samples.py`: Step 1を入力に、くっきり・白黒・ホワイトボード・鮮やかフィルタを生成（ColorMatrix相当の処理）
+   - `scripts/generate_simple_filter_samples.py`: Step 1を入力に、くっきり・強化・省エネ・白黒・Magic Pro・ホワイトボード・鮮やかフィルタを生成
    - `scripts/generate_filter_assets.sh`: 上記4段を順に実行して全画像を再生成
    - 入力ソース画像のリストは `docs/filter-samples.json` で管理
 3. **アプリへの実装**: 検証で確定したパラメータをAndroid/iOSアプリに移植する。Androidの実装は `androidapp/` の `ImageFilter.kt`（ColorMatrix定義）と `ImageProcessor.kt`（マジックフィルタのOpenCV実装）にある。
@@ -132,6 +132,29 @@ agent-browser scrollintoview "#screen-page-edit .phone-frame" && agent-browser s
 - まずPythonスクリプトでアルゴリズムを実装し、サンプル画像で効果を確認
 - 結果が良ければドキュメントページに解説セクションを追加
 - 最後にアプリのコードに移植
+
+### 改善レポートの分析手法
+
+`report_server/` には、実際の端末から送られた改善レポートが保存される。フィルタの研究・比較では、このレポート群を docs サンプルの補助データとして積極的に使うこと。
+
+- レポート一覧は `http://localhost:3030/reports` で確認し、`agent-browser` で詳細ページを開く
+- レポート本体のファイルは `report_server/reports/report-*/` に展開されている
+- `extra-*.png` は比較元アプリ（CamScanner など）のスクリーンショットであることがある。どのフィルタ名でどの見た目になるかを読む一次資料として扱う
+- `source.jpg` / `original.jpg` / `filter-*.jpg` は自アプリ側の入力と出力。`extra-*` と並べて、どの処理が不足しているかを切り分ける
+
+分析の基本手順:
+
+1. `agent-browser open http://localhost:3030/reports` で一覧を開き、コメントと現在フィルタから対象レポートを絞る
+2. 詳細ページで `extra-*` のフィルタ名・順序・見た目を確認し、必要ならローカル画像を並べたコンタクトシートを作って比較する
+3. `source.jpg` と `extra-*` を見比べて、白地の整形、影除去、色保持、手書き除去、細字保持などの「処理の性格」を言語化する
+4. その知見が一過性でなさそうなら、元画像を `docs/filter-samples.json` に追加し、`docs/src/pages/filters.astro` と Python パイプライン上で試作して再評価する
+5. docs 上で十分に比較できる状態にしてから、必要であれば Android / iOS への移植を考える
+
+注意点:
+
+- レポートのスクリーンショット数枚だけで結論を出さず、既存の docs サンプル全体でも破綻しないかを見る
+- `手書きなし` のような内容除去系フィルタは、画質改善フィルタと同列に安全と見なしてはならない。何が消えるかを必ず明示する
+- `extra-*` の見た目は比較元アプリの内部実装そのものではなく、あくまで出力からの推定である。その前提を保って記述する
 
 ## 技術的な注意事項
 

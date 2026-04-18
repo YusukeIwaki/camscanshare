@@ -1,14 +1,14 @@
 #!/usr/bin/env python3
-"""Generate filter sample images for sharpen / bw / whiteboard / vivid filters.
+"""Generate docs filter sample images for non-magic filters.
 
 Reads Step 1 (aspect-normalized) images produced by generate_step1_aspect_samples.py
-and applies each simple filter using ColorMatrix-equivalent operations
-that match the Android app's ImageFilter.kt / ImageProcessor.kt.
+and applies each filter using the shared docs-side prototype pipeline.
 
 Usage:
     python scripts/generate_simple_filter_samples.py
     python scripts/generate_simple_filter_samples.py --only angled --only flat
     python scripts/generate_simple_filter_samples.py --filter sharpen --filter bw
+    python scripts/generate_simple_filter_samples.py --filter enhance --filter eco
 """
 
 from __future__ import annotations
@@ -20,6 +20,7 @@ from filter_asset_pipeline import (
     load_manifest_entries,
     read_image,
     repo_root_for,
+    resolve_filter_output_path,
     write_image,
 )
 
@@ -43,7 +44,7 @@ def parse_args() -> argparse.Namespace:
         "--filter",
         action="append",
         default=[],
-        help="Only generate specific filters (sharpen/bw/whiteboard/vivid).",
+        help="Only generate specific filters (for example sharpen/bw/enhance/eco/magic_pro).",
     )
     return parser.parse_args()
 
@@ -64,7 +65,7 @@ def main() -> None:
             continue
 
         for filter_key in sorted(selected_filters):
-            out_rel = entry["filters"][filter_key]
+            out_rel = resolve_filter_output_path(entry, filter_key)
             out_path = (repo_root / out_rel).resolve()
 
             result = apply_filter(step0, filter_key)
