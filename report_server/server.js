@@ -20,6 +20,9 @@ app.set("trust proxy", true);
 const port = Number.parseInt(process.env.PORT ?? "3030", 10);
 const reportToken = process.env.REPORT_SERVER_TOKEN ?? crypto.randomBytes(24).toString("hex");
 const reportsDir = path.resolve("reports");
+const iosIpaPath = path.resolve("..", "iosapp", "build", "adhoc", "export", "CamScanShare.ipa");
+const iosArchiveInfoPath = path.resolve("..", "iosapp", "build", "adhoc", "CamScanShare.xcarchive", "Info.plist");
+const androidApkPath = path.resolve("..", "androidapp", "app", "build", "outputs", "apk", "debug", "app-debug.apk");
 
 fs.mkdirSync(reportsDir, { recursive: true });
 
@@ -67,6 +70,64 @@ app.get("/reports/:reportId", (req, res) => {
   }
 
   res.send(renderReportDetailPage(detail));
+});
+
+// ── App Download Routes ──
+
+app.get("/app", async (req, res) => {
+  res.set("Cache-Control", "no-store");
+  const host = resolveAppHost(req);
+  if (!host) {
+    res.send(renderAppHostInputPage());
+    return;
+  }
+
+  const baseUrl = `https://${host}`;
+  const manifestUrl = `${baseUrl}/app/ios/manifest.plist`;
+  const iosInstallUrl = `itms-services://?action=download-manifest&url=${encodeURIComponent(manifestUrl)}`;
+  const androidInstallUrl = `${baseUrl}/app/android/app.apk`;
+
+  const [iosQr, androidQr] = await Promise.all([
+    QRCode.toDataURL(iosInstallUrl, { errorCorrectionLevel: "M", margin: 2, width: 320 }),
+    QRCode.toDataURL(androidInstallUrl, { errorCorrectionLevel: "M", margin: 2, width: 320 }),
+  ]);
+
+  const iosAvailable = fs.existsSync(iosIpaPath);
+  const androidAvailable = fs.existsSync(androidApkPath);
+
+  res.send(renderAppDownloadPage({
+    host, iosInstallUrl, androidInstallUrl, iosQr, androidQr, iosAvailable, androidAvailable,
+  }));
+});
+
+app.get("/app/ios/manifest.plist", (req, res) => {
+  const host = resolveAppHost(req);
+  if (!host) {
+    res.status(400).send("host required");
+    return;
+  }
+  const ipaUrl = `https://${host}/app/ios/app.ipa`;
+  const info = loadIosAppInfo();
+  res.set("Content-Type", "application/xml; charset=utf-8");
+  res.send(renderIosManifestPlist({ ipaUrl, ...info }));
+});
+
+app.get("/app/ios/app.ipa", (_req, res) => {
+  if (!fs.existsSync(iosIpaPath)) {
+    res.status(404).send("ipa not found. Build the iOS ad-hoc archive first.");
+    return;
+  }
+  res.set("Content-Type", "application/octet-stream");
+  res.sendFile(iosIpaPath);
+});
+
+app.get("/app/android/app.apk", (_req, res) => {
+  if (!fs.existsSync(androidApkPath)) {
+    res.status(404).send("apk not found. Run `./gradlew assembleDebug` first.");
+    return;
+  }
+  res.set("Content-Type", "application/vnd.android.package-archive");
+  res.sendFile(androidApkPath);
 });
 
 // ── API Routes ──
@@ -193,6 +254,99 @@ function normalizePublicBaseUrl(value) {
   parsed.search = "";
   parsed.hash = "";
   return parsed.toString().replace(/\/$/, "");
+}
+
+function isLocalhostHost(host) {
+  if (!host) return true;
+  const hostname = host.replace(/:\d+$/, "").replace(/^\[(.*)\]$/, "$1").toLowerCase();
+  return hostname === "localhost" || hostname === "127.0.0.1" || hostname === "::1";
+}
+
+function normalizeInputHost(value) {
+  const trimmed = String(value ?? "").trim();
+  if (!trimmed) return "";
+  if (/^https?:\/\//i.test(trimmed)) {
+    try {
+      return new URL(trimmed).host;
+    } catch {
+      return "";
+    }
+  }
+  return trimmed.replace(/\/.*$/, "");
+}
+
+function resolveAppHost(req) {
+  const hostParam = normalizeInputHost(req.query.host);
+  if (hostParam && !isLocalhostHost(hostParam)) return hostParam;
+  const reqHost = (req.get("host") ?? "").trim();
+  if (!isLocalhostHost(reqHost)) return reqHost;
+  return "";
+}
+
+function loadIosAppInfo() {
+  const defaults = {
+    bundleIdentifier: "io.github.yusukeiwaki.camscanshare",
+    bundleVersion: "1.0.0",
+    title: "CamScanShare",
+  };
+  if (!fs.existsSync(iosArchiveInfoPath)) return defaults;
+  try {
+    const xml = fs.readFileSync(iosArchiveInfoPath, "utf8");
+    const get = (key) => {
+      const m = new RegExp(`<key>${key}</key>\\s*<string>([^<]*)</string>`).exec(xml);
+      return m ? m[1] : null;
+    };
+    return {
+      bundleIdentifier: get("CFBundleIdentifier") || defaults.bundleIdentifier,
+      bundleVersion: get("CFBundleShortVersionString") || defaults.bundleVersion,
+      title: defaults.title,
+    };
+  } catch {
+    return defaults;
+  }
+}
+
+function renderIosManifestPlist({ ipaUrl, bundleIdentifier, bundleVersion, title }) {
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>items</key>
+    <array>
+        <dict>
+            <key>assets</key>
+            <array>
+                <dict>
+                    <key>kind</key>
+                    <string>software-package</string>
+                    <key>url</key>
+                    <string>${escapeXml(ipaUrl)}</string>
+                </dict>
+            </array>
+            <key>metadata</key>
+            <dict>
+                <key>bundle-identifier</key>
+                <string>${escapeXml(bundleIdentifier)}</string>
+                <key>bundle-version</key>
+                <string>${escapeXml(bundleVersion)}</string>
+                <key>kind</key>
+                <string>software</string>
+                <key>title</key>
+                <string>${escapeXml(title)}</string>
+            </dict>
+        </dict>
+    </array>
+</dict>
+</plist>`;
+}
+
+function escapeXml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll("'", "&apos;")
+    .replaceAll('"', "&quot;");
 }
 
 function inferDefaultPublicBaseUrl(req) {
@@ -960,6 +1114,230 @@ function renderReportDetailPage(detail) {
         </ul>
       </article>
     </section>
+  </main>
+</body>
+</html>`;
+}
+
+// ── App Download Pages ──
+
+function renderAppHostInputPage() {
+  return `<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CamScanShare アプリダウンロード</title>
+  <style>
+    body {
+      margin: 0;
+      min-height: 100vh;
+      display: grid;
+      place-items: center;
+      background: #f5f7fb;
+      color: #17212c;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+    .card {
+      background: white;
+      border: 1px solid #d9e1ec;
+      border-radius: 20px;
+      padding: 28px;
+      width: calc(100% - 40px);
+      max-width: 480px;
+      box-shadow: 0 12px 28px rgba(19, 36, 64, 0.05);
+    }
+    h1 { margin: 0 0 8px; font-size: 22px; }
+    p { margin: 0 0 20px; color: #526173; line-height: 1.6; font-size: 14px; }
+    label { display: block; margin-bottom: 8px; font-size: 14px; font-weight: 700; }
+    input[type="text"] {
+      width: 100%;
+      height: 48px;
+      padding: 0 14px;
+      border: 1px solid #d9e1ec;
+      border-radius: 14px;
+      font-size: 15px;
+      background: white;
+      color: #17212c;
+    }
+    .hint { margin: 6px 0 20px; font-size: 13px; color: #526173; line-height: 1.5; }
+    button {
+      width: 100%;
+      height: 48px;
+      border: none;
+      border-radius: 14px;
+      background: #1769e0;
+      color: white;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+    }
+    button:hover { background: #1258c0; }
+  </style>
+</head>
+<body>
+  <div class="card">
+    <h1>CamScanShare アプリダウンロード</h1>
+    <p>ngrok などで公開したホスト名を入力してください。入力先を使用してインストール用 QR コードを表示します。</p>
+    <form method="get" action="/app">
+      <label for="host-input">ホスト名</label>
+      <input id="host-input" name="host" type="text" placeholder="xxxx.ngrok-free.app" autocomplete="off" required>
+      <div class="hint">スキーム (https://) や末尾のパスは自動で取り除かれます。</div>
+      <button type="submit">続行</button>
+    </form>
+  </div>
+</body>
+</html>`;
+}
+
+function renderAppDownloadPage({ host, iosInstallUrl, androidInstallUrl, iosQr, androidQr, iosAvailable, androidAvailable }) {
+  return `<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>CamScanShare アプリダウンロード</title>
+  <style>
+    :root {
+      color-scheme: light;
+      --bg: #f5f7fb;
+      --card: #ffffff;
+      --line: #d9e1ec;
+      --text: #17212c;
+      --muted: #526173;
+      --primary: #1769e0;
+      --warn-bg: #fff6e0;
+      --warn-text: #7a5200;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: var(--bg);
+      color: var(--text);
+    }
+    .wrap {
+      max-width: 1080px;
+      margin: 0 auto;
+      padding: 32px 20px 48px;
+    }
+    .header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 24px;
+      flex-wrap: wrap;
+    }
+    h1 { margin: 0 0 6px; font-size: 28px; }
+    .lead { margin: 0; color: var(--muted); line-height: 1.6; }
+    .host-pill {
+      display: inline-flex;
+      align-items: center;
+      padding: 8px 14px;
+      border-radius: 999px;
+      background: #eef3fb;
+      color: #35465a;
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      font-size: 13px;
+    }
+    .columns {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+      gap: 16px;
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      padding: 24px;
+      box-shadow: 0 12px 28px rgba(19, 36, 64, 0.05);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    .card h2 { margin: 0 0 8px; font-size: 20px; }
+    .sub { margin: 0 0 20px; font-size: 13px; color: var(--muted); }
+    .qr-box {
+      padding: 12px;
+      border-radius: 16px;
+      background: white;
+      border: 1px solid var(--line);
+      margin-bottom: 16px;
+    }
+    .qr-box img { display: block; width: 280px; height: 280px; }
+    .install-btn {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      height: 44px;
+      padding: 0 20px;
+      border-radius: 12px;
+      background: var(--primary);
+      color: white;
+      text-decoration: none;
+      font-weight: 700;
+      font-size: 14px;
+    }
+    .install-btn:hover { background: #1258c0; }
+    .url {
+      width: 100%;
+      margin-top: 16px;
+      padding: 12px 14px;
+      border-radius: 12px;
+      background: #f7f9fc;
+      border: 1px solid var(--line);
+      font-family: ui-monospace, SFMono-Regular, monospace;
+      font-size: 12px;
+      word-break: break-all;
+      line-height: 1.6;
+    }
+    .notice {
+      margin-top: 12px;
+      padding: 10px 12px;
+      border-radius: 10px;
+      background: var(--warn-bg);
+      color: var(--warn-text);
+      font-size: 13px;
+      line-height: 1.5;
+      text-align: center;
+    }
+    .link {
+      margin-top: 16px;
+      font-size: 13px;
+    }
+    .link a { color: var(--primary); text-decoration: none; font-weight: 600; }
+    .link a:hover { text-decoration: underline; }
+  </style>
+</head>
+<body>
+  <main class="wrap">
+    <div class="header">
+      <div>
+        <h1>CamScanShare アプリダウンロード</h1>
+        <p class="lead">スマートフォンで QR コードを読み取ってインストールできます。</p>
+      </div>
+      <span class="host-pill">${escapeHtml(host)}</span>
+    </div>
+    <section class="columns">
+      <article class="card">
+        <h2>iOS</h2>
+        <p class="sub">Ad-Hoc ビルド (itms-services)</p>
+        <div class="qr-box"><img src="${escapeHtml(iosQr)}" alt="iOS インストール QR"></div>
+        <a class="install-btn" href="${escapeHtml(iosInstallUrl)}">iPhone で直接インストール</a>
+        <div class="url">${escapeHtml(iosInstallUrl)}</div>
+        ${iosAvailable ? "" : `<div class="notice">IPA ファイルが見つかりません。iOS の Ad-Hoc アーカイブをビルドしてください。</div>`}
+      </article>
+      <article class="card">
+        <h2>Android</h2>
+        <p class="sub">app-debug.apk</p>
+        <div class="qr-box"><img src="${escapeHtml(androidQr)}" alt="Android インストール QR"></div>
+        <a class="install-btn" href="${escapeHtml(androidInstallUrl)}">APK をダウンロード</a>
+        <div class="url">${escapeHtml(androidInstallUrl)}</div>
+        ${androidAvailable ? "" : `<div class="notice">APK ファイルが見つかりません。<code>./gradlew assembleDebug</code> を実行してください。</div>`}
+      </article>
+    </section>
+    <p class="link"><a href="/app">別のホスト名で表示</a></p>
   </main>
 </body>
 </html>`;
