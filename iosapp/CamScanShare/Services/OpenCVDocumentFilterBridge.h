@@ -14,6 +14,9 @@ NS_ASSUME_NONNULL_BEGIN
                               rotationDegrees:(NSInteger)rotationDegrees
                                   maxDimension:(CGFloat)maxDimension;
 
++ (nullable NSArray<NSValue *> *)detectDocumentCornersInImage:(UIImage *)image
+                                                 maxDimension:(CGFloat)maxDimension;
+
 @end
 
 NS_ASSUME_NONNULL_END

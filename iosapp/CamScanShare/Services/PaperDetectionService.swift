@@ -19,6 +19,7 @@ enum PaperDetectionService {
     private static let a4Portrait = 210.0 / 297.0
     private static let a4Landscape = 297.0 / 210.0
     private static let a4Tolerance = 0.20
+    private static let detectionMaxDimension: CGFloat = 640
 
     static func createRectangleDetectionRequest(
         completion: @escaping @Sendable (DetectedRectangle?) -> Void
@@ -32,13 +33,7 @@ enum PaperDetectionService {
 
     static func detectRectangle(in image: UIImage) -> DetectedRectangle? {
         let uprightImage = image.normalizedOrientation()
-        guard let cgImage = uprightImage.cgImage else { return nil }
-
-        let request = VNDetectRectanglesRequest()
-        configure(request)
-        let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
-        try? handler.perform([request])
-        return rectangle(from: request, error: nil)
+        return detectRectangleWithOpenCV(in: uprightImage) ?? detectRectangleWithVision(in: uprightImage)
     }
 
     static func correctDocumentGeometry(image: UIImage) -> UIImage {
@@ -192,9 +187,9 @@ enum PaperDetectionService {
     private static func configure(_ request: VNDetectRectanglesRequest) {
         request.minimumAspectRatio = 0.3
         request.maximumAspectRatio = 1.0
-        request.minimumSize = 0.2
+        request.minimumSize = 0.05
         request.minimumConfidence = 0.5
-        request.maximumObservations = 1
+        request.maximumObservations = 10
     }
 
     private static func rectangle(
@@ -213,5 +208,30 @@ enum PaperDetectionService {
             bottomLeft: rect.bottomLeft,
             bottomRight: rect.bottomRight
         )
+    }
+
+    private static func detectRectangleWithOpenCV(in image: UIImage) -> DetectedRectangle? {
+        guard let corners = OpenCVDocumentFilterBridge.detectDocumentCorners(
+            in: image,
+            maxDimension: detectionMaxDimension
+        ), corners.count == 4 else {
+            return nil
+        }
+        return DetectedRectangle(
+            topLeft: corners[0].cgPointValue,
+            topRight: corners[1].cgPointValue,
+            bottomLeft: corners[3].cgPointValue,
+            bottomRight: corners[2].cgPointValue
+        )
+    }
+
+    private static func detectRectangleWithVision(in image: UIImage) -> DetectedRectangle? {
+        guard let cgImage = image.cgImage else { return nil }
+
+        let request = VNDetectRectanglesRequest()
+        configure(request)
+        let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
+        try? handler.perform([request])
+        return rectangle(from: request, error: nil)
     }
 }

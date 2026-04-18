@@ -193,6 +193,15 @@
     }
   },
   {
+    "id": "store-flyer-floor",
+    "title": "改善要望由来: 床タイルを拾いやすい店頭ポスター",
+    "description": "実機スクリーンショットをベースにカメラプレビュー領域だけを切り出したサンプル。床タイルや棚の矩形が多く、紙面ではない四角形に誤検出しやすい。",
+    "perspective_only": true,
+    "source": "docs/public/algorithm/user-samples/store-flyer-floor-source.png",
+    "step0": "docs/public/algorithm/steps/user-samples/store-flyer-floor-step0.png",
+    "step1": "docs/public/algorithm/steps/user-samples/store-flyer-floor-step1.png"
+  },
+  {
     "id": "whiteboard-facilitation",
     "title": "暗所気味のホワイトボード落書き",
     "description": "古い携帯写真らしい低解像度・周辺減光・黒縁つきのホワイトボード。色マーカーの細線が多い。",

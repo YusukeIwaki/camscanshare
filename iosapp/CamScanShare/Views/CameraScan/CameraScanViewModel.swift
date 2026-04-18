@@ -1,7 +1,7 @@
 @preconcurrency import AVFoundation
+import CoreImage
 import ImageIO
 import SwiftUI
-import Vision
 
 private final class CaptureSessionBox: @unchecked Sendable {
     let session = AVCaptureSession()
@@ -190,30 +190,10 @@ final class CameraDelegate: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     var onPreviewAspectRatioChanged: (@Sendable (CGFloat) -> Void)?
     var photoContinuation: CheckedContinuation<UIImage?, Never>?
 
-    private lazy var rectangleRequest: VNDetectRectanglesRequest = {
-        let request = VNDetectRectanglesRequest { [weak self] request, error in
-            guard error == nil,
-                let results = request.results as? [VNRectangleObservation],
-                let rect = results.first
-            else {
-                self?.onRectangleDetected?(nil)
-                return
-            }
-            let detected = DetectedRectangle(
-                topLeft: rect.topLeft,
-                topRight: rect.topRight,
-                bottomLeft: rect.bottomLeft,
-                bottomRight: rect.bottomRight
-            )
-            self?.onRectangleDetected?(detected)
-        }
-        request.minimumAspectRatio = 0.3
-        request.maximumAspectRatio = 1.0
-        request.minimumSize = 0.2
-        request.minimumConfidence = 0.5
-        request.maximumObservations = 1
-        return request
-    }()
+    private let ciContext = CIContext()
+    private let previewDetectionMaxDimension: CGFloat = 640
+    private let rectangleDetectionInterval: TimeInterval = 0.12
+    private var lastRectangleDetectionTime: TimeInterval = 0
 
     func captureOutput(
         _ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
@@ -225,12 +205,12 @@ final class CameraDelegate: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         let portraitAspectRatio = min(width, height) / max(width, height)
         onPreviewAspectRatioChanged?(portraitAspectRatio)
 
-        let handler = VNImageRequestHandler(
-            cvPixelBuffer: pixelBuffer,
-            orientation: .right,
-            options: [:]
-        )
-        try? handler.perform([rectangleRequest])
+        let now = Date().timeIntervalSinceReferenceDate
+        guard now - lastRectangleDetectionTime >= rectangleDetectionInterval else { return }
+        lastRectangleDetectionTime = now
+
+        let detected = detectRectangle(in: pixelBuffer)
+        onRectangleDetected?(detected)
     }
 
     func photoOutput(
@@ -246,5 +226,20 @@ final class CameraDelegate: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         }
         photoContinuation?.resume(returning: image)
         photoContinuation = nil
+    }
+
+    private func detectRectangle(in pixelBuffer: CVPixelBuffer) -> DetectedRectangle? {
+        let ciImage = CIImage(cvPixelBuffer: pixelBuffer).oriented(.right)
+        let scale = min(1.0, previewDetectionMaxDimension / max(ciImage.extent.width, ciImage.extent.height))
+        let resized = if scale < 1.0 {
+            ciImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale))
+        } else {
+            ciImage
+        }
+
+        guard let cgImage = ciContext.createCGImage(resized, from: resized.extent) else {
+            return nil
+        }
+        return PaperDetectionService.detectRectangle(in: UIImage(cgImage: cgImage))
     }
 }

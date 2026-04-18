@@ -2,6 +2,9 @@
 import Layout from '../layouts/Layout.astro';
 import samples from '../../filter-samples.json';
 
+const perspectiveSamples = samples;
+const filterSamples = samples.filter((sample) => !sample.perspective_only);
+
 const filters = [
   {
     key: 'sharpen',
@@ -138,7 +141,7 @@ function buildViewerForFilter(filterKey, sample) {
       </div>
 
       <div class="example-stack">
-        {samples.map((sample) => {
+        {perspectiveSamples.map((sample) => {
           const viewerId = `perspective-${sample.id}`;
           const viewer = [
             { label: '加工前', src: '/' + sample.source.replace('docs/public/', ''), caption: '加工前: カメラ撮影そのままの入力画像。' },
@@ -215,7 +218,7 @@ function buildViewerForFilter(filterKey, sample) {
         </div>
 
         <div class="example-stack">
-          {samples.map((sample) => {
+          {filterSamples.map((sample) => {
             const viewerId = `${filter.key}-${sample.id}`;
             const viewer = buildViewerForFilter(filter.key, sample);
             return (
