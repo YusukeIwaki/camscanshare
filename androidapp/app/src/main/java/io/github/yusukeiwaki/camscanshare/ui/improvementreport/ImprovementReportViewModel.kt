@@ -87,16 +87,17 @@ class ImprovementReportViewModel @Inject constructor(
         _uiState.update { it.copy(comment = value.take(300)) }
     }
 
-    fun onPhotoPicked(uri: Uri) {
-        val attachment = reportService.resolveAttachment(uri) ?: return
+    fun onPhotosPicked(uris: List<Uri>) {
         _uiState.update { state ->
-            if (state.attachments.any { it.attachment.uriString == attachment.uriString }) {
-                state
-            } else {
-                state.copy(
-                    attachments = state.attachments + ImprovementReportAttachmentState(attachment),
-                )
+            val existingUriStrings = state.attachments.map { it.attachment.uriString }.toHashSet()
+            val newAttachments = uris.mapNotNull { uri ->
+                val attachment = reportService.resolveAttachment(uri) ?: return@mapNotNull null
+                if (!existingUriStrings.add(attachment.uriString)) {
+                    return@mapNotNull null
+                }
+                ImprovementReportAttachmentState(attachment)
             }
+            if (newAttachments.isEmpty()) state else state.copy(attachments = state.attachments + newAttachments)
         }
     }
 

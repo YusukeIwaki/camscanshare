@@ -9,7 +9,7 @@ struct ImprovementReportView: View {
     @Binding var path: NavigationPath
 
     @State private var viewModel: ImprovementReportViewModel
-    @State private var selectedPhotoItem: PhotosPickerItem?
+    @State private var selectedPhotoItems: [PhotosPickerItem] = []
 
     init(
         pageReportId: String,
@@ -68,10 +68,10 @@ struct ImprovementReportView: View {
         .onAppear {
             viewModel.initialize()
         }
-        .onChange(of: selectedPhotoItem) { _, newItem in
-            guard let newItem else { return }
-            viewModel.addAttachment(from: newItem)
-            selectedPhotoItem = nil
+        .onChange(of: selectedPhotoItems) { _, newItems in
+            guard !newItems.isEmpty else { return }
+            viewModel.addAttachments(from: newItems)
+            selectedPhotoItems = []
         }
         .onChange(of: viewModel.shouldClose) { _, shouldClose in
             if shouldClose, path.count > 0 {
@@ -200,7 +200,8 @@ struct ImprovementReportView: View {
                     Spacer(minLength: 12)
 
                     PhotosPicker(
-                        selection: $selectedPhotoItem,
+                        selection: $selectedPhotoItems,
+                        maxSelectionCount: nil,
                         matching: .images,
                         photoLibrary: .shared()
                     ) {

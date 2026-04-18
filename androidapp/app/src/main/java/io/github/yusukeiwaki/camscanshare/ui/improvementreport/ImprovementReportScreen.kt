@@ -88,11 +88,13 @@ fun ImprovementReportScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
     val photoPickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.PickVisualMedia(),
-    ) { uri ->
-        if (uri != null) {
-            tryTakePersistablePermission(context, uri)
-            viewModel.onPhotoPicked(uri)
+        contract = ActivityResultContracts.PickMultipleVisualMedia(),
+    ) { uris ->
+        if (uris.isNotEmpty()) {
+            uris.forEach { uri ->
+                tryTakePersistablePermission(context, uri)
+            }
+            viewModel.onPhotosPicked(uris)
         }
     }
 

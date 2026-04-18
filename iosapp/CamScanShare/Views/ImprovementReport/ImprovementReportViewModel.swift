@@ -162,22 +162,24 @@ final class ImprovementReportViewModel {
         }
     }
 
-    func addAttachment(from item: PhotosPickerItem) {
-        let nextIndex = attachments.count + 1
+    func addAttachments(from items: [PhotosPickerItem]) {
         Task {
-            do {
-                guard let data = try await item.loadTransferable(type: Data.self) else {
-                    throw ImprovementReportService.ServiceError.invalidPhoto
+            for item in items {
+                let nextIndex = attachments.count + 1
+                do {
+                    guard let data = try await item.loadTransferable(type: Data.self) else {
+                        throw ImprovementReportService.ServiceError.invalidPhoto
+                    }
+                    let attachment = try ImprovementReportService.makePhotoAttachment(
+                        data: data,
+                        contentType: item.supportedContentTypes.first,
+                        fallbackIndex: nextIndex
+                    )
+                    attachments.append(attachment)
+                } catch {
+                    errorMessage = (error as? LocalizedError)?.errorDescription
+                        ?? "追加画像を読み込めませんでした。"
                 }
-                let attachment = try ImprovementReportService.makePhotoAttachment(
-                    data: data,
-                    contentType: item.supportedContentTypes.first,
-                    fallbackIndex: nextIndex
-                )
-                attachments.append(attachment)
-            } catch {
-                errorMessage = (error as? LocalizedError)?.errorDescription
-                    ?? "追加画像を読み込めませんでした。"
             }
         }
     }
