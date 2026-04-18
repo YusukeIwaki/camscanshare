@@ -10,35 +10,44 @@ struct CameraScanView: View {
     @State private var showFlash = false
 
     var body: some View {
-        ZStack {
-            // Camera preview
-            CameraPreviewView(session: viewModel.session)
+        GeometryReader { geometry in
+            ZStack {
+                Color.black
+                    .ignoresSafeArea()
+
+                // Camera preview
+                CameraPreviewView(session: viewModel.session)
+                    .ignoresSafeArea()
+
+                // Detection overlay
+                DetectionOverlayView(
+                    rectangle: viewModel.detectedRectangle,
+                    previewSize: UIScreen.main.bounds.size,
+                    imageAspectRatio: viewModel.previewImageAspectRatio
+                )
                 .ignoresSafeArea()
 
-            // Detection overlay
-            DetectionOverlayView(
-                rectangle: viewModel.detectedRectangle,
-                previewSize: UIScreen.main.bounds.size,
-                imageAspectRatio: viewModel.previewImageAspectRatio
-            )
-            .ignoresSafeArea()
+                // Bottom controls
+                VStack {
+                    Spacer()
+                    bottomControls(bottomInset: geometry.safeAreaInsets.bottom)
+                }
+                .ignoresSafeArea(edges: .bottom)
 
-            // Bottom controls
-            VStack {
-                Spacer()
-                bottomControls
-            }
-
-            // Flash effect
-            if showFlash {
-                Color.white
-                    .ignoresSafeArea()
-                    .opacity(0.9)
-                    .allowsHitTesting(false)
-                    .transition(.opacity)
+                // Flash effect
+                if showFlash {
+                    Color.white
+                        .ignoresSafeArea()
+                        .opacity(0.9)
+                        .allowsHitTesting(false)
+                        .transition(.opacity)
+                }
             }
         }
-        .navigationBarHidden(true)
+        .toolbar(.hidden, for: .navigationBar)
+        .toolbar(.hidden, for: .bottomBar)
+        .toolbarBackground(.hidden, for: .navigationBar)
+        .toolbarBackground(.hidden, for: .bottomBar)
         .onAppear {
             viewModel.setupCamera()
             viewModel.startSession()
@@ -50,7 +59,7 @@ struct CameraScanView: View {
 
     // MARK: - Bottom Controls
 
-    private var bottomControls: some View {
+    private func bottomControls(bottomInset: CGFloat) -> some View {
         ZStack {
             // Gradient background
             LinearGradient(
@@ -58,7 +67,7 @@ struct CameraScanView: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 160)
+            .frame(height: 160 + bottomInset)
             .allowsHitTesting(false)
 
             HStack {
@@ -78,7 +87,7 @@ struct CameraScanView: View {
                     .frame(width: 52, height: 52)
             }
             .padding(.horizontal, 24)
-            .padding(.bottom, 20)
+            .padding(.bottom, max(20, bottomInset))
         }
     }
 
