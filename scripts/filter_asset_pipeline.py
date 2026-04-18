@@ -236,123 +236,6 @@ def count_touched_sides(image: np.ndarray, points: np.ndarray) -> int:
     )
 
 
-def quad_area(points: np.ndarray) -> float:
-    return float(cv2.contourArea(order_points(points).astype(np.float32)))
-
-
-def line_support(magnitude: np.ndarray, start: np.ndarray, end: np.ndarray) -> float:
-    mask = np.zeros_like(magnitude)
-    thickness = max(4, magnitude.shape[0] // 180)
-    cv2.line(
-        mask,
-        tuple(np.round(start).astype(np.int32)),
-        tuple(np.round(end).astype(np.int32)),
-        255,
-        thickness=thickness,
-    )
-    values = magnitude[mask > 0]
-    if values.size == 0:
-        return 0.0
-    return float(values.mean())
-
-
-def line_intersection(
-    line_a_start: np.ndarray,
-    line_a_end: np.ndarray,
-    line_b_start: np.ndarray,
-    line_b_end: np.ndarray,
-) -> np.ndarray:
-    x1, y1 = line_a_start
-    x2, y2 = line_a_end
-    x3, y3 = line_b_start
-    x4, y4 = line_b_end
-
-    denominator = (x1 - x2) * (y3 - y4) - (y1 - y2) * (x3 - x4)
-    if abs(float(denominator)) < 1e-6:
-        return line_a_end.astype(np.float32)
-
-    px = ((x1 * y2 - y1 * x2) * (x3 - x4) - (x1 - x2) * (x3 * y4 - y3 * x4)) / denominator
-    py = ((x1 * y2 - y1 * x2) * (y3 - y4) - (y1 - y2) * (x3 * y4 - y3 * x4)) / denominator
-    return np.array([px, py], dtype=np.float32)
-
-
-def refine_min_area_rect_candidate(image: np.ndarray, points: np.ndarray) -> np.ndarray:
-    ordered = order_points(points).astype(np.float32)
-    center = ordered.mean(axis=0)
-
-    gray = cv2.cvtColor(image, cv2.COLOR_BGR2GRAY)
-    blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-    grad_x = cv2.Sobel(blurred, cv2.CV_32F, 1, 0, ksize=3)
-    grad_y = cv2.Sobel(blurred, cv2.CV_32F, 0, 1, ksize=3)
-    magnitude = cv2.magnitude(grad_x, grad_y)
-    magnitude = cv2.normalize(magnitude, None, 0, 255, cv2.NORM_MINMAX).astype(np.uint8)
-
-    max_offset = max(20.0, min(image.shape[0], image.shape[1]) * 0.10)
-    offsets = np.linspace(-max_offset * 0.15, max_offset, 36)
-    refined_edges: list[tuple[np.ndarray, np.ndarray]] = []
-
-    for index in range(4):
-        start = ordered[index]
-        end = ordered[(index + 1) % 4]
-        midpoint = (start + end) / 2.0
-        direction = midpoint - center
-        norm = float(np.linalg.norm(direction))
-        if norm < 1e-6:
-            refined_edges.append((start, end))
-            continue
-        normal = direction / norm
-
-        best_score = line_support(magnitude, start, end)
-        best_start = start
-        best_end = end
-
-        for offset in offsets:
-            shifted_start = start + normal * offset
-            shifted_end = end + normal * offset
-            if (
-                shifted_start[0] < -5
-                or shifted_end[0] < -5
-                or shifted_start[1] < -5
-                or shifted_end[1] < -5
-                or shifted_start[0] > image.shape[1] + 5
-                or shifted_end[0] > image.shape[1] + 5
-                or shifted_start[1] > image.shape[0] + 5
-                or shifted_end[1] > image.shape[0] + 5
-            ):
-                continue
-            shifted_score = line_support(magnitude, shifted_start, shifted_end)
-            if shifted_score > best_score:
-                best_score = shifted_score
-                best_start = shifted_start
-                best_end = shifted_end
-
-        refined_edges.append((best_start, best_end))
-
-    refined = np.array(
-        [
-            line_intersection(refined_edges[3][0], refined_edges[3][1], refined_edges[0][0], refined_edges[0][1]),
-            line_intersection(refined_edges[0][0], refined_edges[0][1], refined_edges[1][0], refined_edges[1][1]),
-            line_intersection(refined_edges[1][0], refined_edges[1][1], refined_edges[2][0], refined_edges[2][1]),
-            line_intersection(refined_edges[2][0], refined_edges[2][1], refined_edges[3][0], refined_edges[3][1]),
-        ],
-        dtype=np.float32,
-    )
-
-    if not np.isfinite(refined).all():
-        return ordered
-    if not cv2.isContourConvex(np.round(refined).astype(np.int32)):
-        return ordered
-
-    original_area = quad_area(ordered)
-    refined_area = quad_area(refined)
-    if refined_area < original_area * 0.7 or refined_area > original_area * 2.4:
-        return ordered
-
-    refined[:, 0] = np.clip(refined[:, 0], 0, image.shape[1] - 1)
-    refined[:, 1] = np.clip(refined[:, 1], 0, image.shape[0] - 1)
-    return refined
-
-
 def compute_chroma(a_channel: np.ndarray, b_channel: np.ndarray) -> np.ndarray:
     a32 = a_channel.astype(np.float32) - 128.0
     b32 = b_channel.astype(np.float32) - 128.0
@@ -436,22 +319,12 @@ def score_detection_candidate(image: np.ndarray, points: np.ndarray, source: str
     if score < 0:
         return score
 
-    touched_sides = count_touched_sides(image, points)
     score += candidate_edge_support(image, points) * 2.2
-
-    if source == "raw" and kind == "quad":
-        score += 0.20
-
-    if source == "raw" and kind == "minAreaRect":
-        score += 0.10
 
     if source == "merged" and kind == "quad":
         return score + 0.15
 
-    if source == "merged" and kind == "minAreaRect" and touched_sides >= 3:
-        return score - 0.85
-
-    if source == "paper" and touched_sides >= 3:
+    if source == "paper" and count_touched_sides(image, points) >= 3:
         return score - 1.6
 
     return score
@@ -555,8 +428,7 @@ def find_document_candidate(image: np.ndarray, crop_mode: str | None = None) -> 
     gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
 
-    raw_edges = cv2.Canny(blurred, 50, 150)
-    edges = raw_edges.copy()
+    edges = cv2.Canny(blurred, 50, 150)
     edges = cv2.dilate(edges, np.ones((3, 3), dtype=np.uint8), iterations=1)
     edges = cv2.morphologyEx(
         edges,
@@ -582,12 +454,12 @@ def find_document_candidate(image: np.ndarray, crop_mode: str | None = None) -> 
     )
 
     merged = cv2.bitwise_or(edges, adaptive)
-    min_area = resized.shape[0] * resized.shape[1] * 0.01
+    min_area = resized.shape[0] * resized.shape[1] * 0.15
     paper_mask = build_paper_candidate_mask(resized)
 
     candidates: list[dict[str, object]] = []
 
-    for source, mask in (("raw", raw_edges), ("merged", merged), ("paper", paper_mask)):
+    for source, mask in (("merged", merged), ("paper", paper_mask)):
         for points, kind in collect_candidate_quads(mask, ratio, min_area):
             score = score_detection_candidate(image, points, source, kind)
             if score < 0:
@@ -602,13 +474,7 @@ def find_document_candidate(image: np.ndarray, crop_mode: str | None = None) -> 
             )
 
     if candidates:
-        best = max(candidates, key=lambda candidate: float(candidate["score"]))
-        if best["points"] is not None and str(best["kind"]) == "minAreaRect":
-            best = {
-                **best,
-                "points": refine_min_area_rect_candidate(image, np.asarray(best["points"], dtype=np.float32)),
-            }
-        return best
+        return max(candidates, key=lambda candidate: float(candidate["score"]))
 
     contours, _ = cv2.findContours(merged, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
