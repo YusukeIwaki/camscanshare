@@ -68,6 +68,10 @@ struct PageListView: View {
                     viewModel.rename(context: modelContext)
                 }
             }
+            .onReceive(NotificationCenter.default.publisher(for: UITextField.textDidBeginEditingNotification)) { notification in
+                guard viewModel.showRenameDialog else { return }
+                (notification.object as? UITextField)?.selectAll(nil)
+            }
             .alert("PDFの作成に失敗しました", isPresented: $viewModel.showPDFErrorAlert) {
                 Button("OK", role: .cancel) {}
             } message: {

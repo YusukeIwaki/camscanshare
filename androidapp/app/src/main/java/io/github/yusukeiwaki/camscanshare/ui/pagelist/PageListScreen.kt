@@ -61,6 +61,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
@@ -71,7 +73,9 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.text.TextRange
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -566,23 +570,37 @@ private fun RenameDialog(
     onConfirm: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var text by remember { mutableStateOf(currentName) }
+    var textFieldValue by remember {
+        mutableStateOf(
+            TextFieldValue(
+                text = currentName,
+                selection = TextRange(0, currentName.length),
+            )
+        )
+    }
+    val focusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(Unit) {
+        focusRequester.requestFocus()
+    }
 
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text("ドキュメント名を変更") },
         text = {
             OutlinedTextField(
-                value = text,
-                onValueChange = { text = it },
+                value = textFieldValue,
+                onValueChange = { textFieldValue = it },
                 singleLine = true,
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .focusRequester(focusRequester),
             )
         },
         confirmButton = {
             TextButton(
-                onClick = { onConfirm(text) },
-                enabled = text.trim().isNotEmpty(),
+                onClick = { onConfirm(textFieldValue.text) },
+                enabled = textFieldValue.text.trim().isNotEmpty(),
             ) {
                 Text("変更")
             }
