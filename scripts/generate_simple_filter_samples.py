@@ -8,7 +8,7 @@ Usage:
     python scripts/generate_simple_filter_samples.py
     python scripts/generate_simple_filter_samples.py --only angled --only flat
     python scripts/generate_simple_filter_samples.py --filter sharpen --filter bw
-    python scripts/generate_simple_filter_samples.py --filter enhance --filter eco
+    python scripts/generate_simple_filter_samples.py --filter enhance --filter whiteboard
 """
 
 from __future__ import annotations
@@ -44,7 +44,7 @@ def parse_args() -> argparse.Namespace:
         "--filter",
         action="append",
         default=[],
-        help="Only generate specific filters (for example sharpen/bw/enhance/eco/magic_pro).",
+        help="Only generate specific filters (for example sharpen/bw/enhance/whiteboard).",
     )
     return parser.parse_args()
 

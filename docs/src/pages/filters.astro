@@ -32,28 +32,12 @@ const filters = [
     detail: '改善レポートの比較から、白地は明るくするが紙の質感は少し残す、という性格に寄せた。背景補正は控えめで、色付きポスターや図版でも不自然な白飛びを避ける。',
   },
   {
-    key: 'eco',
-    name: '省エネ',
-    navLabel: '省エネ',
-    description: '紙面の白さをかなり整えつつ、文字と色面は Magic Pro ほど押し切らずに残す中強度フィルタ。',
-    formula: 'Conservative illumination flattening → paper-only cleanup → minimal chroma neutralization',
-    detail: '改善レポートでは見た目以上に紙面整形が強かったので、白地のしみや弱い影はかなり持ち上げる一方、色付きポスターや既に良い文書では Magic Pro ほど強く白化しない位置を狙っている。',
-  },
-  {
-    key: 'shadowless',
-    name: '影なし',
-    navLabel: '影なし',
-    description: 'CamScanner の「影なし」に近い、紙面の影・しわ・繊維感を抑えた白地整形フィルタ。',
-    formula: 'Flat-field correction → relaxed paper mask → ink-only preserve mask → shadow lift → paper texture smoothing',
-    detail: 'Magic Pro の文書解析を土台にしつつ、保護対象は影なし専用の ink mask で文字・濃い罫線へ絞る。しわ、折り目、紙繊維は紙面トーンとして白方向へ持ち上げ、白黒のような固定しきい値二値化は行わない。',
-  },
-  {
     key: 'bw',
     name: '白黒',
     navLabel: '白黒',
     description: '照明補正 + 局所平均による適応的二値化で、背景を白飛ばしし文字をくっきり黒にする。',
-    formula: 'Flat-field correction → Local-mean normalization → Global threshold → Small-component removal',
-    detail: 'Lab の L チャンネルを照明補正・ヒストグラムストレッチしてからメディアンフィルタでノイズ除去。大きなガウシアンカーネル（71×71）で局所平均を求め、各画素を局所平均で除算して正規化する。正規化画像にグローバル閾値を適用して二値化し、最後に連結成分分析で面積 8px 未満の孤立黒点を除去する。',
+    formula: 'Flat-field correction → background normalization → Local-mean normalization → Global threshold → Small-component removal',
+    detail: 'Lab の L チャンネルを照明補正・ヒストグラムストレッチしてからメディアンフィルタでノイズ除去。ReflectBinaryColorShift 風に推定背景で割り戻す正規化を薄く足し、大きなガウシアンカーネル（71×71）で局所平均を求め、各画素を局所平均で除算して正規化する。正規化画像にグローバル閾値を適用して二値化し、最後に連結成分分析で面積 8px 未満の孤立黒点を除去する。',
   },
   {
     key: 'magic',
@@ -69,20 +53,12 @@ const filters = [
     ],
   },
   {
-    key: 'magic_pro',
-    name: 'Magic Pro',
-    navLabel: 'Magic Pro',
-    description: '既存 magic より強い紙面白化と影の平坦化を掛けつつ、強い文字と色面は残す。',
-    formula: 'Magic baseline → stronger paper whitening → shadow lift → texture suppression on paper',
-    detail: '改善レポートでは、「強化」より背景補正が強く、色付きポスターのような資料でも紙面全体のしわや影をかなり平坦化していた。ここでも strong-structure mask で印字を保護しながら、白地は強く白化し、色付き紙面も中強度で平坦化する。',
-  },
-  {
     key: 'whiteboard',
     name: 'ホワイトボード',
     navLabel: 'ホワイトボード',
-    description: '照明ムラ補正 + 背景白化 + マーカー色保持。ホワイトボード面を白く整えつつ、色ペンの線を残す。',
-    formula: 'Flat-field correction → board mask → stronger whitening → accent color preservation',
-    detail: 'Lab の L チャンネルで照明ムラを平坦化し、明るい低彩度領域をホワイトボード面として抽出して強めに白化する。構造マスクと色アクセントマスクでペン線を保護し、背景だけをほぼ無彩色へ寄せる。',
+    description: '照明ムラ補正 + 背景白化 + マーカー色強調。ホワイトボード面を白く整えつつ、赤・青・緑・黄色の線を残す。',
+    formula: 'Flat-field correction → board mask → stronger whitening → marker color preservation + saturation boost',
+    detail: 'Lab の L チャンネルで照明ムラを平坦化し、明るい低彩度領域をホワイトボード面として抽出して強めに白化する。構造マスクと色アクセントマスクでペン線を保護し、背景だけをほぼ無彩色へ寄せる。紙面の無彩色化より後にマーカー色を戻し、HSV で彩度と明度を追加で持ち上げる。',
   },
   {
     key: 'vivid',
@@ -135,7 +111,7 @@ function buildViewerForFilter(filterKey, sample) {
         <p class="algo-subtitle">
           各フィルタの処理パラメータとサンプル画像を掲載する。
           ここでアルゴリズムを検証・研究し、確定したパラメータをアプリに移植する。
-          改善レポートから逆算した `強化` / `省エネ` / `Magic Pro` も、docs とアプリ実装を同期してここで比較する。
+          docs とアプリ実装を同期してここで比較する。
         </p>
       </div>
     </div>

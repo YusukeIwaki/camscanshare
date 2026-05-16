@@ -12,11 +12,8 @@ enum class ImageFilter(
     ORIGINAL("オリジナル", "original", R.drawable.filter_thumbnail_original),
     SHARPEN("くっきり", "sharpen", R.drawable.filter_thumbnail_sharpen),
     ENHANCE("強化", "enhance", R.drawable.filter_thumbnail_sharpen),
-    ECO("省エネ", "eco", R.drawable.filter_thumbnail_magic),
-    SHADOWLESS("影なし", "shadowless", R.drawable.filter_thumbnail_magic),
     BW("白黒", "bw", R.drawable.filter_thumbnail_bw),
     MAGIC("マジック", "magic", R.drawable.filter_thumbnail_magic),
-    MAGIC_PRO("Magic Pro", "magic_pro", R.drawable.filter_thumbnail_magic),
     WHITEBOARD("ホワイトボード", "whiteboard", R.drawable.filter_thumbnail_whiteboard),
     VIVID("鮮やか", "vivid", R.drawable.filter_thumbnail_vivid);
 
@@ -41,11 +38,8 @@ fun ImageFilter.toColorMatrixFilter(): ColorMatrixColorFilter? {
         }
 
         ImageFilter.ENHANCE -> return null
-        ImageFilter.ECO -> return null
-        ImageFilter.SHADOWLESS -> return null
         ImageFilter.BW -> return null
         ImageFilter.MAGIC -> return null
-        ImageFilter.MAGIC_PRO -> return null
         ImageFilter.WHITEBOARD -> return null
 
         ImageFilter.VIVID -> {

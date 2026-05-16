@@ -236,20 +236,9 @@
     "magic_step3": "docs/public/algorithm/steps/report-samples/report-2026-05-16_15-21-16-step3.png"
   },
   {
-    "id": "report-shadowless-ios",
-    "title": "改善レポート由来: CamScanner 影なし比較プリント",
-    "description": "iOS レポート report-2026-05-16_15-25-20 の元画像。CamScanner の「影なし」スクリーンショットが添付されており、しわや紙繊維を黒点化しない白地整形の評価に使う。",
-    "source": "docs/public/algorithm/report-samples/report-2026-05-16_15-25-20-source.jpg",
-    "crop_mode": "copy_source",
-    "step0": "docs/public/algorithm/steps/report-samples/report-2026-05-16_15-25-20-step0.png",
-    "step1": "docs/public/algorithm/steps/report-samples/report-2026-05-16_15-25-20-step1.png",
-    "magic_step2": "docs/public/algorithm/steps/report-samples/report-2026-05-16_15-25-20-step2.png",
-    "magic_step3": "docs/public/algorithm/steps/report-samples/report-2026-05-16_15-25-20-step3.png"
-  },
-  {
     "id": "report-timetable-dirty-white",
     "title": "改善レポート由来: 汚れた白地の時間割",
-    "description": "CamScanner 比較レポートから取り込んだ実画像。白地のムラと薄い汚れが全体にあり、Eco 系フィルタの白地整形を評価しやすい。",
+    "description": "CamScanner 比較レポートから取り込んだ実画像。白地のムラと薄い汚れが全体にあり、白地整形や本文保持を評価しやすい。",
     "source": "docs/public/algorithm/report-samples/report-timetable-dirty-white-source.jpg",
     "crop_mode": "copy_source",
     "step0": "docs/public/algorithm/steps/report-samples/report-timetable-dirty-white-step0.png",
@@ -260,7 +249,7 @@
   {
     "id": "report-kids-poster-color",
     "title": "改善レポート由来: 色付きポスター",
-    "description": "CamScanner 比較レポートから取り込んだ実画像。大きな色面と白枠があり、Enhance / Eco / Magic Pro の色保持バランスを評価しやすい。",
+    "description": "CamScanner 比較レポートから取り込んだ実画像。大きな色面と白枠があり、強化やマジック系の色保持バランスを評価しやすい。",
     "source": "docs/public/algorithm/report-samples/report-kids-poster-color-source.jpg",
     "crop_mode": "copy_source",
     "step0": "docs/public/algorithm/steps/report-samples/report-kids-poster-color-step0.png",

@@ -4,7 +4,7 @@ import { existsSync, readFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const FILTER_KEYS = ['bw', 'eco', 'enhance', 'magic_pro', 'sharpen', 'vivid', 'whiteboard'];
+const FILTER_KEYS = ['bw', 'enhance', 'sharpen', 'vivid', 'whiteboard'];
 
 function publicRelativePath(path) {
   return path.replace(/^docs\/public\//, '').replace(/^public\//, '');

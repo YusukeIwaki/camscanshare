@@ -41,6 +41,7 @@ class PaperDetector(
         private const val A4_PORTRAIT = 210.0 / 297.0
         private const val A4_LANDSCAPE = 297.0 / 210.0
         private const val A4_TOLERANCE = 0.20
+        private const val EDGE_SUPPORT_SCORE_WEIGHT = 0.18
         /** Number of recent frames to keep for stabilization. */
         private const val STABLE_BUFFER_SIZE = 7
         /** Minimum number of detections in the buffer to consider it stable. */
@@ -158,6 +159,8 @@ class PaperDetector(
         Imgproc.cvtColor(small, gray, Imgproc.COLOR_RGBA2GRAY)
         debugSink.writeMat(session, "analysis_rgba", small, DebugMatColor.RGBA)
         debugSink.writeMat(session, "grayscale", gray)
+        val edgeSupportMap = buildEdgeSupportMap(gray)
+        debugSink.writeMat(session, "edge_support", edgeSupportMap)
 
         val imageArea = small.width().toDouble() * small.height().toDouble()
         val analysisWidth = small.width()
@@ -185,6 +188,7 @@ class PaperDetector(
             scoreBonus = 0.18,
             allowMinAreaRect = config.allowMinAreaRect,
             anchorCorners = anchorCorners,
+            edgeSupportMap = edgeSupportMap,
         )?.let { result ->
             bestCorners = result.first
             bestScore = result.second
@@ -207,11 +211,35 @@ class PaperDetector(
             scoreBonus = 0.10,
             allowMinAreaRect = config.allowMinAreaRect,
             anchorCorners = anchorCorners,
+            edgeSupportMap = edgeSupportMap,
         )?.let { result ->
             bestCorners = result.first
             bestScore = result.second
         }
         paperMask.release()
+
+        val adaptiveMask = buildAdaptiveCandidateMask(gray)
+        debugSink.writeMat(session, "adaptive_mask", adaptiveMask)
+        findBestQuad(
+            edges = adaptiveMask,
+            minArea = minArea,
+            currentBestScore = bestScore,
+            imageWidth = small.width(),
+            imageHeight = small.height(),
+            maxCandidates = config.maxCandidates,
+            epsilonCandidates = config.epsilonCandidates,
+            debugSession = session,
+            debugSource = small,
+            debugLabel = "adaptive",
+            scoreBonus = 0.0,
+            allowMinAreaRect = config.allowMinAreaRect,
+            anchorCorners = anchorCorners,
+            edgeSupportMap = edgeSupportMap,
+        )?.let { result ->
+            bestCorners = result.first
+            bestScore = result.second
+        }
+        adaptiveMask.release()
 
         for ((index, strategy) in config.strategies.withIndex()) {
             val strategyStarted = SystemClock.elapsedRealtimeNanos()
@@ -233,6 +261,7 @@ class PaperDetector(
                 scoreBonus = 0.0,
                 allowMinAreaRect = config.allowMinAreaRect,
                 anchorCorners = anchorCorners,
+                edgeSupportMap = edgeSupportMap,
             )
             edges.release()
             if (result != null) {
@@ -262,6 +291,7 @@ class PaperDetector(
         mat.release()
         small.release()
         gray.release()
+        edgeSupportMap.release()
 
         debugSink.recordTimingSince(
             session,
@@ -519,6 +549,7 @@ class PaperDetector(
         scoreBonus: Double = 0.0,
         allowMinAreaRect: Boolean = false,
         anchorCorners: List<PointF>? = null,
+        edgeSupportMap: Mat? = null,
     ): Pair<List<PointF>, Double>? {
         val contours = mutableListOf<MatOfPoint>()
         val hierarchy = Mat()
@@ -556,11 +587,12 @@ class PaperDetector(
 
                 if (approx.rows() == 4 && isConvex(approx)) {
                     acceptedApprox = true
+                    val points = approx.toArray()
                     val score = scoreQuad(approx, area, imageArea, imageWidth, imageHeight) +
+                        scoreEdgeSupport(points, edgeSupportMap, imageWidth, imageHeight) * EDGE_SUPPORT_SCORE_WEIGHT +
                         scoreBonus -
-                        coloredEdgePenalty(approx.toArray(), imageWidth, imageHeight, scoreBonus)
+                        coloredEdgePenalty(points, imageWidth, imageHeight, scoreBonus)
                     if (score > bestScore) {
-                        val points = approx.toArray()
                         val normalizedCorners = orderPoints(points).map { pt ->
                             PointF(
                                 (pt.x / imageWidth).toFloat(),
@@ -572,8 +604,6 @@ class PaperDetector(
                             bestCorners = normalizedCorners
                         }
                     }
-                    approx.release()
-                    break
                 }
                 approx.release()
             }
@@ -584,6 +614,7 @@ class PaperDetector(
                 rect.points(box)
                 val rectQuad = MatOfPoint2f(*box)
                 val score = scoreQuad(rectQuad, area, imageArea, imageWidth, imageHeight) +
+                    scoreEdgeSupport(box, edgeSupportMap, imageWidth, imageHeight) * EDGE_SUPPORT_SCORE_WEIGHT +
                     scoreBonus -
                     coloredEdgePenalty(box, imageWidth, imageHeight, scoreBonus)
                 if (score > bestScore) {
@@ -677,6 +708,85 @@ class PaperDetector(
         val touchesBottom = points.any { it.y > imageHeight - marginY }
         val touchedSides = listOf(touchesLeft, touchesRight, touchesTop, touchesBottom).count { it }
         return if (touchedSides >= 3) 0.35 else 0.0
+    }
+
+    private fun buildAdaptiveCandidateMask(gray: Mat): Mat {
+        val blurred = Mat()
+        Imgproc.GaussianBlur(gray, blurred, Size(5.0, 5.0), 0.0)
+
+        val mask = Mat()
+        Imgproc.adaptiveThreshold(
+            blurred,
+            mask,
+            255.0,
+            Imgproc.ADAPTIVE_THRESH_GAUSSIAN_C,
+            Imgproc.THRESH_BINARY,
+            31,
+            15.0,
+        )
+        Core.bitwise_not(mask, mask)
+
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(5.0, 5.0))
+        Imgproc.morphologyEx(mask, mask, Imgproc.MORPH_CLOSE, kernel, Point(-1.0, -1.0), 2)
+
+        blurred.release()
+        kernel.release()
+        return mask
+    }
+
+    private fun buildEdgeSupportMap(gray: Mat): Mat {
+        val blurred = Mat()
+        Imgproc.GaussianBlur(gray, blurred, Size(5.0, 5.0), 0.0)
+
+        val canny = Mat()
+        Imgproc.Canny(blurred, canny, 40.0, 70.0, 3, false)
+
+        val gradX = Mat()
+        val gradY = Mat()
+        Imgproc.Sobel(blurred, gradX, CvType.CV_16S, 1, 0, 3)
+        Imgproc.Sobel(blurred, gradY, CvType.CV_16S, 0, 1, 3)
+
+        val absX = Mat()
+        val absY = Mat()
+        Core.convertScaleAbs(gradX, absX)
+        Core.convertScaleAbs(gradY, absY)
+
+        val sobel = Mat()
+        Core.addWeighted(absX, 0.5, absY, 0.5, 0.0, sobel)
+
+        val support = Mat()
+        Core.max(canny, sobel, support)
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(3.0, 3.0))
+        Imgproc.dilate(support, support, kernel)
+
+        listOf(blurred, canny, gradX, gradY, absX, absY, sobel, kernel).forEach { it.release() }
+        return support
+    }
+
+    private fun scoreEdgeSupport(
+        points: Array<Point>,
+        edgeSupportMap: Mat?,
+        imageWidth: Int,
+        imageHeight: Int,
+    ): Double {
+        if (edgeSupportMap == null || edgeSupportMap.empty() || points.size != 4) return 0.0
+
+        val ordered = orderPoints(points)
+        val lineMask = Mat.zeros(edgeSupportMap.size(), CvType.CV_8U)
+        val thickness = maxOf(3, minOf(imageWidth, imageHeight) / 120)
+        for (index in ordered.indices) {
+            Imgproc.line(
+                lineMask,
+                ordered[index],
+                ordered[(index + 1) % ordered.size],
+                Scalar.all(255.0),
+                thickness,
+            )
+        }
+
+        val support = (Core.mean(edgeSupportMap, lineMask).`val`[0] / 255.0).coerceIn(0.0, 1.0)
+        lineMask.release()
+        return support
     }
 
     private fun buildPaperCandidateMask(source: Mat): Mat {
