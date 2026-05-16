@@ -1,5 +1,6 @@
 package io.github.yusukeiwaki.camscanshare.ui.documentlist
 
+import android.app.Activity
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
@@ -24,6 +25,7 @@ import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -42,6 +44,7 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
@@ -49,12 +52,15 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.core.view.WindowCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import io.github.yusukeiwaki.camscanshare.data.db.DocumentSummaryTuple
@@ -78,6 +84,7 @@ fun DocumentListScreen(
         animationSpec = tween(250),
         label = "documentListTopPadding",
     )
+    SyncStatusBarIconColor(isSelectionMode = uiState.isSelectionMode)
 
     Box(
         modifier = Modifier
@@ -126,8 +133,7 @@ fun DocumentListScreen(
                 animationSpec = tween(250),
             ),
             modifier = Modifier
-                .align(Alignment.TopStart)
-                .statusBarsPadding(),
+                .align(Alignment.TopStart),
         ) {
             SelectionModeBar(
                 selectedCount = uiState.selectedIds.size,
@@ -161,6 +167,28 @@ fun DocumentListScreen(
             onConfirm = { viewModel.onDeleteConfirmed() },
             onDismiss = { viewModel.onDeleteDismissed() },
         )
+    }
+}
+
+@Composable
+private fun SyncStatusBarIconColor(isSelectionMode: Boolean) {
+    val view = LocalView.current
+    val primaryLuminance = MaterialTheme.colorScheme.primary.luminance()
+    val surfaceLuminance = MaterialTheme.colorScheme.surface.luminance()
+    val useDarkIcons = if (isSelectionMode) {
+        primaryLuminance > 0.5f
+    } else {
+        surfaceLuminance > 0.5f
+    }
+
+    DisposableEffect(view, useDarkIcons) {
+        val window = (view.context as? Activity)?.window
+        val controller = window?.let { WindowCompat.getInsetsController(it, view) }
+        controller?.isAppearanceLightStatusBars = useDarkIcons
+
+        onDispose {
+            controller?.isAppearanceLightStatusBars = surfaceLuminance > 0.5f
+        }
     }
 }
 
@@ -244,33 +272,41 @@ private fun SelectionModeBar(
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    Row(
+    val statusBarHeight = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
+
+    Column(
         modifier = modifier
             .fillMaxWidth()
-            .height(56.dp)
-            .background(MaterialTheme.colorScheme.primary)
-            .padding(horizontal = 8.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .background(MaterialTheme.colorScheme.primary),
     ) {
-        IconButton(onClick = onClose) {
-            Icon(
-                Icons.Default.Close,
-                contentDescription = "選択解除",
-                tint = MaterialTheme.colorScheme.onPrimary,
+        Spacer(Modifier.height(statusBarHeight))
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(56.dp)
+                .padding(horizontal = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            IconButton(onClick = onClose) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "選択解除",
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                )
+            }
+            Text(
+                text = "${selectedCount}件選択中",
+                color = MaterialTheme.colorScheme.onPrimary,
+                fontWeight = FontWeight.Medium,
+                modifier = Modifier.weight(1f),
             )
-        }
-        Text(
-            text = "${selectedCount}件選択中",
-            color = MaterialTheme.colorScheme.onPrimary,
-            fontWeight = FontWeight.Medium,
-            modifier = Modifier.weight(1f),
-        )
-        IconButton(onClick = onDelete) {
-            Icon(
-                Icons.Default.Delete,
-                contentDescription = "削除",
-                tint = MaterialTheme.colorScheme.onPrimary,
-            )
+            IconButton(onClick = onDelete) {
+                Icon(
+                    Icons.Default.Delete,
+                    contentDescription = "削除",
+                    tint = MaterialTheme.colorScheme.onPrimary,
+                )
+            }
         }
     }
 }
