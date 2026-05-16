@@ -28,4 +28,4 @@ camscanshare/
 
 ## Documentation
 
-For the Astro-based documentation site, including local run commands, internal structure, and design notes, see [docs/README.md](/Users/yusuke-iwaki/src/github/YusukeIwaki/camscanshare/docs/README.md).
+For the Astro-based documentation site, including local run commands, internal structure, and design notes, see [docs/README.md](docs/README.md).
