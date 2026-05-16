@@ -20,6 +20,8 @@ data class PageEditState(
     val filterKey: String = "original",
     val rotationDegrees: Int = 0,
     val largePreviewAbsPath: String? = null,
+    val isDebugCapture: Boolean = false,
+    val debugCaptureId: String? = null,
 )
 
 data class PageEditUiState(
@@ -76,6 +78,8 @@ class PageEditViewModel @Inject constructor(
                                 imagePath = dbPage.imagePath,
                                 sourceImageAbsPath = dbPage.sourceImageAbsPath,
                                 largePreviewAbsPath = dbPage.largePreviewAbsPath,
+                                isDebugCapture = dbPage.isDebugCapture,
+                                debugCaptureId = dbPage.debugCaptureId,
                             )
                         } else {
                             editPage
@@ -222,5 +226,7 @@ class PageEditViewModel @Inject constructor(
         filterKey = filterName,
         rotationDegrees = rotationDegrees,
         largePreviewAbsPath = largePreviewPath?.let { repository.getLargePreviewAbsolutePath(it) },
+        isDebugCapture = isDebugCapture,
+        debugCaptureId = debugCaptureId,
     )
 }

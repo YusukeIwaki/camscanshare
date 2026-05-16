@@ -3,6 +3,12 @@ import ImageIO
 import SwiftUI
 import Vision
 
+struct CapturedPage {
+    let image: UIImage
+    let isDebugCapture: Bool
+    let debugCaptureId: String?
+}
+
 private final class CaptureSessionBox: @unchecked Sendable {
     let session = AVCaptureSession()
 }
@@ -24,7 +30,7 @@ final class CameraScanViewModel {
     var previewImageAspectRatio: CGFloat = 3.0 / 4.0
     var isCapturing = false
     var isFinalizing = false
-    var capturedPages: [UIImage] = []
+    var capturedPages: [CapturedPage] = []
     var latestThumbnail: UIImage?
 
     private let photoOutput = AVCapturePhotoOutput()
@@ -101,10 +107,27 @@ final class CameraScanViewModel {
         return image
     }
 
-    func processAndStoreCapturedImage(_ image: UIImage) {
-        let correctedImage = PaperDetectionService.correctDocumentGeometry(image: image)
-        capturedPages.append(correctedImage)
+    func processAndStoreCapturedImage(_ image: UIImage, isDebugCapture: Bool = false) {
+        let debugCaptureId = isDebugCapture ? Self.makeDebugCaptureID() : nil
+        let debugSink: ImageProcessingDebugSink = isDebugCapture
+            ? .writingEnabled(debugCaptureId: debugCaptureId)
+            : .shared
+        let correctedImage = PaperDetectionService.correctDocumentGeometry(image: image, debugSink: debugSink)
+        capturedPages.append(
+            CapturedPage(
+                image: correctedImage,
+                isDebugCapture: isDebugCapture,
+                debugCaptureId: debugCaptureId
+            )
+        )
         latestThumbnail = correctedImage.preparingThumbnail(of: CGSize(width: 104, height: 104))
+    }
+
+    private static func makeDebugCaptureID() -> String {
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss-SSS"
+        return "capture-\(formatter.string(from: Date()))-\(UUID().uuidString)"
     }
 
     private func ingestDetectedRectangle(_ rectangle: DetectedRectangle?) {

@@ -28,7 +28,7 @@ fs.mkdirSync(reportsDir, { recursive: true });
 
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 100 * 1024 * 1024 },
+  limits: { fileSize: 500 * 1024 * 1024 },
 });
 
 app.use(express.urlencoded({ extended: false }));
@@ -44,17 +44,17 @@ app.get("/reports", (req, res) => {
   res.send(renderMainPage(reports, defaultUrl));
 });
 
-app.get("/reports/:reportId/files/:fileName", (req, res) => {
-  const { reportId, fileName } = req.params;
+app.get("/reports/:reportId/files/*", (req, res) => {
+  const { reportId } = req.params;
+  const fileName = req.params[0] ?? "";
   const reportDir = resolveReportDirectory(reportId);
   if (!reportDir) {
     res.status(404).send("report not found");
     return;
   }
 
-  const safeFileName = path.basename(fileName);
-  const filePath = path.join(reportDir, safeFileName);
-  if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+  const filePath = safeJoin(reportDir, fileName);
+  if (!filePath || !fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
     res.status(404).send("file not found");
     return;
   }
@@ -408,13 +408,18 @@ function extractZipBuffer(buffer, destinationDir) {
 
     const sanitizedName = sanitizeEntryName(entry.entryName, usedNames);
     const outputPath = path.join(destinationDir, sanitizedName);
+    fs.mkdirSync(path.dirname(outputPath), { recursive: true });
     fs.writeFileSync(outputPath, entry.getData());
   }
 }
 
 function sanitizeEntryName(entryName, usedNames) {
-  const parsedName = path.basename(entryName).replace(/[^A-Za-z0-9._-]/g, "_");
-  const fallbackName = parsedName.length > 0 ? parsedName : "file";
+  const segments = String(entryName)
+    .replace(/\\/g, "/")
+    .split("/")
+    .map((segment) => segment.replace(/[^A-Za-z0-9._-]/g, "_").replace(/^\.+$/, ""))
+    .filter(Boolean);
+  const fallbackName = segments.length > 0 ? segments.join("/") : "file";
 
   let candidate = fallbackName;
   let index = 1;
@@ -453,6 +458,31 @@ function resolveReportDirectory(reportId) {
   return reportDir;
 }
 
+function safeJoin(baseDir, relativePath) {
+  const normalized = String(relativePath ?? "").replace(/\\/g, "/");
+  const target = path.resolve(baseDir, normalized);
+  const base = path.resolve(baseDir);
+  if (target !== base && !target.startsWith(`${base}${path.sep}`)) return null;
+  return target;
+}
+
+function listReportFiles(reportDir) {
+  const files = [];
+  function walk(currentDir, prefix = "") {
+    for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
+      const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+      const absolutePath = path.join(currentDir, entry.name);
+      if (entry.isDirectory()) {
+        walk(absolutePath, relativePath);
+      } else if (entry.isFile()) {
+        files.push(relativePath);
+      }
+    }
+  }
+  walk(reportDir);
+  return files;
+}
+
 function loadReportIndex() {
   return fs.readdirSync(reportsDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory() && entry.name.startsWith("report-"))
@@ -460,7 +490,7 @@ function loadReportIndex() {
       const reportId = entry.name;
       const reportDir = path.join(reportsDir, reportId);
       const summary = readSummaryFile(reportDir);
-      const fileCount = fs.readdirSync(reportDir, { withFileTypes: true }).filter((child) => child.isFile()).length;
+      const fileCount = listReportFiles(reportDir).length;
       const stat = fs.statSync(reportDir);
       return {
         reportId,
@@ -476,9 +506,7 @@ function loadReportDetail(reportId) {
   const reportDir = resolveReportDirectory(reportId);
   if (!reportDir) return null;
 
-  const files = fs.readdirSync(reportDir, { withFileTypes: true })
-    .filter((entry) => entry.isFile())
-    .map((entry) => entry.name)
+  const files = listReportFiles(reportDir)
     .sort((a, b) => {
       if (a === "summary.txt") return -1;
       if (b === "summary.txt") return 1;
@@ -491,11 +519,15 @@ function loadReportDetail(reportId) {
     summary,
     files: files.map((fileName) => ({
       fileName,
-      url: `/reports/${encodeURIComponent(reportId)}/files/${encodeURIComponent(fileName)}`,
+      url: `/reports/${encodeURIComponent(reportId)}/files/${encodePathSegments(fileName)}`,
       isImage: /\.(png|jpe?g|gif|webp)$/i.test(fileName),
       isSummary: fileName === "summary.txt",
     })),
   };
+}
+
+function encodePathSegments(value) {
+  return String(value).split("/").map(encodeURIComponent).join("/");
 }
 
 function readSummaryFile(reportDir) {

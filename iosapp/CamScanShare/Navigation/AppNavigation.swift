@@ -9,7 +9,8 @@ enum AppRoute: Hashable {
         pageReportId: String,
         sourceImageFileName: String,
         rotationDegrees: Int,
-        currentFilterRawValue: String
+        currentFilterRawValue: String,
+        debugCaptureId: String?
     )
 }
 
@@ -36,13 +37,15 @@ struct AppNavigation: View {
                         let pageReportId,
                         let sourceImageFileName,
                         let rotationDegrees,
-                        let currentFilterRawValue
+                        let currentFilterRawValue,
+                        let debugCaptureId
                     ):
                         ImprovementReportView(
                             pageReportId: pageReportId,
                             sourceImageFileName: sourceImageFileName,
                             rotationDegrees: rotationDegrees,
                             currentFilterRawValue: currentFilterRawValue,
+                            debugCaptureId: debugCaptureId,
                             path: $path
                         )
                     }

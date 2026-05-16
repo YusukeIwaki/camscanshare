@@ -27,7 +27,6 @@ struct ImprovementReportAttachment: Identifiable {
 enum ImprovementReportService {
     enum ServiceError: LocalizedError {
         case sourceImageMissing
-        case previewGenerationFailed
         case invalidQRCode
         case missingUploadConfig
         case invalidPhoto
@@ -37,14 +36,12 @@ enum ImprovementReportService {
             switch self {
             case .sourceImageMissing:
                 "元画像を読み込めませんでした。"
-            case .previewGenerationFailed:
-                "プレビューの生成に失敗しました。"
             case .invalidQRCode:
                 "QRコードの形式が正しくありません。"
             case .missingUploadConfig:
                 "送信先 URL またはアクセストークンが不足しています。"
             case .invalidPhoto:
-                "追加画像を読み込めませんでした。"
+                "追加写真を読み込めませんでした。"
             case .uploadFailed(let message):
                 message
             }
@@ -66,60 +63,6 @@ enum ImprovementReportService {
         formatter.timeZone = TimeZone(identifier: "Asia/Tokyo")
         formatter.dateFormat = "yyyy-MM-dd HH:mm:ss 'JST'"
         return formatter.string(from: now)
-    }
-
-    static func renderPreview(
-        sourceImageFileName: String,
-        filter: FilterPreset,
-        rotationDegrees: Int
-    ) async throws -> UIImage {
-        try await Task.detached(priority: .userInitiated) {
-            guard let sourceImage = ImageStorageService.loadImage(
-                fileName: sourceImageFileName,
-                maxDimension: 1600
-            ) else {
-                throw ServiceError.sourceImageMissing
-            }
-
-            if filter == .original, rotationDegrees == 0 {
-                return sourceImage
-            }
-
-            guard let rendered = ImageFilterService.applyFilter(
-                filter,
-                to: sourceImage,
-                rotation: rotationDegrees,
-                intent: .preview,
-                previewMaxDimension: 1600
-            ) else {
-                throw ServiceError.previewGenerationFailed
-            }
-            return rendered
-        }.value
-    }
-
-    static func makePhotoAttachment(
-        data: Data,
-        contentType: UTType?,
-        fallbackIndex: Int
-    ) throws -> ImprovementReportAttachment {
-        guard !data.isEmpty else { throw ServiceError.invalidPhoto }
-        guard let image = UIImage(data: data) else {
-            throw ServiceError.invalidPhoto
-        }
-
-        let fileExtension = contentType?.preferredFilenameExtension?
-            .lowercased()
-            .replacingOccurrences(of: "[^a-z0-9]", with: "", options: .regularExpression)
-        let normalizedExtension = (fileExtension?.isEmpty == false ? fileExtension! : "jpg")
-        let displayName = "photo-\(fallbackIndex).\(normalizedExtension)"
-
-        return ImprovementReportAttachment(
-            displayName: displayName,
-            data: data,
-            previewImage: image,
-            fileExtension: normalizedExtension
-        )
     }
 
     static func parseScannerPayload(_ rawValue: String) throws -> ImprovementReportServerConfig {
@@ -151,29 +94,14 @@ enum ImprovementReportService {
 
     static func createArchive(
         sourceImageFileName: String,
-        previewImages: [FilterPreset: UIImage],
-        attachments: [ImprovementReportAttachment]
+        attachments: [ImprovementReportAttachment],
+        debugCaptureId: String?
     ) throws -> URL {
         let outputURL = FileManager.default.temporaryDirectory
             .appendingPathComponent("improvement-report-\(UUID().uuidString)")
             .appendingPathExtension("zip")
 
         var entries: [ZipEntryPayload] = []
-
-        if let originalImage = previewImages[.original],
-            let data = originalImage.jpegData(compressionQuality: 0.9)
-        {
-            entries.append(ZipEntryPayload(name: "original.jpg", data: data))
-        }
-
-        for filter in FilterPreset.allCases where filter != .original {
-            guard let image = previewImages[filter],
-                let data = image.jpegData(compressionQuality: 0.9)
-            else {
-                continue
-            }
-            entries.append(ZipEntryPayload(name: "filter-\(filter.rawValue).jpg", data: data))
-        }
 
         let sourceURL = ImageStorageService.sourceImageURL(fileName: sourceImageFileName)
         if let sourceData = try? Data(contentsOf: sourceURL) {
@@ -183,14 +111,90 @@ enum ImprovementReportService {
         for (index, attachment) in attachments.enumerated() {
             entries.append(
                 ZipEntryPayload(
-                    name: "extra-\(index + 1).\(attachment.fileExtension)",
+                    name: "attachments/\(String(format: "%02d", index + 1))-\(sanitizeZipPathSegment(attachment.displayName))",
                     data: attachment.data
                 )
             )
         }
 
+        entries.append(contentsOf: debugArchiveEntries(debugCaptureId: debugCaptureId))
+
         try SimpleZipWriter.write(entries: entries, to: outputURL)
         return outputURL
+    }
+
+    static func makePhotoAttachment(
+        data: Data,
+        contentType: UTType?,
+        fallbackIndex: Int
+    ) throws -> ImprovementReportAttachment {
+        guard !data.isEmpty else { throw ServiceError.invalidPhoto }
+        guard let image = UIImage(data: data) else {
+            throw ServiceError.invalidPhoto
+        }
+
+        let fileExtension = contentType?.preferredFilenameExtension?
+            .lowercased()
+            .replacingOccurrences(of: "[^a-z0-9]", with: "", options: .regularExpression)
+        let normalizedExtension = (fileExtension?.isEmpty == false ? fileExtension! : "jpg")
+        let displayName = "photo-\(fallbackIndex).\(normalizedExtension)"
+
+        return ImprovementReportAttachment(
+            displayName: displayName,
+            data: data,
+            previewImage: image,
+            fileExtension: normalizedExtension
+        )
+    }
+
+    private static func debugArchiveEntries(debugCaptureId: String?) -> [ZipEntryPayload] {
+        let debugSink = ImageProcessingDebugSink.shared
+        let sessions = debugCaptureId
+            .flatMap { $0.isEmpty ? nil : debugSink.sessionDirectories(debugCaptureId: $0) } ?? []
+        var entries: [ZipEntryPayload] = []
+
+        let rootPath = debugSink.debugRootDirectory?.path ?? "-"
+        let manifest = ([
+            "debugRoot: \(rootPath)",
+            "debugCaptureId: \(debugCaptureId ?? "-")",
+            "includedSessionCount: \(sessions.count)"
+        ] +
+            sessions.map { "session: \($0.lastPathComponent)" }).joined(separator: "\n") + "\n"
+        entries.append(ZipEntryPayload(name: "debug/manifest.txt", data: Data(manifest.utf8)))
+
+        for sessionURL in sessions {
+            let sessionName = sanitizeZipPathSegment(sessionURL.lastPathComponent)
+            guard let enumerator = FileManager.default.enumerator(
+                at: sessionURL,
+                includingPropertiesForKeys: [.isRegularFileKey],
+                options: [.skipsHiddenFiles]
+            ) else {
+                continue
+            }
+
+            for case let fileURL as URL in enumerator {
+                let values = try? fileURL.resourceValues(forKeys: [.isRegularFileKey])
+                guard values?.isRegularFile == true,
+                    let data = try? Data(contentsOf: fileURL)
+                else {
+                    continue
+                }
+
+                let relativePath = fileURL.path
+                    .replacingOccurrences(of: sessionURL.path + "/", with: "")
+                    .split(separator: "/")
+                    .map { sanitizeZipPathSegment(String($0)) }
+                    .joined(separator: "/")
+                entries.append(
+                    ZipEntryPayload(
+                        name: "debug/\(sessionName)/\(relativePath)",
+                        data: data
+                    )
+                )
+            }
+        }
+
+        return entries
     }
 
     static func uploadReport(
@@ -247,6 +251,13 @@ enum ImprovementReportService {
         data.append("Content-Disposition: form-data; name=\"\(name)\"\r\n\r\n".utf8Data)
         data.append(value.utf8Data)
         data.append("\r\n".utf8Data)
+    }
+
+    private static func sanitizeZipPathSegment(_ value: String) -> String {
+        let allowed = CharacterSet(charactersIn: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789._-")
+        let scalars = value.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }
+        let sanitized = String(scalars).trimmingCharacters(in: CharacterSet(charactersIn: "_"))
+        return sanitized.isEmpty ? "file" : sanitized
     }
 }
 

@@ -74,9 +74,11 @@ import androidx.core.content.ContextCompat
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import io.github.yusukeiwaki.camscanshare.data.image.ImageProcessingDebugSink
 import io.github.yusukeiwaki.camscanshare.ui.components.CameraBottomControlMode
 import io.github.yusukeiwaki.camscanshare.ui.components.cameraBottomControlMode
 import io.github.yusukeiwaki.camscanshare.ui.components.SmallPreviewImage
+import kotlinx.coroutines.delay
 import java.util.concurrent.Executors
 
 @Composable
@@ -118,12 +120,24 @@ fun CameraScanScreen(
 
     val imageCapture = remember { ImageCapture.Builder().build() }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
-    val imageProcessor = remember { ImageProcessor() }
-    val paperDetector = remember { lazy { PaperDetector() } }
+    val normalDebugSink = remember { ImageProcessingDebugSink.noOp() }
+    val imageProcessor = remember(normalDebugSink) { ImageProcessor(normalDebugSink) }
+    val paperDetector = remember(normalDebugSink) { lazy { PaperDetector(normalDebugSink) } }
 
     // Detected corners for overlay (normalized 0..1) + source image aspect ratio
     var detectedCorners by remember { mutableStateOf<List<PointF>?>(null) }
     var analysisImageAspectRatio by remember { mutableStateOf(3f / 4f) } // width/height of rotated analysis image
+    var showReportChip by remember { mutableStateOf(false) }
+    var reportCaptureArmed by remember { mutableStateOf(false) }
+
+    LaunchedEffect(cameraPermissionGranted) {
+        showReportChip = false
+        reportCaptureArmed = false
+        if (cameraPermissionGranted) {
+            delay(5_000)
+            showReportChip = true
+        }
+    }
 
     DisposableEffect(Unit) {
         onDispose { cameraExecutor.shutdown() }
@@ -247,6 +261,45 @@ fun CameraScanScreen(
             }
         }
 
+        AnimatedVisibility(
+            visible = cameraPermissionGranted && showReportChip,
+            modifier = Modifier
+                .align(Alignment.TopEnd)
+                .padding(top = 52.dp, end = 16.dp),
+            enter = fadeIn(tween(180)),
+            exit = fadeOut(tween(120)),
+        ) {
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(
+                        if (reportCaptureArmed) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            Color.Black.copy(alpha = 0.58f)
+                        }
+                    )
+                    .border(
+                        width = 1.dp,
+                        color = Color.White.copy(alpha = if (reportCaptureArmed) 0.72f else 0.32f),
+                        shape = RoundedCornerShape(18.dp),
+                    )
+                    .clickable {
+                        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                        reportCaptureArmed = !reportCaptureArmed
+                    }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                contentAlignment = Alignment.Center,
+            ) {
+                Text(
+                    "開発元に報告",
+                    color = Color.White,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.Bold,
+                )
+            }
+        }
+
         // Flash overlay
         AnimatedVisibility(
             visible = uiState.showFlash,
@@ -313,7 +366,12 @@ fun CameraScanScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // Left: close button or thumbnail stack
-                when (cameraBottomControlMode(uiState.capturedPageCount)) {
+                val bottomControlMode = if (uiState.retakePageId != 0L) {
+                    CameraBottomControlMode.CLOSE_BUTTON
+                } else {
+                    cameraBottomControlMode(uiState.capturedPageCount)
+                }
+                when (bottomControlMode) {
                     CameraBottomControlMode.CLOSE_BUTTON -> {
                         Box(
                             modifier = Modifier
@@ -362,20 +420,50 @@ fun CameraScanScreen(
                         .background(Color.White)
                         .clickable(enabled = !uiState.isCapturing && cameraPermissionGranted) {
                             haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+                            val captureForReport = reportCaptureArmed
+                            val debugCaptureId = if (captureForReport) {
+                                ImageProcessingDebugSink.newCaptureId()
+                            } else {
+                                null
+                            }
+                            reportCaptureArmed = false
                             imageCapture.takePicture(
                                 cameraExecutor,
                                 object : ImageCapture.OnImageCapturedCallback() {
                                     override fun onCaptureSuccess(image: ImageProxy) {
-                                        var bitmap = imageProcessor.toBitmapWithCorrectRotation(image)
+                                        val captureDebugSink = if (captureForReport) {
+                                            ImageProcessingDebugSink.fromContext(
+                                                context,
+                                                isWritingEnabled = true,
+                                                debugCaptureId = debugCaptureId,
+                                            )
+                                        } else {
+                                            normalDebugSink
+                                        }
+                                        val captureImageProcessor = if (captureForReport) {
+                                            ImageProcessor(captureDebugSink)
+                                        } else {
+                                            imageProcessor
+                                        }
+                                        val capturePaperDetector = if (captureForReport) {
+                                            PaperDetector(captureDebugSink)
+                                        } else {
+                                            paperDetector.value
+                                        }
+                                        var bitmap = captureImageProcessor.toBitmapWithCorrectRotation(image)
                                         image.close()
                                         // Re-detect paper in the captured image and apply perspective correction
-                                        val corners = paperDetector.value.detect(bitmap)
+                                        val corners = capturePaperDetector.detect(bitmap)
                                         if (corners != null && corners.size == 4) {
-                                            val corrected = paperDetector.value.correctDocumentGeometry(bitmap, corners)
+                                            val corrected = capturePaperDetector.correctDocumentGeometry(bitmap, corners)
                                             bitmap.recycle()
                                             bitmap = corrected
                                         }
-                                        viewModel.onCaptureImage(bitmap)
+                                        viewModel.onCaptureImage(
+                                            bitmap,
+                                            isDebugCapture = captureForReport,
+                                            debugCaptureId = debugCaptureId,
+                                        )
                                     }
                                     override fun onError(exception: ImageCaptureException) {
                                         Log.e("CameraScan", "Capture failed", exception)

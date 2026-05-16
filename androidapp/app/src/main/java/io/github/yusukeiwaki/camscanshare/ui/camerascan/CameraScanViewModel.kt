@@ -44,7 +44,11 @@ class CameraScanViewModel @Inject constructor(
         }
     }
 
-    fun onCaptureImage(bitmap: Bitmap) {
+    fun onCaptureImage(
+        bitmap: Bitmap,
+        isDebugCapture: Boolean = false,
+        debugCaptureId: String? = null,
+    ) {
         if (_uiState.value.isCapturing) return
         _uiState.update { it.copy(isCapturing = true, showFlash = true) }
 
@@ -52,7 +56,12 @@ class CameraScanViewModel @Inject constructor(
             val retakePageId = _uiState.value.retakePageId
             if (retakePageId != 0L) {
                 // Retake mode: replace the existing page's image
-                repository.replacePage(retakePageId, bitmap)
+                repository.replacePage(
+                    retakePageId,
+                    bitmap,
+                    isDebugCapture = isDebugCapture,
+                    debugCaptureId = debugCaptureId,
+                )
                 _uiState.update {
                     it.copy(isCapturing = false, showFlash = false, retakeDone = true)
                 }
@@ -65,7 +74,12 @@ class CameraScanViewModel @Inject constructor(
                     observePages(docId)
                 }
 
-                repository.addPage(docId, bitmap)
+                repository.addPage(
+                    docId,
+                    bitmap,
+                    isDebugCapture = isDebugCapture,
+                    debugCaptureId = debugCaptureId,
+                )
 
                 val thumbSize = 200
                 val scale = thumbSize.toFloat() / maxOf(bitmap.width, bitmap.height)

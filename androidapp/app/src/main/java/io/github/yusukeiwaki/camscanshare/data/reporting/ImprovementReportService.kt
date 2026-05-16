@@ -7,9 +7,7 @@ import android.provider.OpenableColumns
 import android.util.Log
 import dagger.hilt.android.qualifiers.ApplicationContext
 import io.github.yusukeiwaki.camscanshare.data.file.ImageFileStorage
-import io.github.yusukeiwaki.camscanshare.data.file.PreviewFileStorage
-import io.github.yusukeiwaki.camscanshare.data.preview.WorkingPreviewManager
-import io.github.yusukeiwaki.camscanshare.ui.pageedit.ImageFilter
+import io.github.yusukeiwaki.camscanshare.data.image.ImageProcessingDebugSink
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.io.BufferedInputStream
@@ -44,36 +42,15 @@ data class ImprovementReportMetadata(
 data class ImprovementReportAttachment(
     val uriString: String,
     val displayName: String,
+    val mimeType: String?,
 )
 
 @Singleton
 class ImprovementReportService @Inject constructor(
     @ApplicationContext private val context: Context,
-    private val workingPreviewManager: WorkingPreviewManager,
-    private val previewFileStorage: PreviewFileStorage,
     private val imageFileStorage: ImageFileStorage,
+    private val debugSink: ImageProcessingDebugSink,
 ) {
-    suspend fun ensurePreview(
-        pageId: Long,
-        sourceRelativePath: String,
-        filterKey: String,
-        rotationDegrees: Int,
-    ): String? = withContext(Dispatchers.IO) {
-        val bitmap = workingPreviewManager.getOrCompute(
-            pageId = pageId,
-            sourceRelativePath = sourceRelativePath,
-            filterKey = filterKey,
-            rotationDegrees = rotationDegrees,
-        ) ?: return@withContext null
-
-        try {
-            val absolutePath = previewFileStorage.getWorkingAbsolutePath(pageId, filterKey, rotationDegrees)
-            if (File(absolutePath).exists()) absolutePath else null
-        } finally {
-            bitmap.recycle()
-        }
-    }
-
     fun buildTimestampJst(now: ZonedDateTime = ZonedDateTime.now(ZoneId.of("Asia/Tokyo"))): String =
         now.format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss 'JST'"))
 
@@ -98,26 +75,13 @@ class ImprovementReportService @Inject constructor(
     suspend fun createArchive(
         pageId: Long,
         sourceRelativePath: String,
-        previewPaths: Map<String, String>,
         attachments: List<ImprovementReportAttachment>,
+        debugCaptureId: String?,
     ): File = withContext(Dispatchers.IO) {
         val outputDir = File(context.cacheDir, "improvement-reports").also { it.mkdirs() }
         val archiveFile = File(outputDir, "report-${System.currentTimeMillis()}-$pageId.zip")
 
         ZipOutputStream(archiveFile.outputStream().buffered()).use { zipOutput ->
-            val originalPath = previewPaths[ImageFilter.ORIGINAL.filterKey]
-            if (originalPath != null) {
-                addFileToZip(zipOutput, File(originalPath), "original.jpg")
-            }
-
-            ImageFilter.entries
-                .filter { it != ImageFilter.ORIGINAL }
-                .forEach { filter ->
-                    val absolutePath = previewPaths[filter.filterKey] ?: return@forEach
-                    addFileToZip(zipOutput, File(absolutePath), "filter-${filter.filterKey}.jpg")
-                }
-
-            // Keep the current source image path visible for debugging if needed.
             val sourceAbsolutePath = imageFileStorage.getAbsolutePath(sourceRelativePath)
             val sourceFile = File(sourceAbsolutePath)
             if (sourceFile.exists()) {
@@ -125,22 +89,23 @@ class ImprovementReportService @Inject constructor(
             }
 
             attachments.forEachIndexed { index, attachment ->
-                addUriToZip(
-                    zipOutput = zipOutput,
-                    uri = Uri.parse(attachment.uriString),
-                    entryName = buildAttachmentEntryName(index, attachment.displayName),
-                )
+                addAttachmentToZip(zipOutput, attachment, index + 1)
             }
+
+            addDebugArtifactsToZip(zipOutput, debugCaptureId)
         }
 
         archiveFile
     }
 
-    fun resolveAttachment(uri: Uri): ImprovementReportAttachment? {
-        val displayName = queryDisplayName(uri) ?: return null
+    fun resolveAttachment(uri: Uri): ImprovementReportAttachment {
+        val displayName = queryDisplayName(uri)
+            ?: uri.lastPathSegment
+            ?: "attachment"
         return ImprovementReportAttachment(
             uriString = uri.toString(),
             displayName = displayName,
+            mimeType = context.contentResolver.getType(uri),
         )
     }
 
@@ -158,6 +123,7 @@ class ImprovementReportService @Inject constructor(
             readTimeout = 60000
             setRequestProperty("Authorization", "Bearer ${config.token}")
             setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
+            setChunkedStreamingMode(64 * 1024)
         }
 
         try {
@@ -215,36 +181,63 @@ class ImprovementReportService @Inject constructor(
         zipOutput.closeEntry()
     }
 
-    private fun addUriToZip(
+    private fun addAttachmentToZip(
         zipOutput: ZipOutputStream,
-        uri: Uri,
-        entryName: String,
+        attachment: ImprovementReportAttachment,
+        index: Int,
     ) {
-        val resolver = context.contentResolver
-        resolver.openInputStream(uri)?.use { input ->
-            zipOutput.putNextEntry(ZipEntry(entryName))
-            input.copyTo(zipOutput)
-            zipOutput.closeEntry()
-        } ?: throw IOException("添付画像を開けませんでした: $uri")
+        val uri = Uri.parse(attachment.uriString)
+        val entryName = "attachments/${index.toString().padStart(2, '0')}-${sanitizeZipPathSegment(attachment.displayName)}"
+        val input = context.contentResolver.openInputStream(uri)
+        if (input == null) {
+            Log.w("ImprovementReport", "Skipped unreadable attachment: ${attachment.uriString}")
+            return
+        }
+
+        zipOutput.putNextEntry(ZipEntry(entryName))
+        input.use { it.copyTo(zipOutput) }
+        zipOutput.closeEntry()
     }
 
     private fun queryDisplayName(uri: Uri): String? {
-        context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
-            val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-            if (index >= 0 && cursor.moveToFirst()) {
-                return cursor.getString(index)
+        return context.contentResolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)
+            ?.use { cursor ->
+                if (!cursor.moveToFirst()) return@use null
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0) cursor.getString(index) else null
             }
-        }
-        return uri.lastPathSegment?.substringAfterLast('/')?.takeIf { it.isNotBlank() }
+            ?.takeIf { it.isNotBlank() }
     }
 
-    private fun buildAttachmentEntryName(index: Int, displayName: String): String {
-        val extension = displayName.substringAfterLast('.', "")
-            .lowercase()
-            .replace(Regex("[^a-z0-9]"), "")
-            .ifBlank { "jpg" }
-        return "extra-${index + 1}.$extension"
+    private fun addDebugArtifactsToZip(zipOutput: ZipOutputStream, debugCaptureId: String?) {
+        val root = debugSink.debugRootDirectory ?: return
+        val sessions = debugCaptureId
+            ?.takeIf { it.isNotBlank() }
+            ?.let { debugSink.sessionDirectoriesForCapture(it) }
+            .orEmpty()
+        val reportMetadata = buildString {
+            appendLine("debugRoot: ${root.absolutePath}")
+            appendLine("debugCaptureId: ${debugCaptureId ?: "-"}")
+            appendLine("includedSessionCount: ${sessions.size}")
+            sessions.forEach { appendLine("session: ${it.name}") }
+        }
+        zipOutput.putNextEntry(ZipEntry("debug/manifest.txt"))
+        zipOutput.write(reportMetadata.toByteArray(Charsets.UTF_8))
+        zipOutput.closeEntry()
+
+        sessions.forEach { sessionDir ->
+            sessionDir.walkTopDown()
+                .filter { it.isFile }
+                .forEach { file ->
+                    val relativePath = file.relativeTo(sessionDir).invariantSeparatorsPath
+                    val entryName = "debug/${sanitizeZipPathSegment(sessionDir.name)}/$relativePath"
+                    addFileToZip(zipOutput, file, entryName)
+                }
+        }
     }
+
+    private fun sanitizeZipPathSegment(value: String): String =
+        value.replace(Regex("[^A-Za-z0-9._-]"), "_").ifBlank { "session" }
 
     private fun writeTextPart(
         output: DataOutputStream,

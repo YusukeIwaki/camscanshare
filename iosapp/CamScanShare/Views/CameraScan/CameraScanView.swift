@@ -8,6 +8,8 @@ struct CameraScanView: View {
     @Environment(\.modelContext) private var modelContext
     @State private var viewModel = CameraScanViewModel()
     @State private var showFlash = false
+    @State private var showReportChip = false
+    @State private var reportCaptureArmed = false
 
     var body: some View {
         GeometryReader { geometry in
@@ -34,6 +36,8 @@ struct CameraScanView: View {
                 }
                 .ignoresSafeArea(edges: .bottom)
 
+                reportChip(topInset: geometry.safeAreaInsets.top)
+
                 // Flash effect
                 if showFlash {
                     Color.white
@@ -54,6 +58,15 @@ struct CameraScanView: View {
         }
         .onDisappear {
             viewModel.stopSession()
+        }
+        .task {
+            showReportChip = false
+            reportCaptureArmed = false
+            try? await Task.sleep(for: .seconds(5))
+            guard !Task.isCancelled else { return }
+            withAnimation(.easeOut(duration: 0.18)) {
+                showReportChip = true
+            }
         }
     }
 
@@ -176,16 +189,55 @@ struct CameraScanView: View {
         .disabled(viewModel.isCapturing || viewModel.isFinalizing)
     }
 
+    @ViewBuilder
+    private func reportChip(topInset: CGFloat) -> some View {
+        if showReportChip {
+            VStack {
+                HStack {
+                    Spacer()
+                    Button {
+                        reportCaptureArmed.toggle()
+                    } label: {
+                        Text("開発元に報告")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundStyle(.white)
+                            .padding(.horizontal, 14)
+                            .padding(.vertical, 8)
+                            .background(
+                                reportCaptureArmed
+                                    ? Color.accentColor
+                                    : Color.black.opacity(0.58),
+                                in: Capsule()
+                            )
+                            .overlay(
+                                Capsule()
+                                    .stroke(.white.opacity(reportCaptureArmed ? 0.72 : 0.32), lineWidth: 1)
+                            )
+                    }
+                    .disabled(viewModel.isCapturing || viewModel.isFinalizing)
+                    .padding(.trailing, 16)
+                }
+                .padding(.top, max(52, topInset + 16))
+
+                Spacer()
+            }
+            .transition(.opacity)
+        }
+    }
+
     // MARK: - Actions
 
     private func capture() async {
+        let captureForReport = reportCaptureArmed
+        reportCaptureArmed = false
+
         // Flash effect
         withAnimation(.easeOut(duration: 0.1)) { showFlash = true }
         try? await Task.sleep(for: .milliseconds(100))
         withAnimation(.easeOut(duration: 0.3)) { showFlash = false }
 
         guard let image = await viewModel.capturePhoto() else { return }
-        viewModel.processAndStoreCapturedImage(image)
+        viewModel.processAndStoreCapturedImage(image, isDebugCapture: captureForReport)
 
         if retakePageId != nil {
             await finishScanning()
@@ -214,8 +266,8 @@ struct CameraScanView: View {
 
         let document = resolveDocumentForCapturedPages()
         let startOrder = document.pages.count
-        for (index, image) in viewModel.capturedPages.enumerated() {
-            let fileName = ImageStorageService.saveImage(image)
+        for (index, capturedPage) in viewModel.capturedPages.enumerated() {
+            let fileName = ImageStorageService.saveImage(capturedPage.image)
             let previewFiles = try? await PreviewGenerationCoordinator.shared.generatePersistedPreviews(
                 sourceFileName: fileName,
                 filter: .original,
@@ -226,7 +278,9 @@ struct CameraScanView: View {
                 sortOrder: startOrder + index,
                 originalImageFileName: fileName,
                 smallPreviewFileName: previewFiles?.smallFileName,
-                largePreviewFileName: previewFiles?.largeFileName
+                largePreviewFileName: previewFiles?.largeFileName,
+                isDebugCapture: capturedPage.isDebugCapture,
+                debugCaptureId: capturedPage.debugCaptureId
             )
             modelContext.insert(page)
         }
@@ -257,15 +311,17 @@ struct CameraScanView: View {
     }
 
     private func replaceRetakePage(_ pageId: PersistentIdentifier) async {
-        guard let replacementImage = viewModel.capturedPages.last,
+        guard let replacementPage = viewModel.capturedPages.last,
             let page = modelContext.model(for: pageId) as? Page
         else { return }
 
         let oldFileName = page.originalImageFileName
         let oldSmallPreviewFileName = page.smallPreviewFileName
         let oldLargePreviewFileName = page.largePreviewFileName
-        let newFileName = ImageStorageService.saveImage(replacementImage)
+        let newFileName = ImageStorageService.saveImage(replacementPage.image)
         page.originalImageFileName = newFileName
+        page.isDebugCapture = replacementPage.isDebugCapture
+        page.debugCaptureId = replacementPage.debugCaptureId
 
         do {
             let previewFiles = try await PreviewGenerationCoordinator.shared.generatePersistedPreviews(

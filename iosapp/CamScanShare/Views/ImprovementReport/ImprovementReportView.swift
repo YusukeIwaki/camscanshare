@@ -1,11 +1,12 @@
-import PhotosUI
 import SwiftUI
+import PhotosUI
 
 struct ImprovementReportView: View {
     let pageReportId: String
     let sourceImageFileName: String
     let rotationDegrees: Int
     let currentFilterRawValue: String
+    let debugCaptureId: String?
     @Binding var path: NavigationPath
 
     @State private var viewModel: ImprovementReportViewModel
@@ -16,19 +17,22 @@ struct ImprovementReportView: View {
         sourceImageFileName: String,
         rotationDegrees: Int,
         currentFilterRawValue: String,
+        debugCaptureId: String?,
         path: Binding<NavigationPath>
     ) {
         self.pageReportId = pageReportId
         self.sourceImageFileName = sourceImageFileName
         self.rotationDegrees = rotationDegrees
         self.currentFilterRawValue = currentFilterRawValue
+        self.debugCaptureId = debugCaptureId
         _path = path
         _viewModel = State(
             initialValue: ImprovementReportViewModel(
                 pageReportID: pageReportId,
                 sourceImageFileName: sourceImageFileName,
                 rotationDegrees: rotationDegrees,
-                currentFilterRawValue: currentFilterRawValue
+                currentFilterRawValue: currentFilterRawValue,
+                debugCaptureId: debugCaptureId
             )
         )
     }
@@ -42,14 +46,7 @@ struct ImprovementReportView: View {
                     LazyVStack(spacing: 16) {
                         reportInfoCard
                         attachmentCard
-
-                        if !viewModel.allPreviewsReady {
-                            progressCard
-                        }
-
-                        ForEach(viewModel.previews) { preview in
-                            previewCard(preview)
-                        }
+                        debugPayloadCard
                     }
                     .padding(16)
                     .padding(.bottom, 120)
@@ -68,15 +65,15 @@ struct ImprovementReportView: View {
         .onAppear {
             viewModel.initialize()
         }
-        .onChange(of: selectedPhotoItems) { _, newItems in
-            guard !newItems.isEmpty else { return }
-            viewModel.addAttachments(from: newItems)
-            selectedPhotoItems = []
-        }
         .onChange(of: viewModel.shouldClose) { _, shouldClose in
             if shouldClose, path.count > 0 {
                 path.removeLast()
             }
+        }
+        .onChange(of: selectedPhotoItems) { _, newItems in
+            guard !newItems.isEmpty else { return }
+            viewModel.addAttachments(from: newItems)
+            selectedPhotoItems = []
         }
         .alert("改善レポートを送信せずにもどりますか？", isPresented: $viewModel.showDiscardDialog) {
             Button("キャンセル", role: .cancel) {
@@ -86,7 +83,7 @@ struct ImprovementReportView: View {
                 viewModel.onDiscardConfirmed()
             }
         } message: {
-            Text("生成済みのプレビュー、追加した写真、入力したコメントは破棄されます。")
+            Text("入力したコメントと追加写真は破棄されます。")
         }
         .alert(
             "送信に失敗しました",
@@ -129,7 +126,7 @@ struct ImprovementReportView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text("改善レポート送信")
                     .font(.system(size: 18, weight: .medium))
-                Text("元画像と全フィルタ結果を送信")
+                Text("デバッグ出力と比較写真を送信")
                     .font(.system(size: 11))
                     .foregroundStyle(.secondary)
             }
@@ -188,16 +185,16 @@ struct ImprovementReportView: View {
     private var attachmentCard: some View {
         cardContainer {
             VStack(alignment: .leading, spacing: 12) {
-                HStack(alignment: .top) {
+                HStack(alignment: .top, spacing: 12) {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("追加で送る写真")
+                        Text("比較用の追加写真")
                             .font(.system(size: 15, weight: .bold))
-                        Text("比較用の写真を任意で追加できます。画像のみ追加可能で、PDF などは選択できません。全フィルタの生成中でも操作できます。")
+                        Text("CamScanner など別アプリの出力画像やスクリーンショットを任意で添付できます。")
                             .font(.system(size: 12))
                             .foregroundStyle(.secondary)
                     }
 
-                    Spacer(minLength: 12)
+                    Spacer(minLength: 8)
 
                     PhotosPicker(
                         selection: $selectedPhotoItems,
@@ -209,16 +206,14 @@ struct ImprovementReportView: View {
                             Image(systemName: "photo.badge.plus")
                             Text("写真を追加")
                         }
-                        .font(.system(size: 13, weight: .semibold))
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
-                        .background(Color.accentColor.opacity(0.14), in: RoundedRectangle(cornerRadius: 12))
                     }
+                    .font(.system(size: 13, weight: .semibold))
+                    .buttonStyle(.borderedProminent)
                     .disabled(viewModel.isSending)
                 }
 
                 if viewModel.attachments.isEmpty {
-                    Text("追加写真はまだありません。CamScanner との比較画像など、補足したい写真がある場合だけ追加します。")
+                    Text("追加写真はまだありません。比較結果をコメントで説明したい場合だけ添付します。")
                         .font(.system(size: 13))
                         .foregroundStyle(.secondary)
                         .frame(maxWidth: .infinity, alignment: .leading)
@@ -229,27 +224,9 @@ struct ImprovementReportView: View {
                                 .stroke(Color(.separator), style: StrokeStyle(lineWidth: 1, dash: [5, 4]))
                         )
                 } else {
-                    VStack(spacing: 12) {
+                    VStack(spacing: 10) {
                         ForEach(Array(viewModel.attachments.enumerated()), id: \.element.id) { index, attachment in
-                            HStack(spacing: 12) {
-                                Image(uiImage: attachment.previewImage)
-                                    .resizable()
-                                    .aspectRatio(contentMode: .fill)
-                                    .frame(width: 84, height: 84)
-                                    .clipShape(RoundedRectangle(cornerRadius: 12))
-
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(attachment.displayName)
-                                        .font(.system(size: 14, weight: .bold))
-                                        .lineLimit(2)
-                                    Text("写真 \(index + 1) / 追加画像として一緒に送信")
-                                        .font(.system(size: 12))
-                                        .foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                            }
-                            .padding(12)
-                            .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 16))
+                            attachmentRow(attachment: attachment, index: index)
                         }
                     }
                 }
@@ -257,79 +234,51 @@ struct ImprovementReportView: View {
         }
     }
 
-    private var progressCard: some View {
-        cardContainer(background: Color.accentColor.opacity(0.12)) {
-            HStack(spacing: 12) {
-                ProgressView()
-                VStack(alignment: .leading, spacing: 4) {
-                    Text("変換プレビューを生成中...")
-                        .font(.system(size: 14, weight: .bold))
-                    Text(
-                        "\(viewModel.previews.filter { !$0.isLoading && $0.image != nil }.count) / \(viewModel.previews.count) 件の画像を準備しました。すべて完了すると送信ボタンが活性化します。"
-                    )
+    private func attachmentRow(
+        attachment: ImprovementReportAttachment,
+        index: Int
+    ) -> some View {
+        HStack(spacing: 12) {
+            Image(uiImage: attachment.previewImage)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 56, height: 56)
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text(attachment.displayName)
+                    .font(.system(size: 14, weight: .bold))
+                    .lineLimit(2)
+                Text("追加写真 \(index + 1)")
                     .font(.system(size: 12))
                     .foregroundStyle(.secondary)
-                }
-                Spacer()
             }
+            Spacer()
+
+            Button(role: .destructive) {
+                viewModel.removeAttachment(attachment)
+            } label: {
+                Image(systemName: "trash")
+                    .frame(width: 34, height: 34)
+            }
+            .disabled(viewModel.isSending)
         }
+        .padding(12)
+        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 16))
     }
 
-    private func previewCard(_ preview: ImprovementReportPreviewState) -> some View {
-        let aspectRatio: CGFloat = {
-            if let image = preview.image, image.size.height > 0 {
-                return image.size.width / image.size.height
-            }
-            return ImageStorageService.imageAspectRatio(fileName: sourceImageFileName) ?? 210.0 / 297.0
-        }()
-
-        return cardContainer {
+    private var debugPayloadCard: some View {
+        cardContainer {
             VStack(alignment: .leading, spacing: 12) {
-                HStack {
-                    Text(preview.filter.displayName)
-                        .font(.system(size: 15, weight: .bold))
-                    Spacer()
-                    Text(previewStatusText(preview))
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundStyle(previewStatusColor(preview))
-                }
+                Text("送信されるデータ")
+                    .font(.system(size: 15, weight: .bold))
+                Text("各フィルタの再生成は行わず、端末内に保存済みのこの撮影のデバッグ成果物を zip にまとめて送信します。")
+                    .font(.system(size: 12))
+                    .foregroundStyle(.secondary)
 
-                Group {
-                    if let image = preview.image {
-                        LargePreviewImage(
-                            state: .memoryImage(
-                                id: "report-\(preview.filter.rawValue)",
-                                image: image,
-                                aspectRatio: aspectRatio
-                            ),
-                            contentMode: .fit,
-                            cornerRadius: 16
-                        )
-                    } else if preview.errorMessage != nil {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(Color(.systemBackground))
-                            Text(preview.errorMessage ?? "")
-                                .font(.system(size: 13))
-                                .foregroundStyle(.red)
-                                .multilineTextAlignment(.center)
-                                .padding(16)
-                        }
-                        .aspectRatio(aspectRatio, contentMode: .fit)
-                    } else {
-                        ZStack {
-                            RoundedRectangle(cornerRadius: 16)
-                                .fill(Color(.systemBackground))
-                            VStack(spacing: 12) {
-                                ProgressView()
-                                Text("プレビューを準備中…")
-                                    .font(.system(size: 13, weight: .medium))
-                                    .foregroundStyle(.secondary)
-                            }
-                        }
-                        .aspectRatio(aspectRatio, contentMode: .fit)
-                    }
-                }
+                payloadRow(label: "source.jpg", value: "対象ページの元画像が見つかった場合に同梱します。")
+                payloadRow(label: "attachments/", value: "任意で追加した比較用写真を同梱します。")
+                payloadRow(label: "debug/", value: "metadata.json、中間 PNG、timings.jsonl をこの撮影に紐づくセッションごとに同梱します。")
             }
         }
     }
@@ -413,6 +362,20 @@ struct ImprovementReportView: View {
         }
     }
 
+    private func payloadRow(label: String, value: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
+                .font(.system(size: 13, weight: .bold))
+            Text(value)
+                .font(.system(size: 12))
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(Color(.systemBackground), in: RoundedRectangle(cornerRadius: 14))
+    }
+
     private func cardContainer<Content: View>(
         background: Color = Color(.systemBackground),
         @ViewBuilder content: () -> Content
@@ -424,31 +387,16 @@ struct ImprovementReportView: View {
         .background(background, in: RoundedRectangle(cornerRadius: 20))
     }
 
-    private func previewStatusText(_ preview: ImprovementReportPreviewState) -> String {
-        if preview.errorMessage != nil { return "エラー" }
-        if preview.isLoading || preview.image == nil { return "生成中" }
-        return "準備完了"
-    }
-
-    private func previewStatusColor(_ preview: ImprovementReportPreviewState) -> Color {
-        if preview.errorMessage != nil { return .red }
-        if preview.isLoading || preview.image == nil { return .secondary }
-        return Color(red: 0.07, green: 0.45, blue: 0.20)
-    }
-
     private var footerText: String {
         if viewModel.isSending {
             return "改善レポートを送信中..."
-        }
-        if viewModel.previews.contains(where: \.isLoading) {
-            return "変換プレビューが出そろうまで送信できません。途中で戻ると、この画面はそのまま閉じます。"
         }
         if viewModel.comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             return "コメントを入力すると送信ボタンが有効になります。"
         }
         if !viewModel.attachments.isEmpty {
-            return "追加写真 \(viewModel.attachments.count) 枚も含めて送信されます。未送信のまま戻ると、この改善レポートは破棄されます。"
+            return "追加写真 \(viewModel.attachments.count) 枚も含めて、この撮影の画像処理デバッグ出力とログを送信します。"
         }
-        return "未送信のまま戻ると、この改善レポートは破棄されます。"
+        return "この撮影の画像処理デバッグ出力とログを送信します。未送信のまま戻ると、入力したコメントは破棄されます。"
     }
 }

@@ -30,7 +30,28 @@ enum PaperDetectionService {
         return request
     }
 
-    static func detectRectangle(in image: UIImage) -> DetectedRectangle? {
+    static func detectRectangle(
+        in image: UIImage,
+        debugSink: ImageProcessingDebugSink = .shared
+    ) -> DetectedRectangle? {
+        let session = debugSink.startSession(
+            category: "paper-detection",
+            label: "capture",
+            metadata: [
+                "inputWidth": "\(Int(image.size.width))",
+                "inputHeight": "\(Int(image.size.height))"
+            ]
+        )
+        return detectRectangle(in: image, session: session, debugSink: debugSink)
+    }
+
+    private static func detectRectangle(
+        in image: UIImage,
+        session: ImageProcessingDebugSession?,
+        debugSink: ImageProcessingDebugSink
+    ) -> DetectedRectangle? {
+        let startedAt = debugSink.now()
+        debugSink.writeImage(session, label: "input", image: image)
         let uprightImage = image.normalizedOrientation()
         guard let cgImage = uprightImage.cgImage else { return nil }
 
@@ -38,17 +59,58 @@ enum PaperDetectionService {
         configure(request)
         let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
         try? handler.perform([request])
-        return rectangle(from: request, error: nil)
+        let rectangle = rectangle(from: request, error: nil)
+        debugSink.writeText(session, fileName: "selected_quad.json", text: rectangleJson(rectangle))
+        debugSink.writeImage(session, label: "selected_quad_overlay", image: drawRectangleOverlay(image: uprightImage, rectangle: rectangle))
+        debugSink.recordTimingSince(
+            session,
+            stage: "paper_detection.total",
+            startedAt: startedAt,
+            metadata: ["result": rectangle == nil ? "none" : "quad"]
+        )
+        return rectangle
     }
 
-    static func correctDocumentGeometry(image: UIImage) -> UIImage {
+    static func correctDocumentGeometry(
+        image: UIImage,
+        debugSink: ImageProcessingDebugSink = .shared
+    ) -> UIImage {
+        let session = debugSink.startSession(
+            category: "document-geometry",
+            label: "capture",
+            metadata: [
+                "inputWidth": "\(Int(image.size.width))",
+                "inputHeight": "\(Int(image.size.height))"
+            ]
+        )
+        let startedAt = debugSink.now()
+        debugSink.writeImage(session, label: "input", image: image)
         let uprightImage = image.normalizedOrientation()
-        guard let rectangle = detectRectangle(in: uprightImage),
+        guard let rectangle = detectRectangle(in: uprightImage, session: session, debugSink: debugSink),
             let step0 = correctPerspective(image: uprightImage, rectangle: rectangle)
         else {
+            debugSink.recordTimingSince(
+                session,
+                stage: "document_geometry.total",
+                startedAt: startedAt,
+                metadata: ["result": "fallback_upright"]
+            )
             return uprightImage
         }
-        return normalizeDocumentAspect(step0, rectangle: rectangle)
+        debugSink.writeImage(session, label: "warped", image: step0)
+        let normalized = normalizeDocumentAspect(step0, rectangle: rectangle)
+        debugSink.writeImage(session, label: "output", image: normalized)
+        debugSink.recordTimingSince(
+            session,
+            stage: "document_geometry.total",
+            startedAt: startedAt,
+            metadata: [
+                "result": "corrected",
+                "outputWidth": "\(Int(normalized.size.width))",
+                "outputHeight": "\(Int(normalized.size.height))"
+            ]
+        )
+        return normalized
     }
 
     static func correctPerspective(
@@ -213,5 +275,52 @@ enum PaperDetectionService {
             bottomLeft: rect.bottomLeft,
             bottomRight: rect.bottomRight
         )
+    }
+
+    private static func rectangleJson(_ rectangle: DetectedRectangle?) -> String {
+        guard let rectangle else { return "{\"corners\":[]}" }
+        let points = [
+            rectangle.topLeft,
+            rectangle.topRight,
+            rectangle.bottomRight,
+            rectangle.bottomLeft
+        ]
+        let pointJson = points.map { point in
+            "{\"x\":\(point.x),\"y\":\(point.y)}"
+        }.joined(separator: ",")
+        return "{\"corners\":[\(pointJson)]}"
+    }
+
+    private static func drawRectangleOverlay(image: UIImage, rectangle: DetectedRectangle?) -> UIImage? {
+        guard let rectangle else { return nil }
+        let size = image.size
+        let points = [
+            uiPoint(fromVisionPoint: rectangle.topLeft, imageSize: size),
+            uiPoint(fromVisionPoint: rectangle.topRight, imageSize: size),
+            uiPoint(fromVisionPoint: rectangle.bottomRight, imageSize: size),
+            uiPoint(fromVisionPoint: rectangle.bottomLeft, imageSize: size)
+        ]
+
+        let format = UIGraphicsImageRendererFormat.default()
+        format.scale = image.scale
+        return UIGraphicsImageRenderer(size: size, format: format).image { context in
+            image.draw(in: CGRect(origin: .zero, size: size))
+            UIColor.systemBlue.setStroke()
+            UIColor.systemBlue.setFill()
+            let path = UIBezierPath()
+            path.lineWidth = 4
+            path.move(to: points[0])
+            points.dropFirst().forEach { path.addLine(to: $0) }
+            path.close()
+            path.stroke()
+
+            for point in points {
+                context.cgContext.fillEllipse(in: CGRect(x: point.x - 6, y: point.y - 6, width: 12, height: 12))
+            }
+        }
+    }
+
+    private static func uiPoint(fromVisionPoint point: CGPoint, imageSize: CGSize) -> CGPoint {
+        CGPoint(x: point.x * imageSize.width, y: (1 - point.y) * imageSize.height)
     }
 }

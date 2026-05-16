@@ -32,6 +32,9 @@ interface PageDao {
     @Query("UPDATE pages SET imagePath = :imagePath WHERE id = :pageId")
     suspend fun updateImagePath(pageId: Long, imagePath: String)
 
+    @Query("UPDATE pages SET isDebugCapture = :isDebugCapture, debugCaptureId = :debugCaptureId WHERE id = :pageId")
+    suspend fun updateDebugCapture(pageId: Long, isDebugCapture: Boolean, debugCaptureId: String?)
+
     @Query("UPDATE pages SET smallPreviewPath = :path WHERE id = :pageId")
     suspend fun updateSmallPreviewPath(pageId: Long, path: String?)
 

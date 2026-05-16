@@ -59,7 +59,12 @@ class DocumentRepository @Inject constructor(
     suspend fun getPages(documentId: Long): List<PageEntity> =
         pageDao.getByDocumentId(documentId)
 
-    suspend fun addPage(documentId: Long, bitmap: Bitmap): Long {
+    suspend fun addPage(
+        documentId: Long,
+        bitmap: Bitmap,
+        isDebugCapture: Boolean = false,
+        debugCaptureId: String? = null,
+    ): Long {
         val imagePath = imageFileStorage.saveBitmap(bitmap)
         val sortOrder = pageDao.getPageCount(documentId)
         val pageId = pageDao.insert(
@@ -67,6 +72,8 @@ class DocumentRepository @Inject constructor(
                 documentId = documentId,
                 sortOrder = sortOrder,
                 imagePath = imagePath,
+                isDebugCapture = isDebugCapture,
+                debugCaptureId = debugCaptureId,
             )
         )
         touchDocument(documentId)
@@ -75,7 +82,12 @@ class DocumentRepository @Inject constructor(
         return pageId
     }
 
-    suspend fun replacePage(pageId: Long, newBitmap: Bitmap) {
+    suspend fun replacePage(
+        pageId: Long,
+        newBitmap: Bitmap,
+        isDebugCapture: Boolean = false,
+        debugCaptureId: String? = null,
+    ) {
         val oldPage = pageDao.getById(pageId) ?: return
         imageFileStorage.delete(oldPage.imagePath)
         oldPage.smallPreviewPath?.let(previewFileStorage::deleteSmall)
@@ -84,6 +96,7 @@ class DocumentRepository @Inject constructor(
 
         val newPath = imageFileStorage.saveBitmap(newBitmap)
         pageDao.updateImagePath(pageId, newPath)
+        pageDao.updateDebugCapture(pageId, isDebugCapture, debugCaptureId)
         pageDao.updateSmallPreviewPath(pageId, null)
         pageDao.updateLargePreviewPath(pageId, null)
         PreviewGenerationWorker.enqueue(context, pageId, PreviewGenerationWorker.TYPE_SMALL)

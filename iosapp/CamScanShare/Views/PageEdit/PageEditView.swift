@@ -62,7 +62,7 @@ struct PageEditView: View {
                 navigateToImprovementReport()
             }
         } message: {
-            Text("現在の元画像とフィルタ後の画像を開発元にすべて送信します。よろしいですか？")
+            Text("現在の元画像、追加写真、この撮影の画像処理デバッグ出力を開発元に送信します。よろしいですか？")
         }
     }
 
@@ -249,7 +249,9 @@ struct PageEditView: View {
                             ForEach(FilterPreset.allCases) { preset in
                                 filterItemView(preset: preset)
                             }
-                            improvementRequestItem
+                            if viewModel.currentPage?.isDebugCapture == true {
+                                improvementRequestItem
+                            }
                         }
                         .padding(.horizontal, 16)
                     }
@@ -312,7 +314,7 @@ struct PageEditView: View {
                             .stroke(Color.orange.opacity(0.28), lineWidth: 1)
                     )
 
-                Text("開発元に改善要望")
+                Text("開発元に報告")
                     .font(.system(size: 11, weight: .medium))
                     .foregroundStyle(.secondary)
                     .multilineTextAlignment(.center)
@@ -357,6 +359,7 @@ struct PageEditView: View {
 
     private func navigateToImprovementReport() {
         guard let currentPage = viewModel.currentPage,
+            currentPage.isDebugCapture,
             let currentEditState = viewModel.currentEditState
         else {
             return
@@ -367,7 +370,8 @@ struct PageEditView: View {
                 pageReportId: buildImprovementReportPageId(for: currentPage),
                 sourceImageFileName: currentPage.originalImageFileName,
                 rotationDegrees: currentEditState.rotationDegrees,
-                currentFilterRawValue: currentEditState.filterPreset.rawValue
+                currentFilterRawValue: currentEditState.filterPreset.rawValue,
+                debugCaptureId: currentPage.debugCaptureId
             )
         )
     }

@@ -1,29 +1,17 @@
 import PhotosUI
 import SwiftUI
 
-struct ImprovementReportPreviewState: Identifiable {
-    let filter: FilterPreset
-    var image: UIImage?
-    var isLoading = true
-    var errorMessage: String?
-
-    var id: String { filter.rawValue }
-}
-
 @MainActor @Observable
 final class ImprovementReportViewModel {
     let pageReportID: String
     let sourceImageFileName: String
-    let rotationDegrees: Int
     let currentFilterRawValue: String
+    let debugCaptureId: String?
 
     var appVersion = ""
     var buildNumber = ""
     var timestampJst = ""
     var comment = ""
-    var previews: [ImprovementReportPreviewState] = FilterPreset.allCases.map {
-        ImprovementReportPreviewState(filter: $0)
-    }
     var attachments: [ImprovementReportAttachment] = []
     var isSending = false
     var showDiscardDialog = false
@@ -38,12 +26,13 @@ final class ImprovementReportViewModel {
         pageReportID: String,
         sourceImageFileName: String,
         rotationDegrees: Int,
-        currentFilterRawValue: String
+        currentFilterRawValue: String,
+        debugCaptureId: String?
     ) {
         self.pageReportID = pageReportID
         self.sourceImageFileName = sourceImageFileName
-        self.rotationDegrees = rotationDegrees
         self.currentFilterRawValue = currentFilterRawValue
+        self.debugCaptureId = debugCaptureId
     }
 
     func initialize() {
@@ -54,22 +43,16 @@ final class ImprovementReportViewModel {
         appVersion = version.version
         buildNumber = version.build
         timestampJst = ImprovementReportService.buildTimestampJst()
-
-        generatePreviews()
     }
 
     var canSend: Bool {
-        !comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-            && previews.allSatisfy { !$0.isLoading && $0.image != nil && $0.errorMessage == nil }
-            && !isSending
-    }
-
-    var allPreviewsReady: Bool {
-        previews.allSatisfy { !$0.isLoading && $0.image != nil && $0.errorMessage == nil }
+        !comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !isSending
     }
 
     func onBackRequested() -> Bool {
-        let shouldConfirmDiscard = allPreviewsReady && !isSending
+        let shouldConfirmDiscard = (
+            !comment.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || !attachments.isEmpty
+        ) && !isSending
         if shouldConfirmDiscard {
             showDiscardDialog = true
             return false
@@ -100,6 +83,33 @@ final class ImprovementReportViewModel {
         showScannerSheet = true
     }
 
+    func addAttachments(from items: [PhotosPickerItem]) {
+        guard !items.isEmpty else { return }
+        Task {
+            for item in items {
+                let nextIndex = attachments.count + 1
+                do {
+                    guard let data = try await item.loadTransferable(type: Data.self) else {
+                        throw ImprovementReportService.ServiceError.invalidPhoto
+                    }
+                    let attachment = try ImprovementReportService.makePhotoAttachment(
+                        data: data,
+                        contentType: item.supportedContentTypes.first,
+                        fallbackIndex: nextIndex
+                    )
+                    attachments.append(attachment)
+                } catch {
+                    errorMessage = (error as? LocalizedError)?.errorDescription
+                        ?? "追加写真を読み込めませんでした。"
+                }
+            }
+        }
+    }
+
+    func removeAttachment(_ attachment: ImprovementReportAttachment) {
+        attachments.removeAll { $0.id == attachment.id }
+    }
+
     func onScannerCancelled() {
         showScannerSheet = false
     }
@@ -121,16 +131,10 @@ final class ImprovementReportViewModel {
             var archiveURL: URL?
             do {
                 let config = try ImprovementReportService.parseScannerPayload(rawValue)
-                let previewImages: [FilterPreset: UIImage] = Dictionary(
-                    uniqueKeysWithValues: previews.compactMap { preview in
-                        guard let image = preview.image else { return nil }
-                        return (preview.filter, image)
-                    }
-                )
                 archiveURL = try ImprovementReportService.createArchive(
                     sourceImageFileName: sourceImageFileName,
-                    previewImages: previewImages,
-                    attachments: attachments
+                    attachments: attachments,
+                    debugCaptureId: debugCaptureId
                 )
                 try await ImprovementReportService.uploadReport(
                     config: config,
@@ -160,58 +164,5 @@ final class ImprovementReportViewModel {
                 try? FileManager.default.removeItem(at: archiveURL)
             }
         }
-    }
-
-    func addAttachments(from items: [PhotosPickerItem]) {
-        Task {
-            for item in items {
-                let nextIndex = attachments.count + 1
-                do {
-                    guard let data = try await item.loadTransferable(type: Data.self) else {
-                        throw ImprovementReportService.ServiceError.invalidPhoto
-                    }
-                    let attachment = try ImprovementReportService.makePhotoAttachment(
-                        data: data,
-                        contentType: item.supportedContentTypes.first,
-                        fallbackIndex: nextIndex
-                    )
-                    attachments.append(attachment)
-                } catch {
-                    errorMessage = (error as? LocalizedError)?.errorDescription
-                        ?? "追加画像を読み込めませんでした。"
-                }
-            }
-        }
-    }
-
-    private func generatePreviews() {
-        for filter in FilterPreset.allCases {
-            Task {
-                do {
-                    let image = try await ImprovementReportService.renderPreview(
-                        sourceImageFileName: sourceImageFileName,
-                        filter: filter,
-                        rotationDegrees: rotationDegrees
-                    )
-                    updatePreview(filter: filter) {
-                        $0.image = image
-                        $0.isLoading = false
-                        $0.errorMessage = nil
-                    }
-                } catch {
-                    updatePreview(filter: filter) {
-                        $0.image = nil
-                        $0.isLoading = false
-                        $0.errorMessage = (error as? LocalizedError)?.errorDescription
-                            ?? "プレビューの生成に失敗しました。"
-                    }
-                }
-            }
-        }
-    }
-
-    private func updatePreview(filter: FilterPreset, mutate: (inout ImprovementReportPreviewState) -> Void) {
-        guard let index = previews.firstIndex(where: { $0.filter == filter }) else { return }
-        mutate(&previews[index])
     }
 }

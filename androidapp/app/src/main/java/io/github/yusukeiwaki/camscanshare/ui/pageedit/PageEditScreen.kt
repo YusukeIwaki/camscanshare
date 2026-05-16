@@ -198,6 +198,7 @@ fun PageEditScreen(
             ) {
                 FilterPanel(
                     currentFilterKey = uiState.pages.getOrNull(uiState.currentPageIndex)?.filterKey ?: "original",
+                    showImprovementRequest = uiState.pages.getOrNull(uiState.currentPageIndex)?.isDebugCapture == true,
                     onFilterSelected = { viewModel.onFilterSelected(it.filterKey) },
                     onFilterLongPressed = {
                         haptic.performHapticFeedback(HapticFeedbackType.LongPress)
@@ -239,7 +240,7 @@ fun PageEditScreen(
     if (reportTargetPage != null) {
         ConfirmDialog(
             title = "改善レポートを送信しますか？",
-            message = "現在の元画像とフィルタ後の画像を開発元にすべて送信します。よろしいですか？",
+            message = "現在の元画像、追加写真、この撮影の画像処理デバッグ出力を開発元に送信します。よろしいですか？",
             confirmText = "OK",
             dismissText = "キャンセル",
             onConfirm = {
@@ -424,6 +425,7 @@ private fun ToolbarAction(
 @Composable
 private fun FilterPanel(
     currentFilterKey: String,
+    showImprovementRequest: Boolean,
     onFilterSelected: (ImageFilter) -> Unit,
     onFilterLongPressed: (ImageFilter) -> Unit,
     onImprovementRequest: () -> Unit,
@@ -465,8 +467,10 @@ private fun FilterPanel(
                 )
             }
 
-            item {
-                ImprovementRequestItem(onClick = onImprovementRequest)
+            if (showImprovementRequest) {
+                item {
+                    ImprovementRequestItem(onClick = onImprovementRequest)
+                }
             }
         }
     }
@@ -545,7 +549,7 @@ private fun ImprovementRequestItem(
             ) {
                 Icon(
                     imageVector = Icons.Default.Feedback,
-                    contentDescription = "開発元に改善要望",
+                    contentDescription = "開発元に報告",
                     tint = MaterialTheme.colorScheme.primary,
                 )
                 Text(
@@ -560,7 +564,7 @@ private fun ImprovementRequestItem(
         }
         Spacer(Modifier.height(6.dp))
         Text(
-            "開発元に改善要望",
+            "開発元に報告",
             fontSize = 11.sp,
             fontWeight = FontWeight.Medium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,

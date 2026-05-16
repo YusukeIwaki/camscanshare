@@ -17,24 +17,68 @@ enum ImageFilterService {
         intent: RenderIntent = .preview,
         previewMaxDimension: CGFloat = 1800
     ) -> UIImage? {
+        let debugSink = ImageProcessingDebugSink.shared
+        let session = debugSink.startSession(
+            category: "filter",
+            label: preset.rawValue,
+            metadata: [
+                "filterKey": preset.rawValue,
+                "intent": intent == .preview ? "preview" : "export",
+                "inputWidth": "\(Int(image.size.width))",
+                "inputHeight": "\(Int(image.size.height))",
+                "rotationDegrees": "\(rotation)"
+            ]
+        )
+        let startedAt = debugSink.now()
+        debugSink.writeImage(session, label: "input", image: image)
         let normalizedRotation = ((rotation % 360) + 360) % 360
 
+        let output: UIImage?
         if usesOpenCVPipeline(for: preset) {
             if intent == .preview {
-                return OpenCVDocumentFilterBridge.applyPreviewFilterNamed(
+                output = OpenCVDocumentFilterBridge.applyPreviewFilterNamed(
                     preset.rawValue,
                     to: image,
                     rotationDegrees: normalizedRotation,
                     maxDimension: previewMaxDimension
                 )
+            } else {
+                output = OpenCVDocumentFilterBridge.applyFilterNamed(
+                    preset.rawValue,
+                    to: image,
+                    rotationDegrees: normalizedRotation
+                )
             }
-            return OpenCVDocumentFilterBridge.applyFilterNamed(
-                preset.rawValue,
+        } else {
+            output = applyCoreImageFilter(
+                preset,
                 to: image,
-                rotationDegrees: normalizedRotation
+                normalizedRotation: normalizedRotation,
+                intent: intent,
+                previewMaxDimension: previewMaxDimension
             )
         }
 
+        debugSink.writeImage(session, label: "output", image: output)
+        debugSink.recordTimingSince(
+            session,
+            stage: "filter.total",
+            startedAt: startedAt,
+            metadata: [
+                "outputWidth": output.map { "\(Int($0.size.width))" } ?? "none",
+                "outputHeight": output.map { "\(Int($0.size.height))" } ?? "none"
+            ]
+        )
+        return output
+    }
+
+    private static func applyCoreImageFilter(
+        _ preset: FilterPreset,
+        to image: UIImage,
+        normalizedRotation: Int,
+        intent: RenderIntent,
+        previewMaxDimension: CGFloat
+    ) -> UIImage? {
         guard var ciImage = CIImage(image: image) else { return nil }
 
         if normalizedRotation != 0 {

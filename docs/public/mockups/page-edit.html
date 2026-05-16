@@ -620,7 +620,7 @@
         <span class="material-symbols-outlined">feedback</span>
         <span class="report-preview-note">画像とコメントを送信</span>
       </div>
-      <span class="filter-name">開発元に改善要望</span>
+      <span class="filter-name">開発元に報告</span>
     </button>
 
   </div>
@@ -633,6 +633,7 @@
 const TOTAL_PAGES = 3;
 let currentPage = 0;
 let filterOpen = false;
+const debugCapturePages = [true, false, true];
 
 // Default filter
 const DEFAULT_FILTER = 'original';
@@ -682,6 +683,10 @@ function syncFilterSelection() {
   document.querySelectorAll('.filter-item').forEach(fi => {
     fi.classList.toggle('active', fi.dataset.filter === state.filter);
   });
+  const reportItem = document.querySelector('.filter-item.report-item');
+  if (reportItem) {
+    reportItem.style.display = debugCapturePages[currentPage] ? '' : 'none';
+  }
 }
 
 // ============================================
@@ -867,12 +872,13 @@ function showAllPagesDialog(item) {
 }
 
 function showReportConfirmDialog() {
+  if (!debugCapturePages[currentPage]) return;
   const overlay = document.createElement('div');
   overlay.className = 'dialog-overlay';
   overlay.innerHTML = `
     <div class="dialog-box">
       <div class="dialog-title">改善レポートを送信しますか？</div>
-      <div class="dialog-body">現在の元画像とフィルタ後の画像を開発元にすべて送信します。よろしいですか？</div>
+      <div class="dialog-body">現在の元画像、追加写真、この撮影の画像処理デバッグ出力を開発元に送信します。よろしいですか？</div>
       <div class="dialog-actions">
         <button class="dialog-btn dialog-btn-cancel" onclick="dismissDialog(this)">キャンセル</button>
         <button class="dialog-btn dialog-btn-confirm" onclick="openImprovementReport(this)">OK</button>

@@ -1,3 +1,3 @@
 import Foundation
 
-typealias Page = SchemaV2.Page
+typealias Page = SchemaV4.Page

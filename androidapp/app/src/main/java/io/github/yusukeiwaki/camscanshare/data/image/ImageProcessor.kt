@@ -6,6 +6,7 @@ import android.graphics.ColorMatrix
 import android.graphics.ColorMatrixColorFilter
 import android.graphics.Matrix
 import android.graphics.Paint
+import android.os.SystemClock
 import androidx.camera.core.ImageProxy
 import org.opencv.android.OpenCVLoader
 import org.opencv.android.Utils
@@ -21,7 +22,11 @@ import javax.inject.Singleton
 import kotlin.math.roundToInt
 
 @Singleton
-class ImageProcessor @Inject constructor() {
+class ImageProcessor @Inject constructor(
+    private val debugSink: ImageProcessingDebugSink,
+) {
+
+    constructor() : this(ImageProcessingDebugSink.noOp())
 
     init {
         OpenCVLoader.initLocal()
@@ -74,23 +79,52 @@ class ImageProcessor @Inject constructor() {
      * to use ColorMatrix.
      */
     fun applyFilter(source: Bitmap, filterKey: String): Bitmap {
-        when (filterKey) {
-            "enhance" -> return applyEnhanceFilter(source)
-            "eco" -> return applyEcoFilter(source)
-            "magic" -> return applyMagicFilter(source)
-            "bw" -> return applyDocumentBwFilter(source)
-            "magic_pro" -> return applyMagicProFilter(source)
-            "whiteboard" -> return applyWhiteboardFilter(source)
+        val session = debugSink.startSession(
+            category = "filter",
+            label = filterKey,
+            metadata = mapOf(
+                "filterKey" to filterKey,
+                "inputWidth" to source.width.toString(),
+                "inputHeight" to source.height.toString(),
+            ),
+        )
+        val started = SystemClock.elapsedRealtimeNanos()
+        debugSink.writeBitmap(session, "input", source)
+
+        val output = when (filterKey) {
+            "enhance" -> applyEnhanceFilter(source, session)
+            "eco" -> applyEcoFilter(source, session)
+            "magic" -> applyMagicFilter(source, session)
+            "bw" -> applyDocumentBwFilter(source, session)
+            "magic_pro" -> applyMagicProFilter(source, session)
+            "whiteboard" -> applyWhiteboardFilter(source, session)
+            else -> {
+                val colorMatrix = getColorMatrix(filterKey)
+                if (colorMatrix == null) {
+                    source
+                } else {
+                    val result = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
+                    val canvas = Canvas(result)
+                    val paint = Paint().apply {
+                        colorFilter = ColorMatrixColorFilter(colorMatrix)
+                    }
+                    canvas.drawBitmap(source, 0f, 0f, paint)
+                    result
+                }
+            }
         }
 
-        val colorMatrix = getColorMatrix(filterKey) ?: return source
-        val result = Bitmap.createBitmap(source.width, source.height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(result)
-        val paint = Paint().apply {
-            colorFilter = ColorMatrixColorFilter(colorMatrix)
-        }
-        canvas.drawBitmap(source, 0f, 0f, paint)
-        return result
+        debugSink.writeBitmap(session, "output", output)
+        debugSink.recordTimingSince(
+            session = session,
+            stage = "filter.total",
+            startElapsedRealtimeNanos = started,
+            metadata = mapOf(
+                "outputWidth" to output.width.toString(),
+                "outputHeight" to output.height.toString(),
+            ),
+        )
+        return output
     }
 
     /**
@@ -118,11 +152,15 @@ class ImageProcessor @Inject constructor() {
      * 3. Neutralize paper color cast
      * 4. Whiten only truly neutral paper while preserving color-rich regions
      */
-    private fun applyMagicFilter(source: Bitmap): Bitmap {
+    private fun applyMagicFilter(
+        source: Bitmap,
+        session: ImageProcessingDebugSession?,
+    ): Bitmap {
         val mat = Mat()
         Utils.bitmapToMat(source, mat)
         val rgb = Mat()
         Imgproc.cvtColor(mat, rgb, Imgproc.COLOR_RGBA2RGB)
+        debugSink.writeMat(session, "magic_rgb_input", rgb, DebugMatColor.RGB)
 
         val lab = Mat()
         Imgproc.cvtColor(rgb, lab, Imgproc.COLOR_RGB2Lab)
@@ -138,6 +176,11 @@ class ImageProcessor @Inject constructor() {
         val stretchedL = autoStretchLuminance(flattenedL)
         val denoisedL = Mat()
         Imgproc.medianBlur(stretchedL, denoisedL, 3)
+        debugSink.writeMat(session, "magic_luminance", luminance)
+        debugSink.writeMat(session, "magic_illumination", illumination)
+        debugSink.writeMat(session, "magic_flattened_l", flattenedL)
+        debugSink.writeMat(session, "magic_stretched_l", stretchedL)
+        debugSink.writeMat(session, "magic_denoised_l", denoisedL)
 
         val paperMask = buildPaperMask(denoisedL, aChannel, bChannel)
         val structureMask = buildStructureMask(denoisedL)
@@ -154,6 +197,9 @@ class ImageProcessor @Inject constructor() {
         )
 
         val accentMask = buildAccentMask(denoisedL, aChannel, bChannel)
+        debugSink.writeMat(session, "magic_paper_mask", paperMask)
+        debugSink.writeMat(session, "magic_structure_mask", structureMask)
+        debugSink.writeMat(session, "magic_accent_mask", accentMask)
 
         val paperBias = estimatePaperBias(aChannel, bChannel, paperMask)
         val neutralizedA = shiftChannel(aChannel, paperBias.first - 128.0)
@@ -173,6 +219,13 @@ class ImageProcessor @Inject constructor() {
             accentMask,
             colorRichness,
         )
+        debugSink.writeMat(session, "magic_reference_saturation", referenceSaturation)
+        debugSink.writeMat(session, "magic_paper_color_mask", paperColorMask)
+        debugSink.writeText(
+            session,
+            "magic-analysis.json",
+            "{\"colorRichness\":\"${colorRichness}\"}",
+        )
 
         val mutedFactor = 0.18 + 0.18 * colorRichness
         val paperColorFactor = 0.42 + 0.30 * colorRichness
@@ -190,6 +243,7 @@ class ImageProcessor @Inject constructor() {
         Core.addWeighted(outputL, 0.58, denoisedL, 0.42, 0.0, blendedL)
         val preserveLMix = 0.24 + 0.18 * colorRichness
         val preservedL = blendMaskedTowardReference(blendedL, denoisedL, paperColorMask, preserveLMix)
+        debugSink.writeMat(session, "magic_output_l", preservedL)
         val outputA = Mat(mutedA.size(), mutedA.type())
         val outputB = Mat(mutedB.size(), mutedB.type())
         mutedA.copyTo(outputA)
@@ -271,11 +325,15 @@ class ImageProcessor @Inject constructor() {
         return output
     }
 
-    private fun applyDocumentBwFilter(source: Bitmap): Bitmap {
+    private fun applyDocumentBwFilter(
+        source: Bitmap,
+        session: ImageProcessingDebugSession?,
+    ): Bitmap {
         val rgba = Mat()
         Utils.bitmapToMat(source, rgba)
         val rgb = Mat()
         Imgproc.cvtColor(rgba, rgb, Imgproc.COLOR_RGBA2RGB)
+        debugSink.writeMat(session, "bw_rgb_input", rgb, DebugMatColor.RGB)
 
         val originalWidth = rgb.width()
         val originalHeight = rgb.height()
@@ -298,17 +356,24 @@ class ImageProcessor @Inject constructor() {
         Imgproc.cvtColor(workingRgb, lab, Imgproc.COLOR_RGB2Lab)
         val luminance = Mat()
         Core.extractChannel(lab, luminance, 0)
+        debugSink.writeMat(session, "bw_working_rgb", workingRgb, DebugMatColor.RGB)
+        debugSink.writeMat(session, "bw_luminance", luminance)
 
         val illumination = estimateIllumination(luminance)
         val flattenedL = flatFieldCorrect(luminance, illumination)
         val stretchedL = autoStretchLuminance(flattenedL)
         val denoisedL = Mat()
         Imgproc.medianBlur(stretchedL, denoisedL, 3)
+        debugSink.writeMat(session, "bw_illumination", illumination)
+        debugSink.writeMat(session, "bw_flattened_l", flattenedL)
+        debugSink.writeMat(session, "bw_stretched_l", stretchedL)
+        debugSink.writeMat(session, "bw_denoised_l", denoisedL)
         val denoisedFloat = Mat()
         denoisedL.convertTo(denoisedFloat, CvType.CV_32F)
 
         val localMean = Mat()
         Imgproc.GaussianBlur(denoisedFloat, localMean, Size(71.0, 71.0), 0.0)
+        debugSink.writeMat(session, "bw_local_mean", localMean)
 
         val denominator = Mat()
         Core.add(localMean, Scalar.all(1.0), denominator)
@@ -318,6 +383,7 @@ class ImageProcessor @Inject constructor() {
 
         val normalized = Mat()
         normalizedFloat.convertTo(normalized, CvType.CV_8U)
+        debugSink.writeMat(session, "bw_normalized", normalized)
 
         val binary = Mat()
         Imgproc.threshold(normalized, binary, 228.0, 255.0, Imgproc.THRESH_BINARY)
@@ -344,6 +410,8 @@ class ImageProcessor @Inject constructor() {
             Core.compare(labels, Scalar.all(label.toDouble()), componentMask, Core.CMP_EQ)
             binary.setTo(Scalar.all(255.0), componentMask)
         }
+        debugSink.writeMat(session, "bw_binary_cleaned", binary)
+        debugSink.writeMat(session, "bw_black_mask", blackMask)
 
         val bwRgb = Mat()
         Core.merge(listOf(binary, binary, binary), bwRgb)
@@ -356,6 +424,7 @@ class ImageProcessor @Inject constructor() {
         }
 
         val output = bitmapFromRgb(outputRgb, source.width, source.height)
+        debugSink.writeMat(session, "bw_output_rgb", outputRgb, DebugMatColor.RGB)
 
         rgba.release()
         rgb.release()
@@ -383,9 +452,12 @@ class ImageProcessor @Inject constructor() {
         return output
     }
 
-    private fun applyEnhanceFilter(source: Bitmap): Bitmap {
+    private fun applyEnhanceFilter(
+        source: Bitmap,
+        session: ImageProcessingDebugSession?,
+    ): Bitmap {
         val rgb = bitmapToRgb(source)
-        val analysis = prepareDocumentAnalysis(rgb)
+        val analysis = prepareDocumentAnalysis(rgb, session)
 
         val contrastedL = applyChannelContrast(analysis.denoisedL, 1.18)
         val baseL = Mat()
@@ -394,6 +466,8 @@ class ImageProcessor @Inject constructor() {
         val outputL1 = Mat()
         Core.addWeighted(outputL0, 0.72, baseL, 0.28, 0.0, outputL1)
         val outputL = blendMaskedTowardReference(outputL1, analysis.denoisedL, analysis.paperColorMask, 0.34)
+        debugSink.writeMat(session, "enhance_contrasted_l", contrastedL)
+        debugSink.writeMat(session, "enhance_output_l", outputL)
 
         val (outputA, outputB) = buildDocumentChromaOutputs(
             analysis.neutralizedA,
@@ -421,6 +495,7 @@ class ImageProcessor @Inject constructor() {
         )
         val finalRgb = Mat()
         Imgproc.cvtColor(restoredBgr, finalRgb, Imgproc.COLOR_BGR2RGB)
+        debugSink.writeMat(session, "enhance_final_rgb", finalRgb, DebugMatColor.RGB)
         val output = bitmapFromRgb(finalRgb, source.width, source.height)
 
         rgb.release()
@@ -440,9 +515,12 @@ class ImageProcessor @Inject constructor() {
         return output
     }
 
-    private fun applyEcoFilter(source: Bitmap): Bitmap {
+    private fun applyEcoFilter(
+        source: Bitmap,
+        session: ImageProcessingDebugSession?,
+    ): Bitmap {
         val rgb = bitmapToRgb(source)
-        val analysis = prepareDocumentAnalysis(rgb)
+        val analysis = prepareDocumentAnalysis(rgb, session)
 
         val relaxedPaperMask = buildRelaxedPaperMask(
             analysis.flattenedL,
@@ -462,6 +540,9 @@ class ImageProcessor @Inject constructor() {
         val invertedDilatedPreserveMask = invertMask(dilatedPreserveMask)
         val paperToneMask = Mat()
         Core.bitwise_and(relaxedPaperMask, invertedDilatedPreserveMask, paperToneMask)
+        debugSink.writeMat(session, "eco_relaxed_paper_mask", relaxedPaperMask)
+        debugSink.writeMat(session, "eco_preserve_mask", preserveMask)
+        debugSink.writeMat(session, "eco_paper_tone_mask", paperToneMask)
 
         val baseL0 = Mat()
         Core.addWeighted(analysis.denoisedL, 0.84, analysis.flattenedL, 0.16, 0.0, baseL0)
@@ -479,6 +560,9 @@ class ImageProcessor @Inject constructor() {
             strength = 0.22,
         )
         val outputL = blendMaskedTowardReference(softenedL, analysis.denoisedL, analysis.paperColorMask, 0.30)
+        debugSink.writeMat(session, "eco_lifted_l", liftedL)
+        debugSink.writeMat(session, "eco_softened_l", softenedL)
+        debugSink.writeMat(session, "eco_output_l", outputL)
 
         val colorRichness = analysis.colorRichness
         val (outputA, outputB) = buildDocumentChromaOutputs(
@@ -507,6 +591,7 @@ class ImageProcessor @Inject constructor() {
         )
         val finalRgb = Mat()
         Imgproc.cvtColor(restoredBgr, finalRgb, Imgproc.COLOR_BGR2RGB)
+        debugSink.writeMat(session, "eco_final_rgb", finalRgb, DebugMatColor.RGB)
         val output = bitmapFromRgb(finalRgb, source.width, source.height)
 
         rgb.release()
@@ -535,9 +620,12 @@ class ImageProcessor @Inject constructor() {
         return output
     }
 
-    private fun applyMagicProFilter(source: Bitmap): Bitmap {
+    private fun applyMagicProFilter(
+        source: Bitmap,
+        session: ImageProcessingDebugSession?,
+    ): Bitmap {
         val rgb = bitmapToRgb(source)
-        val analysis = prepareDocumentAnalysis(rgb)
+        val analysis = prepareDocumentAnalysis(rgb, session)
         val colorRichness = analysis.colorRichness
 
         val relaxedPaperMask = buildRelaxedPaperMask(
@@ -566,6 +654,10 @@ class ImageProcessor @Inject constructor() {
         val invertedPreserveMask = invertMask(preserveMask)
         val surfaceToneMask = Mat()
         Core.bitwise_and(surfaceMask, invertedPreserveMask, surfaceToneMask)
+        debugSink.writeMat(session, "magic_pro_relaxed_paper_mask", relaxedPaperMask)
+        debugSink.writeMat(session, "magic_pro_preserve_mask", preserveMask)
+        debugSink.writeMat(session, "magic_pro_surface_mask", surfaceMask)
+        debugSink.writeMat(session, "magic_pro_surface_tone_mask", surfaceToneMask)
 
         val flatMix = 0.54 + 0.18 * colorRichness
         val baseL0 = Mat()
@@ -600,6 +692,10 @@ class ImageProcessor @Inject constructor() {
             strength = 0.28 + 0.08 * colorRichness,
         )
         val outputL = blendMaskedTowardReference(softenedL, liftedL, analysis.paperColorMask, 0.12)
+        debugSink.writeMat(session, "magic_pro_base_l", baseL)
+        debugSink.writeMat(session, "magic_pro_lifted_l", liftedL)
+        debugSink.writeMat(session, "magic_pro_softened_l", softenedL)
+        debugSink.writeMat(session, "magic_pro_output_l", outputL)
 
         val (outputA, outputB) = buildDocumentChromaOutputs(
             analysis.neutralizedA,
@@ -631,6 +727,7 @@ class ImageProcessor @Inject constructor() {
         }
         val finalRgb = Mat()
         Imgproc.cvtColor(boostedBgr, finalRgb, Imgproc.COLOR_BGR2RGB)
+        debugSink.writeMat(session, "magic_pro_final_rgb", finalRgb, DebugMatColor.RGB)
         val output = bitmapFromRgb(finalRgb, source.width, source.height)
 
         rgb.release()
@@ -664,11 +761,15 @@ class ImageProcessor @Inject constructor() {
         return output
     }
 
-    private fun applyWhiteboardFilter(source: Bitmap): Bitmap {
+    private fun applyWhiteboardFilter(
+        source: Bitmap,
+        session: ImageProcessingDebugSession?,
+    ): Bitmap {
         val rgba = Mat()
         Utils.bitmapToMat(source, rgba)
         val rgb = Mat()
         Imgproc.cvtColor(rgba, rgb, Imgproc.COLOR_RGBA2RGB)
+        debugSink.writeMat(session, "whiteboard_rgb_input", rgb, DebugMatColor.RGB)
 
         val lab = Mat()
         Imgproc.cvtColor(rgb, lab, Imgproc.COLOR_RGB2Lab)
@@ -683,6 +784,11 @@ class ImageProcessor @Inject constructor() {
         val stretchedL = autoStretchLuminance(flattenedL)
         val denoisedL = Mat()
         Imgproc.medianBlur(stretchedL, denoisedL, 3)
+        debugSink.writeMat(session, "whiteboard_luminance", luminance)
+        debugSink.writeMat(session, "whiteboard_illumination", illumination)
+        debugSink.writeMat(session, "whiteboard_flattened_l", flattenedL)
+        debugSink.writeMat(session, "whiteboard_stretched_l", stretchedL)
+        debugSink.writeMat(session, "whiteboard_denoised_l", denoisedL)
 
         val chroma = computeChroma(aChannel, bChannel)
         val accentMask0 = buildAccentMask(denoisedL, aChannel, bChannel)
@@ -698,6 +804,9 @@ class ImageProcessor @Inject constructor() {
         Imgproc.morphologyEx(accentMask, accentMask, Imgproc.MORPH_OPEN, accentKernel)
         val accentProtectMask = Mat()
         Imgproc.dilate(accentMask, accentProtectMask, accentKernel, org.opencv.core.Point(-1.0, -1.0), 1)
+        debugSink.writeMat(session, "whiteboard_chroma", chroma)
+        debugSink.writeMat(session, "whiteboard_accent_mask", accentMask)
+        debugSink.writeMat(session, "whiteboard_accent_protect_mask", accentProtectMask)
 
         val structureMask0 = buildStructureMask(denoisedL)
         val contrastedL = applyChannelContrast(denoisedL, 1.22)
@@ -712,6 +821,8 @@ class ImageProcessor @Inject constructor() {
         Core.bitwise_or(structureMask, accentProtectMask, structureMask)
         Imgproc.medianBlur(structureMask, structureMask, 3)
         Imgproc.dilate(structureMask, structureMask, accentKernel, org.opencv.core.Point(-1.0, -1.0), 1)
+        debugSink.writeMat(session, "whiteboard_structure_mask", structureMask)
+        debugSink.writeMat(session, "whiteboard_sauvola_strong", sauvolaStrong)
 
         val paperMask = buildPaperMask(denoisedL, aChannel, bChannel)
         val brightMask = Mat()
@@ -731,6 +842,8 @@ class ImageProcessor @Inject constructor() {
             org.opencv.core.Point(-1.0, -1.0),
             2,
         )
+        debugSink.writeMat(session, "whiteboard_bright_mask", brightMask)
+        debugSink.writeMat(session, "whiteboard_paper_mask", paperMask)
 
         val paperBias = estimatePaperBias(aChannel, bChannel, paperMask)
         val neutralizedA = shiftChannel(aChannel, paperBias.first - 128.0)
@@ -746,6 +859,7 @@ class ImageProcessor @Inject constructor() {
         Core.addWeighted(outputL0, 0.68, denoisedL, 0.32, 0.0, outputL1)
         val outputL2 = maskedMinScaled(outputL1, denoisedL, sauvolaStrong, 0.84)
         val outputL = maskedMinScaled(outputL2, denoisedL, accentProtectMask, 0.92)
+        debugSink.writeMat(session, "whiteboard_output_l", outputL)
 
         val outputA = Mat(mutedA.size(), mutedA.type())
         val outputB = Mat(mutedB.size(), mutedB.type())
@@ -765,6 +879,7 @@ class ImageProcessor @Inject constructor() {
         val boostedBgr = boostWhiteboardAccentColors(finalBgr, accentMask)
         val boostedRgb = Mat()
         Imgproc.cvtColor(boostedBgr, boostedRgb, Imgproc.COLOR_BGR2RGB)
+        debugSink.writeMat(session, "whiteboard_final_rgb", boostedRgb, DebugMatColor.RGB)
 
         val output = bitmapFromRgb(boostedRgb, source.width, source.height)
 
@@ -1640,7 +1755,12 @@ class ImageProcessor @Inject constructor() {
         return rgb
     }
 
-    private fun prepareDocumentAnalysis(rgb: Mat): DocumentAnalysis {
+    private fun prepareDocumentAnalysis(
+        rgb: Mat,
+        session: ImageProcessingDebugSession?,
+    ): DocumentAnalysis {
+        val started = SystemClock.elapsedRealtimeNanos()
+        debugSink.writeMat(session, "analysis_rgb_input", rgb, DebugMatColor.RGB)
         val lab = Mat()
         Imgproc.cvtColor(rgb, lab, Imgproc.COLOR_RGB2Lab)
         val channels = ArrayList<Mat>(3)
@@ -1654,6 +1774,11 @@ class ImageProcessor @Inject constructor() {
         val stretchedL = autoStretchLuminance(flattenedL)
         val denoisedL = Mat()
         Imgproc.medianBlur(stretchedL, denoisedL, 3)
+        debugSink.writeMat(session, "analysis_luminance", luminance)
+        debugSink.writeMat(session, "analysis_illumination", illumination)
+        debugSink.writeMat(session, "analysis_flattened_l", flattenedL)
+        debugSink.writeMat(session, "analysis_stretched_l", stretchedL)
+        debugSink.writeMat(session, "analysis_denoised_l", denoisedL)
 
         val structureBase = applyChannelContrast(denoisedL, 1.18)
         val (_, strongStructureBase) = buildSauvolaStructureMasks(
@@ -1666,6 +1791,7 @@ class ImageProcessor @Inject constructor() {
         val strongStructureMask = Mat()
         Core.bitwise_or(strongStructureBase, strongStructureExtra, strongStructureMask)
         Imgproc.medianBlur(strongStructureMask, strongStructureMask, 3)
+        debugSink.writeMat(session, "analysis_strong_structure_mask", strongStructureMask)
 
         val paperMask = buildPaperMask(denoisedL, aChannel, bChannel)
         val accentMask = buildAccentMask(denoisedL, aChannel, bChannel)
@@ -1692,6 +1818,9 @@ class ImageProcessor @Inject constructor() {
             org.opencv.core.Point(-1.0, -1.0),
             2,
         )
+        debugSink.writeMat(session, "analysis_paper_mask", paperMask)
+        debugSink.writeMat(session, "analysis_accent_mask", accentMask)
+        debugSink.writeMat(session, "analysis_paper_clean_mask", paperCleanMask)
 
         val paperBias = estimatePaperBias(aChannel, bChannel, paperMask)
         val neutralizedA = shiftChannel(aChannel, paperBias.first - 128.0)
@@ -1711,6 +1840,14 @@ class ImageProcessor @Inject constructor() {
             accentMask,
             colorRichness,
         )
+        debugSink.writeMat(session, "analysis_reference_saturation", referenceSaturation)
+        debugSink.writeMat(session, "analysis_paper_color_mask", paperColorMask)
+        debugSink.writeText(
+            session,
+            "analysis.json",
+            "{\"colorRichness\":\"${colorRichness}\",\"paperBiasA\":\"${paperBias.first}\",\"paperBiasB\":\"${paperBias.second}\"}",
+        )
+        debugSink.recordTimingSince(session, "filter.prepare_document_analysis", started)
 
         lab.release()
         luminance.release()

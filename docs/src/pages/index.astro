@@ -152,7 +152,7 @@ import Layout from '../layouts/Layout.astro';
         </div>
         <div class="flow-node-sub">回転 / 撮り直し / フィルタ</div>
         <div class="flow-node-sub" style="font-size:11px; color:var(--ds-text-subtlest,#626f86); margin-top:4px;">撮り直し → カメラ（単発撮影）→ 自動で戻る</div>
-        <div class="flow-node-sub" style="font-size:11px; color:var(--ds-text-subtlest,#626f86); margin-top:4px;">フィルタ右端の「開発元に改善要望」→ 改善レポート送信 → QR読取で送信完了</div>
+        <div class="flow-node-sub" style="font-size:11px; color:var(--ds-text-subtlest,#626f86); margin-top:4px;">報告用撮影ページのみ「開発元に報告」→ 改善レポート送信</div>
       </div>
 
       <div class="flow-return">
@@ -160,7 +160,7 @@ import Layout from '../layouts/Layout.astro';
         <span class="flow-return-label">← 戻る（文書一覧へ）</span>
       </div>
     </div>
-    <p class="flow-note">改善レポート送信はページ編集から派生する専用フロー。全フィルタの大プレビュー生成完了後に QR コードで送信先を読み取り、送信完了でページ編集へ戻る。</p>
+    <p class="flow-note">改善レポート送信は、ファインダーで「開発元に報告」を有効にして撮影したページだけから派生する専用フロー。コメントを入力し、必要なら比較用写真を添付してから QR コードで送信先を読み取り、送信完了でページ編集へ戻る。</p>
   </section>
 
   <!-- Screen 1: Document List -->
@@ -251,7 +251,7 @@ import Layout from '../layouts/Layout.astro';
     <div class="section-header">
       <div class="screen-number">画面 2</div>
       <h2>カメラスキャン</h2>
-      <p class="section-description">カメラを使って紙の文書を撮影する画面。紙の自動検出とガイド表示で撮影を補助します。</p>
+      <p class="section-description">カメラを使って紙の文書を撮影する画面。紙の自動検出とガイド表示で撮影を補助し、必要なときだけ報告用撮影を有効にできます。</p>
     </div>
 
     <div class="screen-layout">
@@ -260,7 +260,7 @@ import Layout from '../layouts/Layout.astro';
           <div class="phone-notch"></div>
           <iframe src="/mockups/camera-scan.html" title="カメラスキャン画面"></iframe>
         </div>
-        <p class="mockup-hint">撮影ボタンをクリックするとアニメーションが再生されます</p>
+        <p class="mockup-hint">5秒後に右上の「開発元に報告」チップが表示されます。チップを押してから撮影すると報告用撮影になります</p>
       </div>
 
       <div class="screen-spec">
@@ -283,6 +283,10 @@ import Layout from '../layouts/Layout.astro';
               <span class="spec-element">左下アクションエリア</span>
               <span class="spec-detail">撮影枚数に応じて表示が切り替わる。0枚時は閉じるボタン（✕アイコン）、1枚以上ではサムネイルスタック（枚数バッジ付き）を表示。最新の撮影ページがサムネイルの最前面に反映される。</span>
             </li>
+            <li>
+              <span class="spec-element">開発元に報告チップ</span>
+              <span class="spec-detail">ファインダー表示から5秒以上経過すると右上に表示される。タップすると次の1枚だけ報告用撮影になり、通常撮影では作らない画像処理デバッグ成果物を保存する。</span>
+            </li>
           </ul>
         </div>
 
@@ -291,7 +295,11 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list interaction-list">
             <li>
               <span class="interaction-trigger">撮影ボタンをタップ</span>
-              <span class="interaction-result">フラッシュエフェクト → 撮影画像が縮小しながら左下のサムネイルスタックへ飛んでいくアニメーション → 枚数バッジがインクリメント</span>
+              <span class="interaction-result">通常時はデバッグ成果物を作らずに撮影する。フラッシュエフェクト → 撮影画像が縮小しながら左下のサムネイルスタックへ飛んでいくアニメーション → 枚数バッジがインクリメント。</span>
+            </li>
+            <li>
+              <span class="interaction-trigger">5秒後の「開発元に報告」をタップ</span>
+              <span class="interaction-result">次に押す撮影ボタンを報告用撮影として扱う。撮影が完了すると報告用状態は解除され、以後はまた通常撮影に戻る。</span>
             </li>
             <li>
               <span class="interaction-trigger">閉じるボタンをタップ（0枚時）</span>
@@ -325,7 +333,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">保存時の Step 0 生成</span>
-              <span class="spec-detail">シャッター押下後は、保存対象となる高解像度画像に対してあらためて紙検出を実行し、その四角形を使って射影変換を行う。これがページ画像の基準となる Step 0 であり、「台形補正済み・正面化済みの元画像」として保存される。ファインダー中の低解像度検出結果はガイド表示のためだけに使い、保存時の補正には流用しない。</span>
+              <span class="spec-detail">シャッター押下後は、保存対象となる高解像度画像に対してあらためて紙検出を実行し、その四角形を使って射影変換を行う。これがページ画像の基準となる Step 0 であり、「台形補正済み・正面化済みの元画像」として保存される。ファインダー中の低解像度検出結果はガイド表示のためだけに使い、保存時の補正には流用しない。報告用撮影の場合だけ、この検出・補正の中間画像と処理時間ログをデバッグ成果物として保存する。</span>
             </li>
             <li>
               <span class="spec-element">Step 1 以降との関係</span>
@@ -346,7 +354,7 @@ import Layout from '../layouts/Layout.astro';
     <div class="section-header">
       <div class="screen-number">画面 2b</div>
       <h2>撮り直し（カメラスキャン）</h2>
-      <p class="section-description">ページ編集画面の「撮り直し」ボタンから遷移する、単発撮影モードのカメラ画面。1枚撮影すると自動で元の画面に戻り、該当ページの画像を差し替えます。</p>
+      <p class="section-description">ページ編集画面の「撮り直し」ボタンから遷移する、単発撮影モードのカメラ画面。1枚撮影すると自動で元の画面に戻り、該当ページの画像と報告可否フラグを差し替えます。</p>
     </div>
 
     <div class="screen-layout">
@@ -355,7 +363,7 @@ import Layout from '../layouts/Layout.astro';
           <div class="phone-notch"></div>
           <iframe src="/mockups/camera-retake.html" title="撮り直し画面"></iframe>
         </div>
-        <p class="mockup-hint">撮影ボタンをクリックすると1枚だけ撮影し、完了アニメーションが再生されます</p>
+        <p class="mockup-hint">5秒後に右上の「開発元に報告」チップが表示されます。撮影ボタンをクリックすると1枚だけ撮影し、完了アニメーションが再生されます</p>
       </div>
 
       <div class="screen-spec">
@@ -374,6 +382,10 @@ import Layout from '../layouts/Layout.astro';
               <span class="spec-element">紙検出ガイド</span>
               <span class="spec-detail">通常撮影と同じ。紙を検出するとガイド枠が表示され、撮影時に台形補正が適用される。</span>
             </li>
+            <li>
+              <span class="spec-element">開発元に報告チップ</span>
+              <span class="spec-detail">通常撮影と同じく、ファインダー表示から5秒後に右上へ表示する。タップ後に撮り直すと、差し替え後のページは報告用撮影ページになる。タップせずに撮り直すと通常ページとして保存し、既存の報告可否フラグも通常状態へ戻る。</span>
+            </li>
           </ul>
         </div>
 
@@ -382,7 +394,7 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list interaction-list">
             <li>
               <span class="interaction-trigger">撮影ボタンをタップ</span>
-              <span class="interaction-result">フラッシュエフェクト → 「撮り直し完了」オーバーレイ（✓アイコン + テキスト）を短時間表示 → 自動的にページ編集画面に戻る。元のページの画像が新しい撮影画像に差し替えられる。</span>
+              <span class="interaction-result">フラッシュエフェクト → 「撮り直し完了」オーバーレイ（✓アイコン + テキスト）を短時間表示 → 自動的にページ編集画面に戻る。元のページの画像が新しい撮影画像に差し替えられ、「開発元に報告」を有効にしていた場合だけレポート導線が出るページになる。</span>
             </li>
             <li>
               <span class="interaction-trigger">閉じるボタン（✕）をタップ</span>
@@ -551,7 +563,7 @@ import Layout from '../layouts/Layout.astro';
           <div class="phone-notch"></div>
           <iframe src="/mockups/page-edit.html" title="ページ編集画面"></iframe>
         </div>
-        <p class="mockup-hint">左右スワイプでページ切替、回転・フィルタ操作に加えて右端の「開発元に改善要望」からレポート送信導線も確認できます</p>
+        <p class="mockup-hint">左右スワイプでページ切替、回転・フィルタ操作を確認できます。報告用撮影ページでは右端に「開発元に報告」が表示されます</p>
       </div>
 
       <div class="screen-spec">
@@ -568,7 +580,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">フィルタパネル</span>
-              <span class="spec-detail">フィルタボタンをタップすると下部からスライドイン。横スクロールでプリセットフィルタを選択。通常フィルタはタップで現在ページのみ、長押しで全ページ一括適用の確認ダイアログを表示。パネル最右端には「開発元に改善要望」を置き、この項目だけはフィルタ適用を行わず改善レポート送信フローへ遷移する。</span>
+              <span class="spec-detail">フィルタボタンをタップすると下部からスライドイン。横スクロールでプリセットフィルタを選択。通常フィルタはタップで現在ページのみ、長押しで全ページ一括適用の確認ダイアログを表示。現在ページが報告用撮影ページの場合だけ、パネル最右端に「開発元に報告」を置き、この項目だけはフィルタ適用を行わず改善レポート送信フローへ遷移する。</span>
             </li>
             <li>
               <span class="spec-element">適用ボタン</span>
@@ -605,8 +617,8 @@ import Layout from '../layouts/Layout.astro';
               <span class="interaction-result">「全ページに適用しますか？」確認ダイアログを表示。適用を選ぶと全ページに同じフィルタを一括適用。</span>
             </li>
             <li>
-              <span class="interaction-trigger">「開発元に改善要望」を選択</span>
-              <span class="interaction-result">フィルタ適用は行わず、「現在の元画像とフィルタ後の画像を開発元にすべて送信します。よろしいですか？」確認ダイアログを表示。OK を選ぶと改善レポート送信画面へ遷移する。</span>
+              <span class="interaction-trigger">「開発元に報告」を選択</span>
+              <span class="interaction-result">フィルタ適用は行わず、「現在の元画像、追加写真、この撮影の画像処理デバッグ出力を開発元に送信します。よろしいですか？」確認ダイアログを表示。OK を選ぶと改善レポート送信画面へ遷移する。</span>
             </li>
             <li>
               <span class="interaction-trigger">適用ボタン</span>
@@ -634,6 +646,10 @@ import Layout from '../layouts/Layout.astro';
               <span class="spec-element">ページ編集の基準画像</span>
               <span class="spec-detail">ページ編集が扱う原画像は、撮影時に生成された Step 0 とする。つまり、台形補正と正面化が終わった画像を基準に、回転・フィルタの編集状態を重ねていく。編集画面は撮影前の生画像には戻らない。</span>
             </li>
+            <li>
+              <span class="spec-element">報告可否フラグ</span>
+              <span class="spec-detail">ページごとに報告用撮影で保存されたかどうかを保持する。ページ一覧の表示は変えず、ページ編集のフィルタパネルでのみ、このフラグがあるページにレポート導線を表示する。</span>
+            </li>
           </ul>
         </div>
 
@@ -656,9 +672,27 @@ import Layout from '../layouts/Layout.astro';
         </div>
 
         <div class="spec-group">
+          <h3>画像処理デバッグ出力</h3>
+          <ul class="spec-list">
+            <li>
+              <span class="spec-element">出力対象</span>
+              <span class="spec-detail">通常撮影では処理時間ログや中間画像を保存しない。ファインダーの「開発元に報告」を有効にして撮影したページだけ、文書検出と台形補正のデバッグセッションを作り、入力画像、主要な中間画像、最終出力、処理時間を対応付けて保存する。Debug / Release のビルド種別では分岐しない。</span>
+            </li>
+            <li>
+              <span class="spec-element">保存形式</span>
+              <span class="spec-detail">セッションディレクトリ内に metadata.json、番号付き PNG、timings.jsonl を保存する。Android は app-specific external files の image-processing-debug 配下、iOS は Application Support/ImageProcessingDebug 配下に保存する。</span>
+            </li>
+            <li>
+              <span class="spec-element">取り扱い</span>
+              <span class="spec-detail">スキャン画像は個人情報を含みうるため、デバッグ成果物は端末内確認、開発者による明示取得、またはユーザーが改善レポート送信を実行した場合の同梱に限る。</span>
+            </li>
+          </ul>
+        </div>
+
+        <div class="spec-group">
           <h3>フィルタプリセット</h3>
           <p>オリジナル（既定） / くっきり / 白黒 / マジック / ホワイトボード / 鮮やか の6種。</p>
-          <p>この6種に加えて、フィルタパネル右端にフィルタ適用を伴わない補助アクション「開発元に改善要望」を配置する。</p>
+          <p>報告用撮影ページでは、この6種に加えて、フィルタパネル右端にフィルタ適用を伴わない補助アクション「開発元に報告」を配置する。通常撮影ページでは表示しない。</p>
           <p>各フィルタの効果・パラメータの詳細は <a href="/filters">フィルタ解説ページ</a> を参照。</p>
           <p class="spec-note">※ フィルタは今後の要件に応じて追加可能な拡張設計とする。</p>
         </div>
@@ -671,7 +705,7 @@ import Layout from '../layouts/Layout.astro';
     <div class="section-header">
       <div class="screen-number">画面 4b</div>
       <h2>改善レポート送信</h2>
-      <p class="section-description">ページ編集のフィルタパネル最右端「開発元に改善要望」から遷移する専用画面。元画像と全フィルタの大プレビューを確認し、必要なら比較用の写真を追加したうえで、QR コードで送信先を読み取ってレポートを送信します。</p>
+      <p class="section-description">報告用撮影ページのフィルタパネル最右端「開発元に報告」から遷移する専用画面。各フィルタの再生成は行わず、コメント、元画像、この撮影の画像処理デバッグ出力、任意の比較用写真をまとめて、QR コードで読み取った送信先へ送信します。</p>
     </div>
 
     <div class="screen-layout">
@@ -680,7 +714,7 @@ import Layout from '../layouts/Layout.astro';
           <div class="phone-notch"></div>
           <iframe src="/mockups/improvement-report.html" title="改善レポート送信画面"></iframe>
         </div>
-        <p class="mockup-hint">コメント入力、追加写真の選択、全プレビュー生成完了でのボタン活性化、戻る時の未送信確認を操作できます。QR 読取成功/失敗の分岐ボタンと送信完了表示はモック確認用です</p>
+        <p class="mockup-hint">コメント入力、比較用写真の追加、コメント入力後のボタン活性化、戻る時の未送信確認を操作できます。QR 読取成功/失敗の分岐ボタンと送信完了表示はモック確認用です</p>
       </div>
 
       <div class="screen-spec">
@@ -692,20 +726,16 @@ import Layout from '../layouts/Layout.astro';
               <span class="spec-detail">アプリのバージョン / ビルド番号と日時（JST）を読み取り専用で表示。コメント入力欄だけが編集可能で必須項目とする。</span>
             </li>
             <li>
-              <span class="spec-element">追加写真セクション</span>
-              <span class="spec-detail">デフォルトで送られる元画像と全フィルタ画像とは別に、比較用の写真を任意で追加できる。OS 標準の写真ピッカーを開き、選択した画像だけを追加対象として一覧表示する。PDF など画像以外のファイルは選べない。</span>
+              <span class="spec-element">比較用の追加写真セクション</span>
+              <span class="spec-detail">CamScanner など別アプリの出力画像やスクリーンショットを任意で複数追加できる。OS 標準の写真ピッカーを開き、選択した写真を一覧表示する。添付は任意で、コメントによる説明を補助するために使う。</span>
             </li>
             <li>
-              <span class="spec-element">生成ステータス</span>
-              <span class="spec-detail">元画像を含む全フィルタ分の大プレビュー生成進捗を 0 / N 形式で表示。生成中だけローディング表示し、全件完了後はこの進捗カード自体を閉じる。</span>
-            </li>
-            <li>
-              <span class="spec-element">送信対象プレビュー一覧</span>
-              <span class="spec-detail">オリジナルを含む全フィルタの変換後プレビューを縦並びで大きく表示。各カードは個別に loading から実画像へ切り替わり、先に出来上がったものから順次確認できる。追加写真はこの一覧とは別管理だが、送信対象として同時に扱う。</span>
+              <span class="spec-element">送信データカード</span>
+              <span class="spec-detail">source.jpg、attachments/、debug/ に含まれる内容を説明する。debug/ にはこの撮影に紐づく画像処理セッションの metadata.json、中間 PNG、timings.jsonl をディレクトリごと同梱する。</span>
             </li>
             <li>
               <span class="spec-element">フッターアクション</span>
-              <span class="spec-detail">左にキャンセル、右に「改善レポートサーバーへ」ボタンを配置。送信ボタンは全プレビュー生成完了かつコメント入力済みになるまで disabled のまま保持する。追加写真の有無は任意で、送信ボタン活性条件には含めない。</span>
+              <span class="spec-detail">左にキャンセル、右に「改善レポートサーバーへ」ボタンを配置。送信ボタンはコメント入力済みになるまで disabled のまま保持する。追加写真の有無は任意で、送信ボタン活性条件には含めない。</span>
             </li>
           </ul>
         </div>
@@ -715,23 +745,19 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list interaction-list">
             <li>
               <span class="interaction-trigger">画面表示直後</span>
-              <span class="interaction-result">オリジナルと各フィルタの大プレビュー生成を並列で開始。共通の preview 生成コンポーネントを使い、出来上がったカードから順に実画像へ差し替える。</span>
+              <span class="interaction-result">アプリのバージョン / ビルド番号、日時（JST）を表示する。フィルタ別プレビュー生成は開始しない。</span>
             </li>
             <li>
               <span class="interaction-trigger">「写真を追加」</span>
-              <span class="interaction-result">OS 標準の写真ピッカーを開く。画像を1枚選ぶと追加写真一覧へ即座に反映され、その写真も改善レポートに同梱される。この操作は全フィルタの生成中でも可能。</span>
+              <span class="interaction-result">OS 標準の写真ピッカーを開く。画像を複数選ぶと追加写真一覧へ即座に反映され、その写真も改善レポートに同梱される。</span>
             </li>
             <li>
-              <span class="interaction-trigger">生成中に戻る / キャンセル</span>
-              <span class="interaction-result">まだ送信可能状態に達していないため、そのまま前の画面へ戻る。未送信確認ダイアログは出さない。</span>
-            </li>
-            <li>
-              <span class="interaction-trigger">全プレビュー生成完了</span>
+              <span class="interaction-trigger">コメント入力</span>
               <span class="interaction-result">「改善レポートサーバーへ」ボタンを活性化。コメントが空欄の場合はボタンを disabled のままにし、コメント入力を促す補助文言へ切り替える。</span>
             </li>
             <li>
               <span class="interaction-trigger">未送信のまま戻る / キャンセル</span>
-              <span class="interaction-result">全プレビュー生成完了後は「改善レポートを送信せずにもどりますか？」確認ダイアログを表示。OK を押した場合のみ改善レポートを破棄してページ編集へ戻る。破棄対象には追加した写真も含まれる。</span>
+              <span class="interaction-result">コメントまたは追加写真がある場合は「改善レポートを送信せずにもどりますか？」確認ダイアログを表示。OK を押した場合のみ入力済みコメントと追加写真を破棄してページ編集へ戻る。</span>
             </li>
             <li>
               <span class="interaction-trigger">「改善レポートサーバーへ」ボタン</span>
@@ -753,11 +779,11 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list">
             <li>
               <span class="spec-element">必須データ</span>
-              <span class="spec-detail">コメント、アプリのバージョン / ビルド番号、日時（JST）、元画像、全フィルタの変換後画像をひとまとめにして改善レポートとして送信する。</span>
+              <span class="spec-detail">コメント、アプリのバージョン / ビルド番号、日時（JST）、元画像、この撮影に紐づく画像処理デバッグセッション一式をひとまとめにして改善レポートとして送信する。デバッグセッションは zip 内の debug/ 配下に、metadata.json、番号付き PNG、timings.jsonl を保持したまま同梱する。</span>
             </li>
             <li>
-              <span class="spec-element">任意の追加画像</span>
-              <span class="spec-detail">ユーザーが OS 標準の写真ピッカーで選んだ画像は、任意の追加データとして同じレポートに含める。画像だけを許可し、PDF など画像以外は追加対象にしない。</span>
+              <span class="spec-element">任意の追加写真</span>
+              <span class="spec-detail">ユーザーが OS 標準の写真ピッカーで選んだ画像は、任意の追加データとして同じレポートの attachments/ 配下に含める。CamScanner など比較元アプリの出力をコメントと対応づけて分析できるようにする。</span>
             </li>
             <li>
               <span class="spec-element">QR コード設定</span>
@@ -765,7 +791,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">一時データの破棄</span>
-              <span class="spec-detail">未送信のまま OK で戻った場合に限り、生成済みプレビュー、追加した写真、入力済みコメントを破棄する。キャンセル時はその場に留まり、内容を保持する。</span>
+              <span class="spec-detail">未送信のまま OK で戻った場合に限り、追加写真と入力済みコメントを破棄する。キャンセル時はその場に留まり、内容を保持する。</span>
             </li>
           </ul>
         </div>

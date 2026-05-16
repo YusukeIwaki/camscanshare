@@ -4,7 +4,7 @@ import SwiftUI
 @main
 struct CamScanShareApp: App {
     private let modelContainer: ModelContainer = {
-        let schema = Schema(versionedSchema: SchemaV2.self)
+        let schema = Schema(versionedSchema: SchemaV4.self)
         return try! ModelContainer(for: schema, migrationPlan: CamScanShareMigrationPlan.self)
     }()
 

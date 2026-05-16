@@ -18,23 +18,20 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.AddPhotoAlternate
-import androidx.compose.material3.Card
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material3.Button
+import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
@@ -54,7 +51,6 @@ import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -68,9 +64,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.google.mlkit.vision.barcode.common.Barcode
 import com.google.mlkit.vision.codescanner.GmsBarcodeScannerOptions
 import com.google.mlkit.vision.codescanner.GmsBarcodeScanning
+import io.github.yusukeiwaki.camscanshare.data.reporting.ImprovementReportAttachment
 import io.github.yusukeiwaki.camscanshare.ui.components.ConfirmDialog
-import io.github.yusukeiwaki.camscanshare.ui.components.computePageAspectRatio
-import io.github.yusukeiwaki.camscanshare.ui.components.rememberBitmapFromAbsolutePath
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlin.math.max
@@ -82,6 +77,7 @@ fun ImprovementReportScreen(
     sourceImagePath: String,
     rotationDegrees: Int,
     currentFilterKey: String,
+    debugCaptureId: String?,
     onClose: () -> Unit,
     viewModel: ImprovementReportViewModel = hiltViewModel(),
 ) {
@@ -98,12 +94,13 @@ fun ImprovementReportScreen(
         }
     }
 
-    LaunchedEffect(pageId, sourceImagePath, rotationDegrees, currentFilterKey) {
+    LaunchedEffect(pageId, sourceImagePath, rotationDegrees, currentFilterKey, debugCaptureId) {
         viewModel.initialize(
             pageId = pageId,
             sourceImagePath = sourceImagePath,
             rotationDegrees = rotationDegrees,
             currentFilterKey = currentFilterKey,
+            debugCaptureId = debugCaptureId,
         )
     }
 
@@ -135,7 +132,7 @@ fun ImprovementReportScreen(
                     Column {
                         Text("改善レポート送信")
                         Text(
-                            "元画像と全フィルタ結果を送信",
+                            "デバッグ出力と比較写真を送信",
                             style = MaterialTheme.typography.labelSmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -161,10 +158,9 @@ fun ImprovementReportScreen(
                     Text(
                         when {
                             uiState.isSending -> "改善レポートを送信中..."
-                            uiState.previews.any { it.isLoading } -> "変換プレビューが出そろうまで送信できません。途中で戻ると、この画面はそのまま閉じます。"
                             uiState.comment.isBlank() -> "コメントを入力すると送信ボタンが有効になります。"
-                            uiState.attachments.isNotEmpty() -> "追加写真 ${uiState.attachments.size} 枚も含めて送信されます。未送信のまま戻ると、この改善レポートは破棄されます。"
-                            else -> "未送信のまま戻ると、この改善レポートは破棄されます。"
+                            uiState.attachments.isNotEmpty() -> "追加写真 ${uiState.attachments.size} 枚も含めて、この撮影の画像処理デバッグ出力とログを送信します。"
+                            else -> "この撮影の画像処理デバッグ出力とログを送信します。未送信のまま戻ると、入力したコメントは破棄されます。"
                         },
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -241,21 +237,13 @@ fun ImprovementReportScreen(
                             PickVisualMediaRequest(ActivityResultContracts.PickVisualMedia.ImageOnly)
                         )
                     },
+                    onRemoveAttachment = viewModel::onRemoveAttachment,
                     enabled = !uiState.isSending,
                 )
             }
 
-            if (uiState.previews.any { it.isLoading }) {
-                item {
-                    ProgressCard(
-                        readyCount = uiState.previews.count { !it.isLoading && it.absolutePath != null },
-                        totalCount = uiState.previews.size,
-                    )
-                }
-            }
-
-            items(uiState.previews, key = { it.filter.filterKey }) { preview ->
-                PreviewCard(preview = preview)
+            item {
+                DebugPayloadCard()
             }
         }
     }
@@ -263,7 +251,7 @@ fun ImprovementReportScreen(
     if (uiState.showDiscardDialog) {
         ConfirmDialog(
             title = "改善レポートを送信せずにもどりますか？",
-            message = "生成済みのプレビュー、追加した写真、入力したコメントは破棄されます。",
+            message = "入力したコメントと追加写真は破棄されます。",
             confirmText = "OK",
             onConfirm = {
                 viewModel.onDiscardConfirmed()
@@ -343,144 +331,6 @@ private fun SuccessFeedbackOverlay() {
 }
 
 @Composable
-private fun AttachmentCard(
-    attachments: List<ImprovementReportAttachmentState>,
-    onAddPhoto: () -> Unit,
-    enabled: Boolean,
-) {
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Column(
-                    modifier = Modifier.weight(1f),
-                    verticalArrangement = Arrangement.spacedBy(4.dp),
-                ) {
-                    Text("追加で送る写真", fontWeight = FontWeight.Bold)
-                    Text(
-                        "比較用の写真を任意で追加できます。画像のみ追加可能で、PDF などは選択できません。全フィルタの生成中でも操作できます。",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-                Button(onClick = onAddPhoto, enabled = enabled) {
-                    Icon(
-                        imageVector = Icons.Default.AddPhotoAlternate,
-                        contentDescription = null,
-                        modifier = Modifier.size(18.dp),
-                    )
-                    Spacer(Modifier.size(8.dp))
-                    Text("写真を追加")
-                }
-            }
-
-            if (attachments.isEmpty()) {
-                Surface(
-                    modifier = Modifier.fillMaxWidth(),
-                    shape = RoundedCornerShape(14.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    tonalElevation = 1.dp,
-                ) {
-                    Text(
-                        "追加写真はまだありません。CamScanner との比較画像など、補足したい写真がある場合だけ追加します。",
-                        modifier = Modifier.padding(16.dp),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            } else {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    attachments.forEachIndexed { index, attachment ->
-                        AttachmentItem(
-                            attachment = attachment,
-                            index = index,
-                        )
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun AttachmentItem(
-    attachment: ImprovementReportAttachmentState,
-    index: Int,
-) {
-    val bitmapState = rememberBitmapFromUriString(attachment.attachment.uriString)
-
-    Surface(
-        shape = RoundedCornerShape(16.dp),
-        color = MaterialTheme.colorScheme.surface,
-        tonalElevation = 1.dp,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(12.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Box(
-                modifier = Modifier
-                    .size(84.dp)
-                    .clip(RoundedCornerShape(12.dp))
-                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp)),
-                contentAlignment = Alignment.Center,
-            ) {
-                when {
-                    bitmapState.bitmap != null -> {
-                        Image(
-                            bitmap = bitmapState.bitmap.asImageBitmap(),
-                            contentDescription = attachment.attachment.displayName,
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Crop,
-                        )
-                    }
-
-                    bitmapState.isLoading -> {
-                        CircularProgressIndicator(modifier = Modifier.size(24.dp), strokeWidth = 3.dp)
-                    }
-
-                    else -> {
-                        Text(
-                            "画像",
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            textAlign = TextAlign.Center,
-                        )
-                    }
-                }
-            }
-
-            Column(
-                modifier = Modifier.weight(1f),
-                verticalArrangement = Arrangement.spacedBy(4.dp),
-            ) {
-                Text(
-                    attachment.attachment.displayName,
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    "写真 ${index + 1} / 追加画像として一緒に送信",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
 private fun ReportInfoCard(
     appVersion: String,
     buildNumber: String,
@@ -515,6 +365,208 @@ private fun ReportInfoCard(
 }
 
 @Composable
+private fun AttachmentCard(
+    attachments: List<ImprovementReportAttachment>,
+    onAddPhoto: () -> Unit,
+    onRemoveAttachment: (ImprovementReportAttachment) -> Unit,
+    enabled: Boolean,
+) {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Column(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(4.dp),
+                ) {
+                    Text("比較用の追加写真", fontWeight = FontWeight.Bold)
+                    Text(
+                        "CamScanner など別アプリの出力画像やスクリーンショットを任意で添付できます。",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+                Button(onClick = onAddPhoto, enabled = enabled) {
+                    Icon(
+                        imageVector = Icons.Default.AddPhotoAlternate,
+                        contentDescription = null,
+                        modifier = Modifier.size(18.dp),
+                    )
+                    Text("写真を追加")
+                }
+            }
+
+            if (attachments.isEmpty()) {
+                Surface(
+                    modifier = Modifier.fillMaxWidth(),
+                    shape = RoundedCornerShape(14.dp),
+                    color = MaterialTheme.colorScheme.surface,
+                    tonalElevation = 1.dp,
+                ) {
+                    Text(
+                        "追加写真はまだありません。比較結果をコメントで説明したい場合だけ添付します。",
+                        modifier = Modifier.padding(16.dp),
+                        style = MaterialTheme.typography.bodyMedium,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            } else {
+                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    attachments.forEachIndexed { index, attachment ->
+                        AttachmentItem(
+                            attachment = attachment,
+                            index = index,
+                            onRemoveAttachment = onRemoveAttachment,
+                            enabled = enabled,
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun AttachmentItem(
+    attachment: ImprovementReportAttachment,
+    index: Int,
+    onRemoveAttachment: (ImprovementReportAttachment) -> Unit,
+    enabled: Boolean,
+) {
+    val bitmapState = rememberBitmapFromUriString(attachment.uriString)
+
+    Surface(
+        shape = RoundedCornerShape(16.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(12.dp),
+            horizontalArrangement = Arrangement.spacedBy(12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                modifier = Modifier
+                    .size(64.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainerHigh)
+                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(12.dp)),
+                contentAlignment = Alignment.Center,
+            ) {
+                when {
+                    bitmapState.bitmap != null -> {
+                        Image(
+                            bitmap = bitmapState.bitmap.asImageBitmap(),
+                            contentDescription = attachment.displayName,
+                            modifier = Modifier.fillMaxSize(),
+                            contentScale = ContentScale.Crop,
+                        )
+                    }
+
+                    bitmapState.isLoading -> {
+                        CircularProgressIndicator(modifier = Modifier.size(22.dp), strokeWidth = 3.dp)
+                    }
+
+                    else -> {
+                        Icon(
+                            imageVector = Icons.Default.AddPhotoAlternate,
+                            contentDescription = null,
+                            modifier = Modifier.size(28.dp),
+                            tint = MaterialTheme.colorScheme.primary,
+                        )
+                    }
+                }
+            }
+            Column(
+                modifier = Modifier.weight(1f),
+                verticalArrangement = Arrangement.spacedBy(4.dp),
+            ) {
+                Text(attachment.displayName, fontWeight = FontWeight.Bold)
+                Text(
+                    "追加写真 ${index + 1} / ${attachment.mimeType ?: "種類不明"}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                )
+            }
+            IconButton(
+                onClick = { onRemoveAttachment(attachment) },
+                enabled = enabled,
+            ) {
+                Icon(Icons.Default.Delete, contentDescription = "追加写真を削除")
+            }
+        }
+    }
+}
+
+@Composable
+private fun DebugPayloadCard() {
+    Surface(
+        shape = RoundedCornerShape(20.dp),
+        color = MaterialTheme.colorScheme.surfaceContainer,
+    ) {
+        Column(
+            modifier = Modifier.padding(16.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp),
+        ) {
+            Text("送信されるデータ", fontWeight = FontWeight.Bold)
+            Text(
+                "各フィルタの再生成は行わず、端末内に保存済みのこの撮影のデバッグ成果物を zip にまとめて送信します。",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            PayloadRow(
+                label = "source.jpg",
+                value = "対象ページの元画像が見つかった場合に同梱します。",
+            )
+            PayloadRow(
+                label = "attachments/",
+                value = "任意で追加した比較用写真を同梱します。",
+            )
+            PayloadRow(
+                label = "debug/",
+                value = "この撮影に紐づく画像処理セッションの metadata.json、中間 PNG、timings.jsonl をディレクトリごと同梱します。",
+            )
+        }
+    }
+}
+
+@Composable
+private fun PayloadRow(
+    label: String,
+    value: String,
+) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = MaterialTheme.colorScheme.surface,
+        tonalElevation = 1.dp,
+    ) {
+        Column(
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp),
+        ) {
+            Text(label, fontWeight = FontWeight.Bold)
+            Text(
+                value,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+    }
+}
+
+@Composable
 private fun ReadOnlyField(label: String, value: String) {
     Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
         Text(
@@ -533,126 +585,6 @@ private fun ReadOnlyField(label: String, value: String) {
                 modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp),
                 style = MaterialTheme.typography.bodyMedium,
             )
-        }
-    }
-}
-
-@Composable
-private fun ProgressCard(
-    readyCount: Int,
-    totalCount: Int,
-) {
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.primaryContainer,
-    ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            CircularProgressIndicator(
-                modifier = Modifier.size(24.dp),
-                strokeWidth = 3.dp,
-            )
-            Column {
-                Text(
-                    "変換プレビューを生成中...",
-                    fontWeight = FontWeight.Bold,
-                )
-                Text(
-                    "$readyCount / $totalCount 件の画像を準備しました。すべて完了すると送信ボタンが活性化します。",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
-            }
-        }
-    }
-}
-
-@Composable
-private fun PreviewCard(preview: ImprovementReportPreviewState) {
-    val bitmapState = rememberBitmapFromAbsolutePath(preview.absolutePath)
-    val bitmap = bitmapState.bitmap
-    val aspectRatio = if (bitmap != null) {
-        computePageAspectRatio(bitmap.width, bitmap.height)
-    } else {
-        210f / 297f
-    }
-
-    Surface(
-        shape = RoundedCornerShape(20.dp),
-        color = MaterialTheme.colorScheme.surfaceContainer,
-    ) {
-        Column(
-            modifier = Modifier.padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(12.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(preview.filter.displayName, fontWeight = FontWeight.Bold)
-                Text(
-                    when {
-                        preview.isLoading || bitmapState.isLoading -> "生成中"
-                        preview.errorMessage != null -> "エラー"
-                        else -> "準備完了"
-                    },
-                    fontSize = 12.sp,
-                    color = when {
-                        preview.errorMessage != null -> MaterialTheme.colorScheme.error
-                        preview.isLoading || bitmapState.isLoading -> MaterialTheme.colorScheme.onSurfaceVariant
-                        else -> Color(0xFF137333)
-                    },
-                )
-            }
-
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .aspectRatio(aspectRatio)
-                    .shadow(6.dp, RoundedCornerShape(16.dp))
-                    .clip(RoundedCornerShape(16.dp))
-                    .background(Color.White)
-                    .border(1.dp, MaterialTheme.colorScheme.outlineVariant, RoundedCornerShape(16.dp)),
-                contentAlignment = Alignment.Center,
-            ) {
-                when {
-                    preview.errorMessage != null -> {
-                        Text(
-                            preview.errorMessage,
-                            modifier = Modifier.padding(16.dp),
-                            color = MaterialTheme.colorScheme.error,
-                        )
-                    }
-
-                    bitmap != null -> {
-                        Image(
-                            bitmap = bitmap.asImageBitmap(),
-                            contentDescription = "${preview.filter.displayName} プレビュー",
-                            modifier = Modifier.fillMaxSize(),
-                            contentScale = ContentScale.Fit,
-                        )
-                    }
-
-                    else -> {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(12.dp),
-                        ) {
-                            CircularProgressIndicator(modifier = Modifier.size(28.dp), strokeWidth = 3.dp)
-                            Text(
-                                "プレビューを準備中…",
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                        }
-                    }
-                }
-            }
         }
     }
 }

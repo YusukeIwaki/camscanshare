@@ -31,6 +31,7 @@ data class ImprovementReport(
     val sourceImagePath: String,
     val rotationDegrees: Int,
     val currentFilterKey: String,
+    val debugCaptureId: String? = null,
 )
 
 @Composable
@@ -93,6 +94,7 @@ fun AppNavigation() {
                             sourceImagePath = page.imagePath,
                             rotationDegrees = page.rotationDegrees,
                             currentFilterKey = page.filterKey,
+                            debugCaptureId = page.debugCaptureId,
                         )
                     )
                 },
@@ -106,6 +108,7 @@ fun AppNavigation() {
                 sourceImagePath = route.sourceImagePath,
                 rotationDegrees = route.rotationDegrees,
                 currentFilterKey = route.currentFilterKey,
+                debugCaptureId = route.debugCaptureId,
                 onClose = { navController.popBackStack() },
             )
         }

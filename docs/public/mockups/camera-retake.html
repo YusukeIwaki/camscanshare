@@ -95,6 +95,26 @@
   .detection-guide .detection-rect .edge,
   .detection-guide .detection-rect .fill { transition: opacity 0.3s ease; }
 
+  .report-chip {
+    position: absolute;
+    top: calc(env(safe-area-inset-top, 0px) + 52px);
+    right: 16px;
+    z-index: 12;
+    border: 1px solid rgba(255,255,255,0.32);
+    border-radius: 18px;
+    background: rgba(0,0,0,0.58);
+    color: #fff;
+    font: 700 13px/1 'Noto Sans JP', sans-serif;
+    padding: 9px 14px;
+    cursor: pointer;
+    opacity: 0;
+    transform: translateY(-6px);
+    pointer-events: none;
+    transition: opacity 0.18s ease, transform 0.18s ease, background 0.18s ease, border-color 0.18s ease;
+  }
+  .report-chip.visible { opacity: 1; transform: translateY(0); pointer-events: auto; }
+  .report-chip.armed { background: var(--md-sys-color-primary); border-color: rgba(255,255,255,0.72); }
+
   /* Bottom Controls */
   .bottom-controls {
     position: absolute; bottom: 0; left: 0; right: 0;
@@ -190,6 +210,8 @@
       <div class="edge right"></div>
     </div>
   </div>
+
+  <button class="report-chip" id="reportChip" type="button">開発元に報告</button>
 </div>
 
 <div class="bottom-controls">
@@ -220,6 +242,17 @@ const papers = [];
 const container = document.getElementById('paperContainer');
 const detectionGuide = document.getElementById('detectionGuide');
 const detectionRect = document.getElementById('detectionRect');
+const reportChip = document.getElementById('reportChip');
+let reportCaptureArmed = false;
+
+setTimeout(() => {
+  reportChip.classList.add('visible');
+}, 5000);
+
+reportChip.addEventListener('click', () => {
+  reportCaptureArmed = !reportCaptureArmed;
+  reportChip.classList.toggle('armed', reportCaptureArmed);
+});
 
 function cancelRetake() {
   console.log('→ 撮り直しをキャンセルしてページ編集画面に戻る');
@@ -323,6 +356,9 @@ let captured = false;
 function capture() {
   if (captured) return;
   captured = true;
+  const isReportCapture = reportCaptureArmed;
+  reportCaptureArmed = false;
+  reportChip.classList.remove('armed');
 
   const flash = document.getElementById('flashOverlay');
   flash.classList.add('active');
@@ -336,7 +372,9 @@ function capture() {
     // Auto-close after 1.2s
     setTimeout(() => {
       success.classList.remove('visible');
-      console.log('→ ページ編集画面に自動で戻る（画像差し替え完了）');
+      console.log(isReportCapture
+        ? '→ ページ編集画面に自動で戻る（報告用画像として差し替え完了）'
+        : '→ ページ編集画面に自動で戻る（画像差し替え完了）');
     }, 1200);
   }, 500);
 }

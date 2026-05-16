@@ -4,11 +4,13 @@ import android.content.Context
 import android.content.Intent
 import android.graphics.BitmapFactory
 import android.graphics.pdf.PdfDocument
+import android.os.SystemClock
 import androidx.core.content.FileProvider
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.yusukeiwaki.camscanshare.data.db.PageEntity
+import io.github.yusukeiwaki.camscanshare.data.image.ImageProcessingDebugSink
 import io.github.yusukeiwaki.camscanshare.data.image.ImageProcessor
 import io.github.yusukeiwaki.camscanshare.data.repository.DocumentRepository
 import io.github.yusukeiwaki.camscanshare.ui.components.computePdfPageSize
@@ -50,6 +52,7 @@ data class SharePdfProgress(
 class PageListViewModel @Inject constructor(
     private val repository: DocumentRepository,
     private val imageProcessor: ImageProcessor,
+    private val debugSink: ImageProcessingDebugSink,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(PageListUiState())
@@ -130,11 +133,22 @@ class PageListViewModel @Inject constructor(
             }
 
             try {
+                val pdfSession = debugSink.startSession(
+                    category = "pdf-export",
+                    label = "document_$documentId",
+                    metadata = mapOf(
+                        "documentId" to documentId.toString(),
+                        "documentName" to _uiState.value.documentName,
+                        "pageCount" to pages.size.toString(),
+                    ),
+                )
                 val pdfFile = withContext(Dispatchers.IO) {
+                    val totalStarted = SystemClock.elapsedRealtimeNanos()
                     val pdfDocument = PdfDocument()
 
                     try {
                         pages.forEachIndexed { index, page ->
+                            val pageStarted = SystemClock.elapsedRealtimeNanos()
                             _uiState.update {
                                 it.copy(
                                     shareProgress = SharePdfProgress(
@@ -148,9 +162,11 @@ class PageListViewModel @Inject constructor(
 
                             val absPath = repository.getImageAbsolutePath(page.imagePath)
                             val bitmap = BitmapFactory.decodeFile(absPath) ?: return@forEachIndexed
+                            debugSink.writeBitmap(pdfSession, "page_${index + 1}_input", bitmap)
 
                             val rotated = imageProcessor.rotateBitmap(bitmap, page.rotationDegrees.toFloat())
                             val filtered = imageProcessor.applyFilter(rotated, page.filterName)
+                            debugSink.writeBitmap(pdfSession, "page_${index + 1}_filtered", filtered)
                             val pdfPageSize = computePdfPageSize(filtered.width, filtered.height)
 
                             val pageInfo = PdfDocument.PageInfo.Builder(
@@ -176,6 +192,19 @@ class PageListViewModel @Inject constructor(
                             if (filtered !== rotated) filtered.recycle()
                             if (rotated !== bitmap) rotated.recycle()
                             bitmap.recycle()
+                            debugSink.recordTimingSince(
+                                pdfSession,
+                                "pdf.page",
+                                pageStarted,
+                                mapOf(
+                                    "pageId" to page.id.toString(),
+                                    "pageIndex" to (index + 1).toString(),
+                                    "filter" to page.filterName,
+                                    "rotationDegrees" to page.rotationDegrees.toString(),
+                                    "pdfWidth" to pdfPageSize.width.toString(),
+                                    "pdfHeight" to pdfPageSize.height.toString(),
+                                ),
+                            )
                         }
 
                         _uiState.update {
@@ -193,7 +222,20 @@ class PageListViewModel @Inject constructor(
                             .replace(Regex("[/\\\\:*?\"<>|]"), "_")
                             .ifBlank { "document" }
                         File(context.cacheDir, "$safeName.pdf").also { file ->
+                            val writeStarted = SystemClock.elapsedRealtimeNanos()
                             file.outputStream().use { pdfDocument.writeTo(it) }
+                            debugSink.recordTimingSince(
+                                pdfSession,
+                                "pdf.write",
+                                writeStarted,
+                                mapOf("fileSizeBytes" to file.length().toString()),
+                            )
+                            debugSink.recordTimingSince(
+                                pdfSession,
+                                "pdf.total",
+                                totalStarted,
+                                mapOf("fileSizeBytes" to file.length().toString()),
+                            )
                         }
                     } finally {
                         pdfDocument.close()

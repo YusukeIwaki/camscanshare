@@ -1,43 +1,29 @@
 package io.github.yusukeiwaki.camscanshare.ui.improvementreport
 
+import android.net.Uri
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
-import android.net.Uri
 import dagger.hilt.android.lifecycle.HiltViewModel
 import io.github.yusukeiwaki.camscanshare.data.reporting.ImprovementReportAttachment
 import io.github.yusukeiwaki.camscanshare.data.reporting.ImprovementReportMetadata
 import io.github.yusukeiwaki.camscanshare.data.reporting.ImprovementReportService
 import io.github.yusukeiwaki.camscanshare.ui.pageedit.ImageFilter
-import kotlinx.coroutines.async
-import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 import javax.inject.Inject
-
-data class ImprovementReportPreviewState(
-    val filter: ImageFilter,
-    val absolutePath: String? = null,
-    val isLoading: Boolean = true,
-    val errorMessage: String? = null,
-)
-
-data class ImprovementReportAttachmentState(
-    val attachment: ImprovementReportAttachment,
-)
 
 data class ImprovementReportUiState(
     val appVersion: String = "",
     val buildNumber: String = "",
     val timestampJst: String = "",
     val comment: String = "",
-    val previews: List<ImprovementReportPreviewState> = ImageFilter.entries.map {
-        ImprovementReportPreviewState(filter = it)
-    },
-    val attachments: List<ImprovementReportAttachmentState> = emptyList(),
+    val attachments: List<ImprovementReportAttachment> = emptyList(),
     val isSending: Boolean = false,
     val showSuccessFeedback: Boolean = false,
     val showDiscardDialog: Boolean = false,
@@ -57,12 +43,14 @@ class ImprovementReportViewModel @Inject constructor(
     private var sourceImagePath: String = ""
     private var rotationDegrees: Int = 0
     private var currentFilterKey: String = ImageFilter.DEFAULT.filterKey
+    private var debugCaptureId: String? = null
 
     fun initialize(
         pageId: Long,
         sourceImagePath: String,
         rotationDegrees: Int,
         currentFilterKey: String,
+        debugCaptureId: String?,
     ) {
         if (initialized) return
         initialized = true
@@ -70,6 +58,7 @@ class ImprovementReportViewModel @Inject constructor(
         this.sourceImagePath = sourceImagePath
         this.rotationDegrees = rotationDegrees
         this.currentFilterKey = currentFilterKey
+        this.debugCaptureId = debugCaptureId
 
         val (versionName, buildNumber) = reportService.getAppVersionLabel()
         _uiState.update {
@@ -79,8 +68,6 @@ class ImprovementReportViewModel @Inject constructor(
                 timestampJst = reportService.buildTimestampJst(),
             )
         }
-
-        generatePreviews()
     }
 
     fun onCommentChanged(value: String) {
@@ -88,29 +75,38 @@ class ImprovementReportViewModel @Inject constructor(
     }
 
     fun onPhotosPicked(uris: List<Uri>) {
-        _uiState.update { state ->
-            val existingUriStrings = state.attachments.map { it.attachment.uriString }.toHashSet()
-            val newAttachments = uris.mapNotNull { uri ->
-                val attachment = reportService.resolveAttachment(uri) ?: return@mapNotNull null
-                if (!existingUriStrings.add(attachment.uriString)) {
-                    return@mapNotNull null
+        if (uris.isEmpty()) return
+        viewModelScope.launch {
+            runCatching {
+                withContext(Dispatchers.IO) {
+                    uris.map(reportService::resolveAttachment)
                 }
-                ImprovementReportAttachmentState(attachment)
+            }.onSuccess { attachments ->
+                _uiState.update { state ->
+                    state.copy(attachments = state.attachments + attachments)
+                }
+            }.onFailure { error ->
+                _uiState.update {
+                    it.copy(errorMessage = error.message ?: "追加写真を読み込めませんでした。")
+                }
             }
-            if (newAttachments.isEmpty()) state else state.copy(attachments = state.attachments + newAttachments)
+        }
+    }
+
+    fun onRemoveAttachment(attachment: ImprovementReportAttachment) {
+        _uiState.update { state ->
+            state.copy(attachments = state.attachments.filterNot { it.uriString == attachment.uriString })
         }
     }
 
     fun canSend(): Boolean {
         val state = _uiState.value
-        return state.comment.isNotBlank() &&
-            state.previews.all { !it.isLoading && it.absolutePath != null && it.errorMessage == null } &&
-            !state.isSending
+        return state.comment.isNotBlank() && !state.isSending
     }
 
     fun onBackRequested(): Boolean {
         val state = _uiState.value
-        val shouldConfirmDiscard = state.previews.all { !it.isLoading && it.absolutePath != null } && !state.isSending
+        val shouldConfirmDiscard = (state.comment.isNotBlank() || state.attachments.isNotEmpty()) && !state.isSending
         return if (shouldConfirmDiscard) {
             _uiState.update { it.copy(showDiscardDialog = true) }
             false
@@ -143,12 +139,11 @@ class ImprovementReportViewModel @Inject constructor(
             var archiveFile: File? = null
             try {
                 val config = reportService.parseScannerPayload(rawValue)
-                val previewPaths = _uiState.value.previews.associate { it.filter.filterKey to requireNotNull(it.absolutePath) }
                 archiveFile = reportService.createArchive(
                     pageId = pageId,
                     sourceRelativePath = sourceImagePath,
-                    previewPaths = previewPaths,
-                    attachments = _uiState.value.attachments.map { it.attachment },
+                    attachments = _uiState.value.attachments,
+                    debugCaptureId = debugCaptureId,
                 )
                 reportService.uploadReport(
                     config = config,
@@ -185,53 +180,6 @@ class ImprovementReportViewModel @Inject constructor(
             } finally {
                 archiveFile?.delete()
             }
-        }
-    }
-
-    private fun generatePreviews() {
-        viewModelScope.launch {
-            ImageFilter.entries.map { filter ->
-                async {
-                    try {
-                        val absolutePath = reportService.ensurePreview(
-                            pageId = pageId,
-                            sourceRelativePath = sourceImagePath,
-                            filterKey = filter.filterKey,
-                            rotationDegrees = rotationDegrees,
-                        )
-                        _uiState.update { state ->
-                            state.copy(
-                                previews = state.previews.map { preview ->
-                                    if (preview.filter == filter) {
-                                        preview.copy(
-                                            absolutePath = absolutePath,
-                                            isLoading = false,
-                                            errorMessage = if (absolutePath == null) "プレビューの生成に失敗しました。" else null,
-                                        )
-                                    } else {
-                                        preview
-                                    }
-                                }
-                            )
-                        }
-                    } catch (error: Exception) {
-                        _uiState.update { state ->
-                            state.copy(
-                                previews = state.previews.map { preview ->
-                                    if (preview.filter == filter) {
-                                        preview.copy(
-                                            isLoading = false,
-                                            errorMessage = error.message ?: "プレビューの生成に失敗しました。",
-                                        )
-                                    } else {
-                                        preview
-                                    }
-                                }
-                            )
-                        }
-                    }
-                }
-            }.awaitAll()
         }
     }
 }

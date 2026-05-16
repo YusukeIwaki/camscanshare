@@ -2,12 +2,17 @@ package io.github.yusukeiwaki.camscanshare.ui.camerascan
 
 import android.graphics.Bitmap
 import android.graphics.PointF
+import android.os.SystemClock
+import io.github.yusukeiwaki.camscanshare.data.image.DebugMatColor
+import io.github.yusukeiwaki.camscanshare.data.image.ImageProcessingDebugSession
+import io.github.yusukeiwaki.camscanshare.data.image.ImageProcessingDebugSink
 import org.opencv.android.OpenCVLoader
 import org.opencv.android.Utils
 import org.opencv.core.Mat
 import org.opencv.core.MatOfPoint
 import org.opencv.core.MatOfPoint2f
 import org.opencv.core.Point
+import org.opencv.core.Scalar
 import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 
@@ -18,7 +23,9 @@ import org.opencv.imgproc.Imgproc
  * and picks the best quadrilateral found. This makes detection robust
  * across different lighting conditions, paper colors, and backgrounds.
  */
-class PaperDetector {
+class PaperDetector(
+    private val debugSink: ImageProcessingDebugSink = ImageProcessingDebugSink.noOp(),
+) {
 
     companion object {
         private const val DETECT_SIZE = 500.0
@@ -53,7 +60,7 @@ class PaperDetector {
      */
     fun detectStabilized(bitmap: Bitmap): List<PointF>? {
         val now = System.currentTimeMillis()
-        val singleResult = detect(bitmap)
+        val singleResult = detectInternal(bitmap, session = null)
         synchronized(recentDetections) {
             recentDetections.addLast(TimedDetection(singleResult, now))
             if (recentDetections.size > STABLE_BUFFER_SIZE) recentDetections.removeFirst()
@@ -81,6 +88,23 @@ class PaperDetector {
      * where we want the most accurate result for the specific captured image.
      */
     fun detect(bitmap: Bitmap): List<PointF>? {
+        val session = debugSink.startSession(
+            category = "paper-detection",
+            label = "capture",
+            metadata = mapOf(
+                "inputWidth" to bitmap.width.toString(),
+                "inputHeight" to bitmap.height.toString(),
+            ),
+        )
+        return detectInternal(bitmap, session)
+    }
+
+    private fun detectInternal(
+        bitmap: Bitmap,
+        session: ImageProcessingDebugSession?,
+    ): List<PointF>? {
+        val started = SystemClock.elapsedRealtimeNanos()
+        debugSink.writeBitmap(session, "input", bitmap)
         val mat = Mat()
         Utils.bitmapToMat(bitmap, mat)
 
@@ -96,6 +120,8 @@ class PaperDetector {
 
         val gray = Mat()
         Imgproc.cvtColor(small, gray, Imgproc.COLOR_RGBA2GRAY)
+        debugSink.writeMat(session, "analysis_rgba", small, DebugMatColor.RGBA)
+        debugSink.writeMat(session, "grayscale", gray)
 
         val imageArea = small.width().toDouble() * small.height().toDouble()
         val minArea = imageArea * MIN_AREA_RATIO
@@ -110,24 +136,75 @@ class PaperDetector {
         var bestCorners: List<PointF>? = null
         var bestScore = 0.0
 
-        for (strategy in strategies) {
-            val edges = strategy.detectEdges(gray)
-            val result = findBestQuad(edges, minArea, bestScore, small.width(), small.height(), maxCandidates)
+        for ((index, strategy) in strategies.withIndex()) {
+            val strategyStarted = SystemClock.elapsedRealtimeNanos()
+            val edges = strategy.detectEdges(gray, keepDebugMats = session?.isEnabled == true)
+            edges.blurred?.let { debugSink.writeMat(session, "strategy_${index}_${strategy.label}_blurred", it) }
+            edges.rawEdges?.let { debugSink.writeMat(session, "strategy_${index}_${strategy.label}_edges", it) }
+            debugSink.writeMat(session, "strategy_${index}_${strategy.label}_dilated_edges", edges.dilatedEdges)
+            val result = findBestQuad(
+                edges = edges.dilatedEdges,
+                minArea = minArea,
+                currentBestScore = bestScore,
+                imageWidth = small.width(),
+                imageHeight = small.height(),
+                maxCandidates = maxCandidates,
+                debugSession = session,
+                debugSource = small,
+                debugLabel = "strategy_${index}_${strategy.label}",
+            )
             edges.release()
             if (result != null) {
                 bestCorners = result.first
                 bestScore = result.second
             }
+            debugSink.recordTimingSince(
+                session,
+                "paper_detection.strategy",
+                strategyStarted,
+                mapOf(
+                    "strategy" to strategy.label,
+                    "index" to index.toString(),
+                    "bestScoreAfterStrategy" to bestScore.toString(),
+                ),
+            )
+        }
+
+        if (bestCorners != null) {
+            val overlay = drawQuadOverlay(small, bestCorners)
+            debugSink.writeMat(session, "selected_quad_overlay", overlay, DebugMatColor.RGBA)
+            overlay.release()
+            debugSink.writeText(session, "selected_quad.json", cornersJson(bestCorners, bestScore))
         }
 
         mat.release()
         small.release()
         gray.release()
 
+        debugSink.recordTimingSince(
+            session,
+            "paper_detection.total",
+            started,
+            mapOf(
+                "result" to if (bestCorners == null) "none" else "quad",
+                "bestScore" to bestScore.toString(),
+            ),
+        )
         return bestCorners
     }
 
     fun correctDocumentGeometry(bitmap: Bitmap, corners: List<PointF>): Bitmap {
+        val session = debugSink.startSession(
+            category = "document-geometry",
+            label = "capture",
+            metadata = mapOf(
+                "inputWidth" to bitmap.width.toString(),
+                "inputHeight" to bitmap.height.toString(),
+            ),
+        )
+        val started = SystemClock.elapsedRealtimeNanos()
+        debugSink.writeBitmap(session, "input", bitmap)
+        debugSink.writeText(session, "input_corners.json", cornersJson(corners, score = null))
         val mat = Mat()
         Utils.bitmapToMat(bitmap, mat)
 
@@ -154,6 +231,7 @@ class PaperDetector {
         val transform = Imgproc.getPerspectiveTransform(srcMat, dstMat)
         val output = Mat()
         Imgproc.warpPerspective(mat, output, transform, Size(outWidth, outHeight))
+        debugSink.writeMat(session, "warped_rgba", output, DebugMatColor.RGBA)
 
         val step0 = Bitmap.createBitmap(outWidth.toInt(), outHeight.toInt(), Bitmap.Config.ARGB_8888)
         Utils.matToBitmap(output, step0)
@@ -165,15 +243,42 @@ class PaperDetector {
         output.release()
 
         val targetRatio = estimateTargetPaperRatio(srcPoints)
-        return normalizeDocumentAspect(step0, targetRatio)
+        val normalized = normalizeDocumentAspect(step0, targetRatio)
+        debugSink.writeBitmap(session, "output", normalized)
+        debugSink.recordTimingSince(
+            session,
+            "document_geometry.total",
+            started,
+            mapOf(
+                "warpedWidth" to outWidth.toInt().toString(),
+                "warpedHeight" to outHeight.toInt().toString(),
+                "targetRatio" to (targetRatio?.toString() ?: "none"),
+                "outputWidth" to normalized.width.toString(),
+                "outputHeight" to normalized.height.toString(),
+            ),
+        )
+        return normalized
     }
 
     // --- Detection strategies ---
 
     private data class DetectionResult(val corners: List<PointF>, val area: Double)
 
+    private data class EdgeDetectionResult(
+        val blurred: Mat?,
+        val rawEdges: Mat?,
+        val dilatedEdges: Mat,
+    ) {
+        fun release() {
+            blurred?.release()
+            rawEdges?.release()
+            dilatedEdges.release()
+        }
+    }
+
     private interface EdgeStrategy {
-        fun detectEdges(gray: Mat): Mat
+        val label: String
+        fun detectEdges(gray: Mat, keepDebugMats: Boolean): EdgeDetectionResult
     }
 
     /**
@@ -188,16 +293,24 @@ class PaperDetector {
         val cannyHigh: Double,
         val dilateSize: Int,
     ) : EdgeStrategy {
-        override fun detectEdges(gray: Mat): Mat {
+        override val label: String =
+            "canny_b${blurSize}_l${cannyLow.toInt()}_h${cannyHigh.toInt()}_d${dilateSize}"
+
+        override fun detectEdges(gray: Mat, keepDebugMats: Boolean): EdgeDetectionResult {
             val blurred = Mat()
             Imgproc.GaussianBlur(gray, blurred, Size(blurSize.toDouble(), blurSize.toDouble()), 0.0)
-            val edges = Mat()
-            Imgproc.Canny(blurred, edges, cannyLow, cannyHigh)
-            blurred.release()
+            val rawEdges = Mat()
+            Imgproc.Canny(blurred, rawEdges, cannyLow, cannyHigh)
+            val dilatedEdges = if (keepDebugMats) rawEdges.clone() else rawEdges
             val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(dilateSize.toDouble(), dilateSize.toDouble()))
-            Imgproc.dilate(edges, edges, kernel)
+            Imgproc.dilate(dilatedEdges, dilatedEdges, kernel)
             kernel.release()
-            return edges
+            return if (keepDebugMats) {
+                EdgeDetectionResult(blurred, rawEdges, dilatedEdges)
+            } else {
+                blurred.release()
+                EdgeDetectionResult(null, null, dilatedEdges)
+            }
         }
     }
 
@@ -224,6 +337,9 @@ class PaperDetector {
         imageWidth: Int,
         imageHeight: Int,
         maxCandidates: Int = 10,
+        debugSession: ImageProcessingDebugSession? = null,
+        debugSource: Mat? = null,
+        debugLabel: String = "strategy",
     ): Pair<List<PointF>, Double>? {
         val contours = mutableListOf<MatOfPoint>()
         val hierarchy = Mat()
@@ -241,6 +357,12 @@ class PaperDetector {
             .filter { Imgproc.contourArea(it) >= minArea }
             .sortedByDescending { Imgproc.contourArea(it) }
             .take(maxCandidates)
+        if (debugSession?.isEnabled == true && debugSource != null) {
+            val overlay = debugSource.clone()
+            Imgproc.drawContours(overlay, topContours, -1, Scalar(255.0, 191.0, 0.0, 255.0), 2)
+            debugSink.writeMat(debugSession, "${debugLabel}_contours_overlay", overlay, DebugMatColor.RGBA)
+            overlay.release()
+        }
 
         for (contour in topContours) {
             val area = Imgproc.contourArea(contour)
@@ -277,6 +399,33 @@ class PaperDetector {
         contours.forEach { it.release() }
 
         return if (bestCorners != null) Pair(bestCorners, bestScore) else null
+    }
+
+    private fun drawQuadOverlay(source: Mat, corners: List<PointF>?): Mat {
+        val overlay = source.clone()
+        if (corners == null || corners.size != 4) return overlay
+
+        val points = corners.map {
+            Point(
+                it.x.toDouble() * source.width().toDouble(),
+                it.y.toDouble() * source.height().toDouble(),
+            )
+        }
+        val contour = MatOfPoint(*points.toTypedArray())
+        Imgproc.polylines(overlay, listOf(contour), true, Scalar(26.0, 115.0, 232.0, 255.0), 4)
+        points.forEach { point ->
+            Imgproc.circle(overlay, point, 8, Scalar(26.0, 115.0, 232.0, 255.0), -1)
+        }
+        contour.release()
+        return overlay
+    }
+
+    private fun cornersJson(corners: List<PointF>?, score: Double?): String {
+        val pointsJson = corners.orEmpty().joinToString(prefix = "[", postfix = "]") { point ->
+            "{\"x\":${point.x},\"y\":${point.y}}"
+        }
+        val scoreJson = score?.let { ",\"score\":$it" } ?: ""
+        return "{\"corners\":$pointsJson$scoreJson}"
     }
 
     /**

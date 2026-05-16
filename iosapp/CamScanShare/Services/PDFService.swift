@@ -80,6 +80,16 @@ enum PDFService {
         fileName: String,
         progressHandler: @Sendable (PDFGenerationProgress) -> Void = { _ in }
     ) -> URL? {
+        let debugSink = ImageProcessingDebugSink.shared
+        let session = debugSink.startSession(
+            category: "pdf-export",
+            label: fileName,
+            metadata: [
+                "fileName": fileName,
+                "pageCount": "\(pages.count)"
+            ]
+        )
+        let totalStartedAt = debugSink.now()
         let safeName = fileName
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .replacingOccurrences(of: "[/\\\\:*?\"<>|]", with: "_", options: .regularExpression)
@@ -99,6 +109,7 @@ enum PDFService {
 
         let data = renderer.pdfData { pdfContext in
             for (index, page) in pages.enumerated() {
+                let pageStartedAt = debugSink.now()
                 progressHandler(
                     PDFGenerationProgress(
                         phase: .renderingPage,
@@ -110,6 +121,7 @@ enum PDFService {
 
                 guard let originalImage = ImageStorageService.loadImage(fileName: page.imageFileName)
                 else { continue }
+                debugSink.writeImage(session, label: "page_\(index + 1)_input", image: originalImage)
 
                 guard let filteredImage = ImageFilterService.applyFilter(
                     page.filterPreset,
@@ -118,6 +130,7 @@ enum PDFService {
                     intent: .export
                 )
                 else { continue }
+                debugSink.writeImage(session, label: "page_\(index + 1)_filtered", image: filteredImage)
 
                 let pageRect = pageRect(for: filteredImage.size)
                 pdfContext.beginPage(withBounds: pageRect, pageInfo: [:])
@@ -133,6 +146,18 @@ enum PDFService {
                 let y = (pageRect.height - scaledHeight) / 2
 
                 filteredImage.draw(in: CGRect(x: x, y: y, width: scaledWidth, height: scaledHeight))
+                debugSink.recordTimingSince(
+                    session,
+                    stage: "pdf.page",
+                    startedAt: pageStartedAt,
+                    metadata: [
+                        "pageIndex": "\(index + 1)",
+                        "filter": page.filterPreset.rawValue,
+                        "rotationDegrees": "\(page.rotationDegrees)",
+                        "pdfWidth": "\(Int(pageRect.width))",
+                        "pdfHeight": "\(Int(pageRect.height))"
+                    ]
+                )
             }
         }
 
@@ -146,9 +171,29 @@ enum PDFService {
         )
 
         do {
+            let writeStartedAt = debugSink.now()
             try data.write(to: tempURL)
+            let fileSize = (try? FileManager.default.attributesOfItem(atPath: tempURL.path)[.size] as? NSNumber)?.int64Value ?? 0
+            debugSink.recordTimingSince(
+                session,
+                stage: "pdf.write",
+                startedAt: writeStartedAt,
+                metadata: ["fileSizeBytes": "\(fileSize)"]
+            )
+            debugSink.recordTimingSince(
+                session,
+                stage: "pdf.total",
+                startedAt: totalStartedAt,
+                metadata: ["fileSizeBytes": "\(fileSize)"]
+            )
             return tempURL
         } catch {
+            debugSink.recordTimingSince(
+                session,
+                stage: "pdf.total",
+                startedAt: totalStartedAt,
+                metadata: ["result": "write_failed"]
+            )
             return nil
         }
     }

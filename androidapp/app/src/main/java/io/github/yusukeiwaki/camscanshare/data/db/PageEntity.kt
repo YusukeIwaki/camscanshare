@@ -26,4 +26,6 @@ data class PageEntity(
     val rotationDegrees: Int = 0,
     val smallPreviewPath: String? = null,
     val largePreviewPath: String? = null,
+    val isDebugCapture: Boolean = false,
+    val debugCaptureId: String? = null,
 )
