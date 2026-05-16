@@ -426,6 +426,7 @@ fun CameraScanScreen(
                             } else {
                                 null
                             }
+                            val previewCornersAtCapture = detectedCorners?.map { PointF(it.x, it.y) }
                             reportCaptureArmed = false
                             imageCapture.takePicture(
                                 cameraExecutor,
@@ -453,7 +454,7 @@ fun CameraScanScreen(
                                         var bitmap = captureImageProcessor.toBitmapWithCorrectRotation(image)
                                         image.close()
                                         // Re-detect paper in the captured image and apply perspective correction
-                                        val corners = capturePaperDetector.detect(bitmap)
+                                        val corners = capturePaperDetector.detectForCapture(bitmap, previewCornersAtCapture)
                                         if (corners != null && corners.size == 4) {
                                             val corrected = capturePaperDetector.correctDocumentGeometry(bitmap, corners)
                                             bitmap.recycle()

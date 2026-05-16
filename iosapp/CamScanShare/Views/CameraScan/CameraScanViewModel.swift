@@ -107,12 +107,20 @@ final class CameraScanViewModel {
         return image
     }
 
-    func processAndStoreCapturedImage(_ image: UIImage, isDebugCapture: Bool = false) {
+    func processAndStoreCapturedImage(
+        _ image: UIImage,
+        isDebugCapture: Bool = false,
+        anchorRectangle: DetectedRectangle? = nil
+    ) {
         let debugCaptureId = isDebugCapture ? Self.makeDebugCaptureID() : nil
         let debugSink: ImageProcessingDebugSink = isDebugCapture
             ? .writingEnabled(debugCaptureId: debugCaptureId)
             : .shared
-        let correctedImage = PaperDetectionService.correctDocumentGeometry(image: image, debugSink: debugSink)
+        let correctedImage = PaperDetectionService.correctDocumentGeometry(
+            image: image,
+            debugSink: debugSink,
+            anchorRectangle: anchorRectangle
+        )
         capturedPages.append(
             CapturedPage(
                 image: correctedImage,

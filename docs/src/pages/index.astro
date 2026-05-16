@@ -325,7 +325,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">四角形のスコアリング</span>
-              <span class="spec-detail">検出された四角形の「文書らしさ」を、長方形度（各内角の90°からの偏差）・対辺の平行度・面積比率の加重スコアで評価する。面積が最大でも歪んだ四角形（床のコーナー等）より、小さくても長方形に近い紙を優先する。</span>
+              <span class="spec-detail">検出された四角形の「文書らしさ」を、長方形度（各内角の90°からの偏差）・対辺の平行度・面積比率・ファインダー中央への近さの加重スコアで評価する。面積が最大でも歪んだ四角形（床のコーナー等）や、前面の紙より外側・背面にある四角形より、小さくても長方形に近く中央にある紙を優先する。</span>
             </li>
             <li>
               <span class="spec-element">リアルタイム検出の安定化</span>
@@ -333,7 +333,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">保存時の Step 0 生成</span>
-              <span class="spec-detail">シャッター押下後は、保存対象となる高解像度画像に対してあらためて紙検出を実行し、その四角形を使って射影変換を行う。これがページ画像の基準となる Step 0 であり、「台形補正済み・正面化済みの元画像」として保存される。ファインダー中の低解像度検出結果はガイド表示のためだけに使い、保存時の補正には流用しない。報告用撮影の場合だけ、この検出・補正の中間画像と処理時間ログをデバッグ成果物として保存する。</span>
+              <span class="spec-detail">シャッター押下後は、保存対象となる高解像度画像に対してあらためて紙検出を実行し、その四角形を使って射影変換を行う。これがページ画像の基準となる Step 0 であり、「台形補正済み・正面化済みの元画像」として保存される。撮影直前にファインダーへ表示していた安定化済み四角形は capture 再検出のアンカーとして保持し、高精度候補がアンカーから大きく外れる場合は採用しない。候補が複数ある場合は中央に近い候補を少し優先し、前面の紙ではなく背面の紙や周辺の四角形を採用しにくくする。一致候補がない場合はプレビューの四角形で補正し、ユーザーが見ていた対象と保存結果が別物になることを防ぐ。報告用撮影の場合だけ、この検出・補正の中間画像と処理時間ログをデバッグ成果物として保存する。</span>
             </li>
             <li>
               <span class="spec-element">Step 1 以降との関係</span>
@@ -680,7 +680,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">保存形式</span>
-              <span class="spec-detail">セッションディレクトリ内に metadata.json、番号付き PNG、timings.jsonl を保存する。Android は app-specific external files の image-processing-debug 配下、iOS は Application Support/ImageProcessingDebug 配下に保存する。</span>
+              <span class="spec-detail">セッションディレクトリ内に metadata.json、番号付き PNG、timings.jsonl を保存する。紙検出セッションには input、analysis_rgba、grayscale、colored_paper_mask、paper_mask、各 Canny 戦略の blurred / edges / dilated_edges / contours_overlay、selected_quad_overlay、selected_quad.json を含める。台形補正セッションには input、input_corners.json、warped_rgba、output を含める。metadata と timings には platform、anchor の有無、採用元（opencv / vision / preview_anchor 等）、解析サイズ、スコア、処理時間を入れ、Android / iOS のレポートを同じ観点で比較できるようにする。Android は app-specific external files の image-processing-debug 配下、iOS は Application Support/ImageProcessingDebug 配下に保存する。</span>
             </li>
             <li>
               <span class="spec-element">取り扱い</span>
@@ -731,7 +731,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">送信データカード</span>
-              <span class="spec-detail">source.jpg、attachments/、debug/ に含まれる内容を説明する。debug/ にはこの撮影に紐づく画像処理セッションの metadata.json、中間 PNG、timings.jsonl をディレクトリごと同梱する。</span>
+              <span class="spec-detail">source.jpg、attachments/、debug/ に含まれる内容を説明する。debug/ にはこの撮影に紐づく画像処理セッションの metadata.json、中間 PNG、timings.jsonl、selected_quad.json、input_corners.json をディレクトリごと同梱する。</span>
             </li>
             <li>
               <span class="spec-element">フッターアクション</span>
@@ -779,7 +779,7 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list">
             <li>
               <span class="spec-element">必須データ</span>
-              <span class="spec-detail">コメント、アプリのバージョン / ビルド番号、日時（JST）、元画像、この撮影に紐づく画像処理デバッグセッション一式をひとまとめにして改善レポートとして送信する。デバッグセッションは zip 内の debug/ 配下に、metadata.json、番号付き PNG、timings.jsonl を保持したまま同梱する。</span>
+              <span class="spec-detail">コメント、アプリのバージョン / ビルド番号、日時（JST）、元画像、この撮影に紐づく画像処理デバッグセッション一式をひとまとめにして改善レポートとして送信する。デバッグセッションは zip 内の debug/ 配下に、metadata.json、番号付き PNG、timings.jsonl、選択された四角形 JSON を保持したまま同梱する。</span>
             </li>
             <li>
               <span class="spec-element">任意の追加写真</span>

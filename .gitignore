@@ -6,3 +6,18 @@ tmp/
 /iosapp/CamScanShare.xcodeproj/project.pbxproj
 /iosapp/build/
 /iosapp/ExportOptions.plist
+
+# Private local evaluation sample from report_server/reports/report-2026-05-16_10-08-44.
+/docs/filter-samples.local.json
+/docs/public/algorithm/report-samples/report-overlapping-papers-source.jpg
+/docs/public/algorithm/steps/report-samples/report-overlapping-papers-step0.png
+/docs/public/algorithm/steps/report-samples/report-overlapping-papers-step1.png
+/docs/public/algorithm/steps/report-samples/report-overlapping-papers-step2.png
+/docs/public/algorithm/steps/report-samples/report-overlapping-papers-step3.png
+/docs/public/algorithm/filters/bw/report-overlapping-papers.png
+/docs/public/algorithm/filters/eco/report-overlapping-papers.png
+/docs/public/algorithm/filters/enhance/report-overlapping-papers.png
+/docs/public/algorithm/filters/magic_pro/report-overlapping-papers.png
+/docs/public/algorithm/filters/sharpen/report-overlapping-papers.png
+/docs/public/algorithm/filters/vivid/report-overlapping-papers.png
+/docs/public/algorithm/filters/whiteboard/report-overlapping-papers.png

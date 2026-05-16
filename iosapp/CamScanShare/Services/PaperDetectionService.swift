@@ -10,6 +10,12 @@ struct DetectedRectangle: Sendable, Equatable {
     let bottomRight: CGPoint
 }
 
+private struct VisionRectangleCandidate {
+    let rectangle: DetectedRectangle
+    let confidence: Float
+    let score: Double
+}
+
 enum DocumentOrientation {
     case portrait
     case landscape
@@ -24,7 +30,13 @@ enum PaperDetectionService {
         completion: @escaping @Sendable (DetectedRectangle?) -> Void
     ) -> VNDetectRectanglesRequest {
         let request = VNDetectRectanglesRequest { request, error in
-            completion(rectangle(from: request, error: error))
+            guard error == nil,
+                let rectangleRequest = request as? VNDetectRectanglesRequest
+            else {
+                completion(nil)
+                return
+            }
+            completion(bestVisionCandidate(from: rectangleRequest.results ?? [], anchorRectangle: nil)?.rectangle)
         }
         configure(request)
         return request
@@ -32,21 +44,25 @@ enum PaperDetectionService {
 
     static func detectRectangle(
         in image: UIImage,
-        debugSink: ImageProcessingDebugSink = .shared
+        debugSink: ImageProcessingDebugSink = .shared,
+        anchorRectangle: DetectedRectangle? = nil
     ) -> DetectedRectangle? {
         let session = debugSink.startSession(
             category: "paper-detection",
             label: "capture",
             metadata: [
                 "inputWidth": "\(Int(image.size.width))",
-                "inputHeight": "\(Int(image.size.height))"
+                "inputHeight": "\(Int(image.size.height))",
+                "platform": "ios",
+                "anchor": "\(anchorRectangle != nil)"
             ]
         )
-        return detectRectangle(in: image, session: session, debugSink: debugSink)
+        return detectRectangle(in: image, anchorRectangle: anchorRectangle, session: session, debugSink: debugSink)
     }
 
     private static func detectRectangle(
         in image: UIImage,
+        anchorRectangle: DetectedRectangle?,
         session: ImageProcessingDebugSession?,
         debugSink: ImageProcessingDebugSink
     ) -> DetectedRectangle? {
@@ -55,38 +71,76 @@ enum PaperDetectionService {
         let uprightImage = image.normalizedOrientation()
         guard let cgImage = uprightImage.cgImage else { return nil }
 
-        let request = VNDetectRectanglesRequest()
-        configure(request)
-        let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
-        try? handler.perform([request])
-        let rectangle = rectangle(from: request, error: nil)
+        if session?.isEnabled == true {
+            let artifactStartedAt = debugSink.now()
+            let debugImages = OpenCVDocumentFilterBridge.documentDetectionDebugImages(in: uprightImage)
+            for key in debugImages.keys.sorted() {
+                debugSink.writeImage(session, label: key, image: debugImages[key])
+            }
+            debugSink.recordTimingSince(
+                session,
+                stage: "paper_detection.debug_artifacts",
+                startedAt: artifactStartedAt,
+                metadata: ["imageCount": "\(debugImages.count)"]
+            )
+        }
+
+        let openCVRectangle = rectangleFromOpenCV(in: uprightImage)
+        let visionRectangle = rectangleFromVision(cgImage: cgImage, anchorRectangle: anchorRectangle)
+        let rectangle: DetectedRectangle?
+        let source: String
+        if let openCVRectangle, matchesAnchor(openCVRectangle, anchorRectangle) {
+            rectangle = openCVRectangle
+            source = "opencv"
+        } else if let visionRectangle, matchesAnchor(visionRectangle.rectangle, anchorRectangle) {
+            rectangle = visionRectangle.rectangle
+            source = "vision"
+        } else if let anchorRectangle {
+            rectangle = anchorRectangle
+            source = "preview_anchor"
+        } else {
+            rectangle = openCVRectangle ?? visionRectangle?.rectangle
+            source = rectangle == nil ? "none" : (openCVRectangle == nil ? "vision" : "opencv")
+        }
         debugSink.writeText(session, fileName: "selected_quad.json", text: rectangleJson(rectangle))
         debugSink.writeImage(session, label: "selected_quad_overlay", image: drawRectangleOverlay(image: uprightImage, rectangle: rectangle))
         debugSink.recordTimingSince(
             session,
             stage: "paper_detection.total",
             startedAt: startedAt,
-            metadata: ["result": rectangle == nil ? "none" : "quad"]
+            metadata: [
+                "result": rectangle == nil ? "none" : "quad",
+                "source": source,
+                "anchor": "\(anchorRectangle != nil)"
+            ]
         )
         return rectangle
     }
 
     static func correctDocumentGeometry(
         image: UIImage,
-        debugSink: ImageProcessingDebugSink = .shared
+        debugSink: ImageProcessingDebugSink = .shared,
+        anchorRectangle: DetectedRectangle? = nil
     ) -> UIImage {
         let session = debugSink.startSession(
             category: "document-geometry",
             label: "capture",
             metadata: [
                 "inputWidth": "\(Int(image.size.width))",
-                "inputHeight": "\(Int(image.size.height))"
+                "inputHeight": "\(Int(image.size.height))",
+                "platform": "ios",
+                "anchor": "\(anchorRectangle != nil)"
             ]
         )
         let startedAt = debugSink.now()
         debugSink.writeImage(session, label: "input", image: image)
         let uprightImage = image.normalizedOrientation()
-        guard let rectangle = detectRectangle(in: uprightImage, session: session, debugSink: debugSink),
+        guard let rectangle = detectRectangle(
+            in: uprightImage,
+            anchorRectangle: anchorRectangle,
+            session: session,
+            debugSink: debugSink
+        ),
             let step0 = correctPerspective(image: uprightImage, rectangle: rectangle)
         else {
             debugSink.recordTimingSince(
@@ -97,7 +151,8 @@ enum PaperDetectionService {
             )
             return uprightImage
         }
-        debugSink.writeImage(session, label: "warped", image: step0)
+        debugSink.writeText(session, fileName: "input_corners.json", text: rectangleJson(rectangle))
+        debugSink.writeImage(session, label: "warped_rgba", image: step0)
         let normalized = normalizeDocumentAspect(step0, rectangle: rectangle)
         debugSink.writeImage(session, label: "output", image: normalized)
         debugSink.recordTimingSince(
@@ -251,29 +306,112 @@ enum PaperDetectionService {
         return sqrt(dx * dx + dy * dy)
     }
 
+    private static func matchesAnchor(_ candidate: DetectedRectangle, _ anchor: DetectedRectangle?) -> Bool {
+        guard let anchor else { return true }
+
+        let candidatePoints = orderedPoints(candidate)
+        let anchorPoints = orderedPoints(anchor)
+        let distances = zip(candidatePoints, anchorPoints).map { distance($0.0, $0.1) }
+        let meanDistance = distances.reduce(0.0, +) / Double(max(1, distances.count))
+        let maxDistance = distances.max() ?? 0.0
+        let centerDistance = distance(center(of: candidatePoints), center(of: anchorPoints))
+        let candidateArea = polygonArea(candidatePoints)
+        let anchorArea = polygonArea(anchorPoints)
+        let areaRatio = min(candidateArea, anchorArea) / max(max(candidateArea, anchorArea), 0.0001)
+
+        return meanDistance <= 0.16
+            && maxDistance <= 0.28
+            && centerDistance <= 0.17
+            && areaRatio >= 0.50
+    }
+
+    private static func orderedPoints(_ rectangle: DetectedRectangle) -> [CGPoint] {
+        [rectangle.topLeft, rectangle.topRight, rectangle.bottomRight, rectangle.bottomLeft]
+    }
+
+    private static func center(of points: [CGPoint]) -> CGPoint {
+        guard !points.isEmpty else { return .zero }
+        let sum = points.reduce(CGPoint.zero) { partial, point in
+            CGPoint(x: partial.x + point.x, y: partial.y + point.y)
+        }
+        return CGPoint(x: sum.x / CGFloat(points.count), y: sum.y / CGFloat(points.count))
+    }
+
+    private static func polygonArea(_ points: [CGPoint]) -> Double {
+        guard points.count >= 3 else { return 0.0 }
+        var area = 0.0
+        for index in points.indices {
+            let current = points[index]
+            let next = points[(index + 1) % points.count]
+            area += Double(current.x * next.y - current.y * next.x)
+        }
+        return abs(Double(area)) / 2.0
+    }
+
     private static func configure(_ request: VNDetectRectanglesRequest) {
         request.minimumAspectRatio = 0.3
         request.maximumAspectRatio = 1.0
         request.minimumSize = 0.2
         request.minimumConfidence = 0.5
-        request.maximumObservations = 1
+        request.maximumObservations = 8
     }
 
     private static func rectangle(
-        from request: VNRequest,
-        error: Error?
-    ) -> DetectedRectangle? {
-        guard error == nil,
-            let results = request.results as? [VNRectangleObservation],
-            let rect = results.first
-        else {
-            return nil
-        }
+        from rect: VNRectangleObservation
+    ) -> DetectedRectangle {
         return DetectedRectangle(
             topLeft: rect.topLeft,
             topRight: rect.topRight,
             bottomLeft: rect.bottomLeft,
             bottomRight: rect.bottomRight
+        )
+    }
+
+    private static func rectangleFromVision(
+        cgImage: CGImage,
+        anchorRectangle: DetectedRectangle?
+    ) -> VisionRectangleCandidate? {
+        let request = VNDetectRectanglesRequest()
+        configure(request)
+        let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
+        try? handler.perform([request])
+        guard let results = request.results else {
+            return nil
+        }
+
+        return bestVisionCandidate(from: results, anchorRectangle: anchorRectangle)
+    }
+
+    private static func bestVisionCandidate(
+        from observations: [VNRectangleObservation],
+        anchorRectangle: DetectedRectangle?
+    ) -> VisionRectangleCandidate? {
+        return observations
+            .map { observation -> VisionRectangleCandidate in
+                let detected = rectangle(from: observation)
+                return VisionRectangleCandidate(
+                    rectangle: detected,
+                    confidence: observation.confidence,
+                    score: scoreVisionRectangle(detected, confidence: observation.confidence)
+                )
+            }
+            .filter { matchesAnchor($0.rectangle, anchorRectangle) }
+            .max { $0.score < $1.score }
+    }
+
+    private static func rectangleFromOpenCV(in image: UIImage) -> DetectedRectangle? {
+        guard let values = OpenCVDocumentFilterBridge.detectDocumentCorners(in: image),
+            values.count == 4
+        else {
+            return nil
+        }
+
+        let points = values.map { $0.cgPointValue }
+        return DetectedRectangle(
+            topLeft: points[0],
+            topRight: points[1],
+            bottomLeft: points[3],
+            bottomRight: points[2]
         )
     }
 
@@ -289,6 +427,15 @@ enum PaperDetectionService {
             "{\"x\":\(point.x),\"y\":\(point.y)}"
         }.joined(separator: ",")
         return "{\"corners\":[\(pointJson)]}"
+    }
+
+    private static func scoreVisionRectangle(_ rectangle: DetectedRectangle, confidence: Float) -> Double {
+        let points = orderedPoints(rectangle)
+        let area = polygonArea(points)
+        let centerDistance = distance(center(of: points), CGPoint(x: 0.5, y: 0.5))
+        let centerScore = max(0.0, 1.0 - centerDistance / 0.50)
+        let areaScore = min(1.0, area / 0.60)
+        return Double(confidence) * 0.55 + centerScore * 0.30 + areaScore * 0.15
     }
 
     private static func drawRectangleOverlay(image: UIImage, rectangle: DetectedRectangle?) -> UIImage? {

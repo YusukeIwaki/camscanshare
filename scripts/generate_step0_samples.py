@@ -28,6 +28,12 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help="Only process specific sample ids. Can be passed multiple times.",
     )
+    parser.add_argument(
+        "--detection-mode",
+        choices=("capture", "preview"),
+        default="capture",
+        help="Detection mode used for Step 0 generation.",
+    )
     return parser.parse_args()
 
 
@@ -41,7 +47,7 @@ def main() -> None:
         step0_path = (repo_root / entry["step0"]).resolve()
 
         image = read_image(source)
-        step0, mode = detect_document(image, entry.get("crop_mode"))
+        step0, mode = detect_document(image, entry.get("crop_mode"), args.detection_mode)
         write_image(step0_path, step0)
 
         print(

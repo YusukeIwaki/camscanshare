@@ -4,7 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 VENV_DIR="${TMPDIR:-/tmp}/camscan-magic-filter-venv"
 
-if [ ! -d "$VENV_DIR" ]; then
+if [ ! -f "$VENV_DIR/bin/activate" ]; then
+  rm -rf "$VENV_DIR"
   python3 -m venv "$VENV_DIR"
 fi
 

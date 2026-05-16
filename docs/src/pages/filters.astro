@@ -1,6 +1,18 @@
 ---
 import Layout from '../layouts/Layout.astro';
-import samples from '../../filter-samples.json';
+import baseSamples from '../../filter-samples.json';
+
+let localSamples = [];
+if (import.meta.env.DEV) {
+  const { existsSync, readFileSync } = await import('node:fs');
+  const { fileURLToPath } = await import('node:url');
+  const localSamplesUrl = new URL('../../filter-samples.local.json', import.meta.url);
+  const localSamplesPath = fileURLToPath(localSamplesUrl);
+  localSamples = existsSync(localSamplesPath)
+    ? JSON.parse(readFileSync(localSamplesPath, 'utf-8'))
+    : [];
+}
+const samples = [...baseSamples, ...localSamples];
 
 const filters = [
   {

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import json
+import time
+from dataclasses import dataclass
 from pathlib import Path
 
 import cv2
@@ -43,6 +45,66 @@ A4_LANDSCAPE = 297.0 / 210.0
 A4_TOLERANCE = 0.20
 
 
+@dataclass(frozen=True)
+class CannyStrategy:
+    label: str
+    blur_size: int
+    dilate_size: int
+    low: int | None = None
+    high: int | None = None
+    sigma: float | None = None
+
+
+@dataclass(frozen=True)
+class DetectionConfig:
+    name: str
+    detect_size: int
+    min_area_ratio: float
+    colored_min_area_ratio: float
+    paper_min_area_ratio: float
+    max_candidates: int
+    epsilon_candidates: tuple[float, ...]
+    allow_min_area_rect: bool
+    canny_strategies: tuple[CannyStrategy, ...]
+
+
+DETECTION_CONFIGS = {
+    "preview": DetectionConfig(
+        name="preview",
+        detect_size=500,
+        min_area_ratio=0.05,
+        colored_min_area_ratio=0.08,
+        paper_min_area_ratio=0.05,
+        max_candidates=12,
+        epsilon_candidates=(0.02, 0.03, 0.04, 0.05),
+        allow_min_area_rect=False,
+        canny_strategies=(
+            CannyStrategy("fixed_b5_l30_h50", 5, 5, low=30, high=50),
+            CannyStrategy("fixed_b5_l50_h150", 5, 5, low=50, high=150),
+            CannyStrategy("fixed_b5_l75_h200", 5, 5, low=75, high=200),
+            CannyStrategy("fixed_b11_l30_h100", 11, 5, low=30, high=100),
+        ),
+    ),
+    "capture": DetectionConfig(
+        name="capture",
+        detect_size=900,
+        min_area_ratio=0.02,
+        colored_min_area_ratio=0.04,
+        paper_min_area_ratio=0.03,
+        max_candidates=40,
+        epsilon_candidates=(0.015, 0.02, 0.025, 0.03, 0.04, 0.05, 0.06),
+        allow_min_area_rect=False,
+        canny_strategies=(
+            CannyStrategy("fixed_b3_l30_h50", 3, 3, low=30, high=50),
+            CannyStrategy("fixed_b5_l50_h150", 5, 3, low=50, high=150),
+            CannyStrategy("fixed_b7_l75_h200", 7, 3, low=75, high=200),
+            CannyStrategy("auto_b3_s033", 3, 3, sigma=0.33),
+            CannyStrategy("auto_b5_s050", 5, 3, sigma=0.50),
+        ),
+    ),
+}
+
+
 def repo_root_for(script_path: str) -> Path:
     return Path(script_path).resolve().parent.parent
 
@@ -50,6 +112,11 @@ def repo_root_for(script_path: str) -> Path:
 def load_manifest_entries(repo_root: Path, manifest: str, only: list[str]) -> list[dict]:
     manifest_path = (repo_root / manifest).resolve()
     entries = json.loads(manifest_path.read_text())
+    local_manifest_path = manifest_path.with_name(
+        f"{manifest_path.stem}.local{manifest_path.suffix}",
+    )
+    if local_manifest_path.exists():
+        entries.extend(json.loads(local_manifest_path.read_text()))
     selected_ids = set(only)
     if selected_ids:
         entries = [entry for entry in entries if entry["id"] in selected_ids]
@@ -153,9 +220,10 @@ def estimate_quad_paper_ratio(points: np.ndarray) -> float | None:
     return snap_ratio_to_paper(estimated_ratio)
 
 
-def resize_for_detection(image: np.ndarray, target_height: int = 500) -> tuple[np.ndarray, float]:
+def resize_for_detection(image: np.ndarray, target_size: int = 500) -> tuple[np.ndarray, float]:
     height, width = image.shape[:2]
-    scale = target_height / float(height) if height > target_height else 1.0
+    max_dim = max(width, height)
+    scale = target_size / float(max_dim) if max_dim > target_size else 1.0
     if scale != 1.0:
         resized = cv2.resize(
             image,
@@ -169,14 +237,15 @@ def resize_for_detection(image: np.ndarray, target_height: int = 500) -> tuple[n
 
 
 def order_points(points: np.ndarray) -> np.ndarray:
-    rect = np.zeros((4, 2), dtype=np.float32)
-    sums = points.sum(axis=1)
-    rect[0] = points[np.argmin(sums)]
-    rect[2] = points[np.argmax(sums)]
-    diffs = np.diff(points, axis=1)
-    rect[1] = points[np.argmin(diffs)]
-    rect[3] = points[np.argmax(diffs)]
-    return rect
+    pts = points.reshape(4, 2).astype(np.float32)
+    center = pts.mean(axis=0)
+    angles = np.arctan2(pts[:, 1] - center[1], pts[:, 0] - center[0])
+    ordered = pts[np.argsort(angles)]
+    area = cv2.contourArea(ordered.reshape(4, 1, 2), oriented=True)
+    if area < 0:
+        ordered = ordered[::-1]
+    start = int(np.argmin(ordered.sum(axis=1)))
+    return np.roll(ordered, -start, axis=0)
 
 
 def four_point_transform(image: np.ndarray, points: np.ndarray) -> np.ndarray:
@@ -188,8 +257,8 @@ def four_point_transform(image: np.ndarray, points: np.ndarray) -> np.ndarray:
     height_a = np.linalg.norm(top_right - bottom_right)
     height_b = np.linalg.norm(top_left - bottom_left)
 
-    max_width = max(int(round(width_a)), int(round(width_b)))
-    max_height = max(int(round(height_a)), int(round(height_b)))
+    max_width = max(1, int(round((width_a + width_b) / 2.0)))
+    max_height = max(1, int(round((height_a + height_b) / 2.0)))
 
     destination = np.array(
         [
@@ -204,20 +273,29 @@ def four_point_transform(image: np.ndarray, points: np.ndarray) -> np.ndarray:
     return cv2.warpPerspective(image, matrix, (max_width, max_height))
 
 
-def collect_candidate_quads(mask: np.ndarray, ratio: float, min_area: float) -> list[tuple[np.ndarray, str]]:
+def collect_candidate_quads(
+    mask: np.ndarray,
+    ratio: float,
+    min_area: float,
+    config: DetectionConfig,
+) -> list[tuple[np.ndarray, str]]:
     candidates: list[tuple[np.ndarray, str]] = []
     contours, _ = cv2.findContours(mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
-    for contour in sorted(contours, key=cv2.contourArea, reverse=True)[:40]:
+    for contour in sorted(contours, key=cv2.contourArea, reverse=True)[: config.max_candidates]:
         area = cv2.contourArea(contour)
         if area < min_area:
             continue
         perimeter = cv2.arcLength(contour, True)
-        polygon = cv2.approxPolyDP(contour, 0.02 * perimeter, True)
-        if len(polygon) == 4 and cv2.isContourConvex(polygon):
-            candidates.append((polygon.reshape(4, 2).astype(np.float32) * ratio, "quad"))
-            continue
-        rect = cv2.minAreaRect(contour)
-        candidates.append((cv2.boxPoints(rect).astype(np.float32) * ratio, "minAreaRect"))
+        accepted = False
+        for epsilon in config.epsilon_candidates:
+            polygon = cv2.approxPolyDP(contour, epsilon * perimeter, True)
+            if len(polygon) == 4 and cv2.isContourConvex(polygon):
+                candidates.append((polygon.reshape(4, 2).astype(np.float32) * ratio, f"quad_e{epsilon:g}"))
+                accepted = True
+                break
+        if not accepted and config.allow_min_area_rect:
+            rect = cv2.minAreaRect(contour)
+            candidates.append((cv2.boxPoints(rect).astype(np.float32) * ratio, "minAreaRect"))
     return candidates
 
 
@@ -257,6 +335,25 @@ def build_paper_candidate_mask(resized: np.ndarray) -> np.ndarray:
     return paper_mask
 
 
+def build_colored_paper_candidate_mask(resized: np.ndarray) -> np.ndarray:
+    lab = cv2.cvtColor(resized, cv2.COLOR_BGR2LAB)
+    luminance, a_channel, b_channel = cv2.split(lab)
+    chroma = compute_chroma(a_channel, b_channel)
+
+    # This catches foreground colored paper, while rejecting most warm wood floors.
+    colored_paper = (
+        (luminance > 120)
+        & (chroma >= 10)
+        & (chroma < 70)
+        & (a_channel > 130)
+        & (b_channel < 150)
+    )
+    mask = colored_paper.astype(np.uint8) * 255
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((11, 11), dtype=np.uint8), iterations=2)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((7, 7), dtype=np.uint8), iterations=1)
+    return mask
+
+
 def score_candidate(image: np.ndarray, points: np.ndarray) -> float:
     try:
         warped = four_point_transform(image, points)
@@ -294,7 +391,7 @@ def score_candidate(image: np.ndarray, points: np.ndarray) -> float:
 
 
 def candidate_edge_support(image: np.ndarray, points: np.ndarray) -> float:
-    resized, ratio = resize_for_detection(image)
+    resized, ratio = resize_for_detection(image, DETECTION_CONFIGS["preview"].detect_size)
     gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
     grad_x = cv2.Sobel(blurred, cv2.CV_32F, 1, 0, ksize=3)
@@ -314,12 +411,46 @@ def candidate_edge_support(image: np.ndarray, points: np.ndarray) -> float:
     return float(values.mean()) / 255.0
 
 
+def canny_edges(gray: np.ndarray, strategy: CannyStrategy) -> np.ndarray:
+    blurred = cv2.GaussianBlur(gray, (strategy.blur_size, strategy.blur_size), 0)
+    if strategy.sigma is None:
+        lower = int(strategy.low or 0)
+        upper = int(strategy.high or 0)
+    else:
+        median = float(np.median(blurred))
+        lower = int(max(0.0, (1.0 - strategy.sigma) * median))
+        upper = int(min(255.0, (1.0 + strategy.sigma) * median))
+        if upper <= lower:
+            upper = min(255, lower + 24)
+    edges = cv2.Canny(blurred, lower, upper)
+    edges = cv2.dilate(edges, np.ones((strategy.dilate_size, strategy.dilate_size), dtype=np.uint8), iterations=1)
+    edges = cv2.morphologyEx(
+        edges,
+        cv2.MORPH_CLOSE,
+        np.ones((max(3, strategy.dilate_size + 2), max(3, strategy.dilate_size + 2)), dtype=np.uint8),
+        iterations=1,
+    )
+    return edges
+
+
 def score_detection_candidate(image: np.ndarray, points: np.ndarray, source: str, kind: str) -> float:
     score = score_candidate(image, points)
     if score < 0:
         return score
 
     score += candidate_edge_support(image, points) * 2.2
+    candidate_center = points.mean(axis=0)
+    image_center = np.array([image.shape[1] * 0.5, image.shape[0] * 0.5], dtype=np.float32)
+    normalized_distance = np.linalg.norm(
+        (candidate_center - image_center)
+        / np.array([max(1, image.shape[1]), max(1, image.shape[0])], dtype=np.float32),
+    )
+    score += max(0.0, 1.0 - float(normalized_distance) / 0.50) * 0.40
+
+    if source == "colored_paper":
+        if count_touched_sides(image, points) >= 3:
+            return score - 1.6
+        return score + 1.15
 
     if source == "merged" and kind == "quad":
         return score + 0.15
@@ -416,7 +547,11 @@ def trim_to_document_bounds(image: np.ndarray) -> np.ndarray:
     return image[top:bottom, left:right]
 
 
-def find_document_candidate(image: np.ndarray, crop_mode: str | None = None) -> dict[str, object] | None:
+def find_document_candidate(
+    image: np.ndarray,
+    crop_mode: str | None = None,
+    detection_mode: str = "capture",
+) -> dict[str, object] | None:
     if crop_mode == "copy_source":
         return {
             "points": None,
@@ -424,18 +559,11 @@ def find_document_candidate(image: np.ndarray, crop_mode: str | None = None) -> 
             "kind": "copy_source",
         }
 
-    resized, ratio = resize_for_detection(image)
+    config = DETECTION_CONFIGS[detection_mode]
+    started = time.perf_counter()
+    resized, ratio = resize_for_detection(image, config.detect_size)
     gray = cv2.cvtColor(resized, cv2.COLOR_BGR2GRAY)
     blurred = cv2.GaussianBlur(gray, (5, 5), 0)
-
-    edges = cv2.Canny(blurred, 50, 150)
-    edges = cv2.dilate(edges, np.ones((3, 3), dtype=np.uint8), iterations=1)
-    edges = cv2.morphologyEx(
-        edges,
-        cv2.MORPH_CLOSE,
-        np.ones((5, 5), dtype=np.uint8),
-        iterations=2,
-    )
 
     adaptive = cv2.adaptiveThreshold(
         blurred,
@@ -453,14 +581,25 @@ def find_document_candidate(image: np.ndarray, crop_mode: str | None = None) -> 
         iterations=2,
     )
 
-    merged = cv2.bitwise_or(edges, adaptive)
-    min_area = resized.shape[0] * resized.shape[1] * 0.15
+    image_area = resized.shape[0] * resized.shape[1]
+    min_area = image_area * config.min_area_ratio
+    colored_min_area = image_area * config.colored_min_area_ratio
+    paper_min_area = image_area * config.paper_min_area_ratio
     paper_mask = build_paper_candidate_mask(resized)
+    colored_paper_mask = build_colored_paper_candidate_mask(resized)
 
     candidates: list[dict[str, object]] = []
 
-    for source, mask in (("merged", merged), ("paper", paper_mask)):
-        for points, kind in collect_candidate_quads(mask, ratio, min_area):
+    masks: list[tuple[str, np.ndarray, float]] = [
+        ("colored_paper", colored_paper_mask, colored_min_area),
+        ("paper", paper_mask, paper_min_area),
+        ("adaptive", adaptive, min_area),
+    ]
+    for strategy in config.canny_strategies:
+        masks.append((f"canny_{strategy.label}", canny_edges(gray, strategy), min_area))
+
+    for source, mask, source_min_area in masks:
+        for points, kind in collect_candidate_quads(mask, ratio, source_min_area, config):
             score = score_detection_candidate(image, points, source, kind)
             if score < 0:
                 continue
@@ -470,13 +609,16 @@ def find_document_candidate(image: np.ndarray, crop_mode: str | None = None) -> 
                     "source": source,
                     "kind": kind,
                     "score": score,
+                    "elapsed_ms": (time.perf_counter() - started) * 1000.0,
+                    "mode": config.name,
                 },
             )
 
     if candidates:
         return max(candidates, key=lambda candidate: float(candidate["score"]))
 
-    contours, _ = cv2.findContours(merged, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+    fallback_mask = masks[-1][1]
+    contours, _ = cv2.findContours(fallback_mask, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
     if not contours:
         return None
 
@@ -487,11 +629,17 @@ def find_document_candidate(image: np.ndarray, crop_mode: str | None = None) -> 
         "points": points,
         "source": "fallback_source",
         "kind": "minAreaRect",
+        "elapsed_ms": (time.perf_counter() - started) * 1000.0,
+        "mode": config.name,
     }
 
 
-def detect_document(image: np.ndarray, crop_mode: str | None = None) -> tuple[np.ndarray, str]:
-    candidate = find_document_candidate(image, crop_mode)
+def detect_document(
+    image: np.ndarray,
+    crop_mode: str | None = None,
+    detection_mode: str = "capture",
+) -> tuple[np.ndarray, str]:
+    candidate = find_document_candidate(image, crop_mode, detection_mode)
     if candidate is None:
         return image.copy(), "fallback_source"
     points = candidate["points"]
@@ -499,11 +647,16 @@ def detect_document(image: np.ndarray, crop_mode: str | None = None) -> tuple[np
         return image.copy(), str(candidate["source"])
 
     warped = trim_dark_border(four_point_transform(image, points))
-    return trim_to_document_bounds(warped), str(candidate["source"])
+    label = f'{candidate["mode"]}:{candidate["source"]}:{candidate["kind"]}:{float(candidate["elapsed_ms"]):.1f}ms'
+    return trim_to_document_bounds(warped), label
 
 
-def estimate_document_paper_ratio(image: np.ndarray, crop_mode: str | None = None) -> float | None:
-    candidate = find_document_candidate(image, crop_mode)
+def estimate_document_paper_ratio(
+    image: np.ndarray,
+    crop_mode: str | None = None,
+    detection_mode: str = "capture",
+) -> float | None:
+    candidate = find_document_candidate(image, crop_mode, detection_mode)
     if candidate is None:
         return compute_target_paper_ratio(image.shape[1], image.shape[0])
 

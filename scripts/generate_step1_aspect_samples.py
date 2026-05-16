@@ -29,6 +29,12 @@ def parse_args() -> argparse.Namespace:
         default=[],
         help="Only process specific sample ids. Can be passed multiple times.",
     )
+    parser.add_argument(
+        "--detection-mode",
+        choices=("capture", "preview"),
+        default="capture",
+        help="Detection mode used when estimating the source document ratio.",
+    )
     return parser.parse_args()
 
 
@@ -44,7 +50,7 @@ def main() -> None:
 
         source = read_image(source_path)
         step0 = read_image(step0_path)
-        target_ratio = estimate_document_paper_ratio(source, entry.get("crop_mode"))
+        target_ratio = estimate_document_paper_ratio(source, entry.get("crop_mode"), args.detection_mode)
         step1, mode = normalize_document_aspect(step0, target_ratio=target_ratio)
         write_image(step1_path, step1)
 

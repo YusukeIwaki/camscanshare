@@ -236,8 +236,13 @@ struct CameraScanView: View {
         try? await Task.sleep(for: .milliseconds(100))
         withAnimation(.easeOut(duration: 0.3)) { showFlash = false }
 
+        let previewRectangleAtCapture = viewModel.detectedRectangle
         guard let image = await viewModel.capturePhoto() else { return }
-        viewModel.processAndStoreCapturedImage(image, isDebugCapture: captureForReport)
+        viewModel.processAndStoreCapturedImage(
+            image,
+            isDebugCapture: captureForReport,
+            anchorRectangle: previewRectangleAtCapture
+        )
 
         if retakePageId != nil {
             await finishScanning()
