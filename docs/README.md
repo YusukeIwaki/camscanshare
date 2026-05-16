@@ -19,6 +19,7 @@ Open [http://localhost:4321/](http://localhost:4321/) in your browser to view th
 
 ```text
 docs/
+├── filter-research-notes.md     # Notes for rejected filter prototypes and observed tradeoffs
 ├── src/
 │   ├── layouts/Layout.astro     # Base layout using Atlassian Design System styling
 │   └── pages/
@@ -57,3 +58,4 @@ docs/
 
 - `public/mockups/` contains standalone interactive mockups embedded from the main documentation page.
 - `public/algorithm/` contains sample images and generated assets used to explain detection and filter behavior.
+- `filter-research-notes.md` records filter experiments that were tried but not kept, including why they were rejected and any regressions observed during evaluation.
