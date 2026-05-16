@@ -22,6 +22,10 @@ FILTERS = {
         # report-derived prototype: conservative white cleanup
         "pipeline": "eco",
     },
+    "shadowless": {
+        # CamScanner-like no-shadow cleanup: strong paper whitening without hard binarization
+        "pipeline": "shadowless",
+    },
     "bw": {
         # illumination correction + local-mean adaptive threshold
         "pipeline": "document_bw",
@@ -1193,6 +1197,53 @@ def filter_structure_for_preservation(
     return filtered
 
 
+def filter_shadowless_ink_components(
+    ink_mask: np.ndarray,
+    image_shape: tuple[int, int],
+) -> np.ndarray:
+    filtered = np.zeros_like(ink_mask)
+    num_labels, labels, stats, _ = cv2.connectedComponentsWithStats(ink_mask, connectivity=8)
+    max_edge = max(image_shape[:2])
+    min_edge = min(image_shape[:2])
+    max_long_sparse = max(70, int(round(max_edge * 0.11)))
+    max_long_edge = max(150, int(round(max_edge * 0.26)))
+    max_short_sparse = max(24, int(round(min_edge * 0.035)))
+
+    for label in range(1, num_labels):
+        _, _, width, height, area = stats[label]
+        if area < 8:
+            continue
+
+        fill_ratio = area / max(1, width * height)
+        long_edge = max(width, height)
+        short_edge = min(width, height)
+
+        if long_edge > max_long_sparse and fill_ratio < 0.22:
+            continue
+        if long_edge > max_long_edge:
+            continue
+        if short_edge > max_short_sparse and fill_ratio < 0.35:
+            continue
+        filtered[labels == label] = 255
+
+    return filtered
+
+
+def build_shadowless_ink_mask(
+    probe_l: np.ndarray,
+    strong_structure_mask: np.ndarray,
+) -> np.ndarray:
+    dark_threshold = max(82, int(np.percentile(probe_l, 6)))
+    _, dark_mask = cv2.threshold(probe_l, dark_threshold, 255, cv2.THRESH_BINARY_INV)
+    ink_mask = cv2.bitwise_and(dark_mask, strong_structure_mask)
+    ink_mask = filter_shadowless_ink_components(ink_mask, probe_l.shape)
+    return cv2.dilate(
+        ink_mask,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (2, 2)),
+        iterations=1,
+    )
+
+
 def apply_enhance_pipeline(image: np.ndarray) -> np.ndarray:
     doc = prepare_document_analysis(image)
     denoised_l = doc["denoised_l"]
@@ -1411,6 +1462,98 @@ def apply_magic_pro_pipeline(image: np.ndarray) -> np.ndarray:
         hsv[:, :, 2] = value
         final_bgr = cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR)
     return final_bgr
+
+
+def blend_masked_toward_reference(
+    base: np.ndarray,
+    reference: np.ndarray,
+    mask: np.ndarray,
+    reference_weight: float,
+) -> np.ndarray:
+    output = base.astype(np.float32).copy()
+    idx = mask > 0
+    output[idx] = (
+        output[idx] * (1.0 - reference_weight)
+        + reference[idx].astype(np.float32) * reference_weight
+    )
+    return np.clip(output, 0, 255).astype(np.uint8)
+
+
+def apply_shadowless_pipeline(image: np.ndarray) -> np.ndarray:
+    doc = prepare_document_analysis(image)
+    flattened_l = doc["flattened_l"]
+    denoised_l = doc["denoised_l"]
+    paper_mask = doc["paper_mask"]
+    paper_clean_mask = doc["paper_clean_mask"]
+    paper_color_mask = doc["paper_color_mask"]
+    accent_mask = doc["accent_mask"]
+    strong_structure_mask = doc["strong_structure_mask"]
+    neutralized_a = doc["neutralized_a"]
+    neutralized_b = doc["neutralized_b"]
+    color_richness = float(doc["color_richness"])
+
+    relaxed_paper_mask = build_relaxed_paper_mask(
+        flattened_l,
+        neutralized_a,
+        neutralized_b,
+    )
+    surface_mask = cv2.bitwise_or(relaxed_paper_mask, paper_color_mask)
+    probe_l = cv2.addWeighted(denoised_l, 0.35, flattened_l, 0.65, 0.0)
+    preserve_mask = build_shadowless_ink_mask(probe_l, strong_structure_mask)
+    surface_tone_mask = cv2.bitwise_and(surface_mask, cv2.bitwise_not(preserve_mask))
+
+    flat_mix = 0.64 + 0.14 * color_richness
+    base_l = cv2.addWeighted(
+        denoised_l,
+        max(0.0, 1.0 - flat_mix),
+        flattened_l,
+        min(1.0, flat_mix),
+        0.0,
+    )
+    base_l = cv2.addWeighted(
+        base_l,
+        0.82,
+        apply_channel_contrast(base_l, 1.10),
+        0.18,
+        0.0,
+    )
+    lifted_l = lift_shadowed_paper(
+        base_l,
+        surface_tone_mask,
+        strength=0.88,
+        sigma=15.0,
+    )
+    output_l = blend_toward_value(lifted_l, surface_tone_mask, 253.0, 0.72)
+    if color_richness > 0.35:
+        output_l = blend_masked_toward_reference(output_l, lifted_l, paper_color_mask, 0.10)
+    output_l = soften_paper_texture(
+        output_l,
+        surface_tone_mask,
+        preserve_mask,
+        blur_sigma=3.2,
+        strength=0.45,
+    )
+
+    output_a, output_b = build_document_chroma_outputs(
+        neutralized_a,
+        neutralized_b,
+        paper_mask,
+        paper_color_mask,
+        accent_mask,
+        muted_factor=0.12 + 0.06 * color_richness,
+        paper_color_factor=0.62 + 0.18 * color_richness,
+        accent_factor=min(1.0, 0.98 + 0.02 * color_richness),
+    )
+    final_bgr = bgr_from_lab_channels(output_l, output_a, output_b)
+    return restore_content_saturation(
+        final_bgr,
+        denoised_l,
+        neutralized_a,
+        neutralized_b,
+        paper_mask,
+        accent_mask,
+        paper_color_mask,
+    )
 
 
 def apply_document_bw_pipeline(image: np.ndarray) -> np.ndarray:
@@ -1719,6 +1862,8 @@ def apply_filter(image: np.ndarray, filter_key: str) -> np.ndarray:
         return apply_enhance_pipeline(image)
     if spec.get("pipeline") == "eco":
         return apply_eco_pipeline(image)
+    if spec.get("pipeline") == "shadowless":
+        return apply_shadowless_pipeline(image)
     if spec.get("pipeline") == "document_bw":
         return apply_document_bw_pipeline(image)
     if spec.get("pipeline") == "magic_pro":

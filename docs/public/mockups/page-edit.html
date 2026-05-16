@@ -332,6 +332,7 @@
   .filter-preview.whiteboard { filter: brightness(1.3) contrast(1.6) saturate(0); }
   .filter-preview.color-limit { filter: saturate(2) contrast(1.2); }
   .filter-preview.magic { filter: brightness(1.4) contrast(2) saturate(0.3); }
+  .filter-preview.shadowless { filter: brightness(1.18) contrast(1.2) saturate(0.45); }
 
   .filter-preview.report-preview {
     border-style: dashed;
@@ -589,6 +590,18 @@
         <div class="fline" style="width:80%"></div>
       </div>
       <span class="filter-name">マジック</span>
+    </button>
+
+    <button class="filter-item" data-filter="shadowless" data-css="brightness(1.18) contrast(1.2) saturate(0.45)" >
+      <div class="filter-preview shadowless">
+        <div class="fline" style="width:50%"></div>
+        <div class="fline" style="width:85%"></div>
+        <div class="fline" style="width:70%"></div>
+        <div class="fline" style="width:90%"></div>
+        <div class="fline" style="width:65%"></div>
+        <div class="fline" style="width:80%"></div>
+      </div>
+      <span class="filter-name">影なし</span>
     </button>
 
     <button class="filter-item" data-filter="whiteboard" data-css="brightness(1.3) contrast(1.6) saturate(0)" >

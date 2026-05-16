@@ -6,6 +6,7 @@ enum FilterPreset: String, CaseIterable, Identifiable, Sendable {
     case sharpen
     case enhance
     case eco
+    case shadowless
     case bw
     case magic
     case magicPro = "magic_pro"
@@ -20,6 +21,7 @@ enum FilterPreset: String, CaseIterable, Identifiable, Sendable {
         case .sharpen: "くっきり"
         case .enhance: "強化"
         case .eco: "省エネ"
+        case .shadowless: "影なし"
         case .bw: "白黒"
         case .magic: "マジック"
         case .magicPro: "Magic Pro"
@@ -34,6 +36,7 @@ enum FilterPreset: String, CaseIterable, Identifiable, Sendable {
         case .sharpen: "FilterSharpen"
         case .enhance: "FilterSharpen"
         case .eco: "FilterMagic"
+        case .shadowless: "FilterMagic"
         case .bw: "FilterBW"
         case .magic: "FilterMagic"
         case .magicPro: "FilterMagic"

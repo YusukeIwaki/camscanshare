@@ -41,7 +41,7 @@ class ImageProcessorTest {
 
     @Test
     fun `all known filter keys are valid`() {
-        val validKeys = setOf("original", "sharpen", "enhance", "eco", "bw", "magic", "magic_pro", "whiteboard", "vivid")
+        val validKeys = setOf("original", "sharpen", "enhance", "eco", "shadowless", "bw", "magic", "magic_pro", "whiteboard", "vivid")
         validKeys.forEach { key ->
             // Just verify these keys are recognized - actual ColorMatrix creation
             // is tested via integration tests on device
@@ -55,6 +55,7 @@ class ImageProcessorTest {
 
         assertTrue("enhance should be handled by the OpenCV pipeline", "enhance" !in colorMatrixFilters)
         assertTrue("eco should be handled by the OpenCV pipeline", "eco" !in colorMatrixFilters)
+        assertTrue("shadowless should be handled by the OpenCV pipeline", "shadowless" !in colorMatrixFilters)
         assertTrue("magic should be handled by the OpenCV pipeline", "magic" !in colorMatrixFilters)
         assertTrue("magic_pro should be handled by the OpenCV pipeline", "magic_pro" !in colorMatrixFilters)
         assertTrue("bw should be handled by the OpenCV pipeline", "bw" !in colorMatrixFilters)

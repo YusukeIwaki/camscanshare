@@ -94,6 +94,7 @@ class ImageProcessor @Inject constructor(
         val output = when (filterKey) {
             "enhance" -> applyEnhanceFilter(source, session)
             "eco" -> applyEcoFilter(source, session)
+            "shadowless" -> applyShadowlessFilter(source, session)
             "magic" -> applyMagicFilter(source, session)
             "bw" -> applyDocumentBwFilter(source, session)
             "magic_pro" -> applyMagicProFilter(source, session)
@@ -135,6 +136,7 @@ class ImageProcessor @Inject constructor(
         "original" -> null
         "enhance" -> null
         "eco" -> null
+        "shadowless" -> null
         "magic" -> null
         "sharpen" -> contrastMatrix(1.4f).apply { postConcat(brightnessMatrix(1.05f)) }
         "bw" -> null
@@ -756,6 +758,124 @@ class ImageProcessor @Inject constructor(
         finalBgr.release()
         restoredBgr.release()
         boostedBgr.release()
+        finalRgb.release()
+
+        return output
+    }
+
+    private fun applyShadowlessFilter(
+        source: Bitmap,
+        session: ImageProcessingDebugSession?,
+    ): Bitmap {
+        val rgb = bitmapToRgb(source)
+        val analysis = prepareDocumentAnalysis(rgb, session)
+        val colorRichness = analysis.colorRichness
+
+        val relaxedPaperMask = buildRelaxedPaperMask(
+            analysis.flattenedL,
+            analysis.neutralizedA,
+            analysis.neutralizedB,
+        )
+        val surfaceMask = Mat()
+        Core.bitwise_or(relaxedPaperMask, analysis.paperColorMask, surfaceMask)
+        val probeL = Mat()
+        Core.addWeighted(analysis.denoisedL, 0.35, analysis.flattenedL, 0.65, 0.0, probeL)
+        val preserveMask = buildShadowlessInkMask(probeL, analysis.strongStructureMask)
+        val invertedPreserveMask = invertMask(preserveMask)
+        val surfaceToneMask = Mat()
+        Core.bitwise_and(surfaceMask, invertedPreserveMask, surfaceToneMask)
+        debugSink.writeMat(session, "shadowless_relaxed_paper_mask", relaxedPaperMask)
+        debugSink.writeMat(session, "shadowless_preserve_mask", preserveMask)
+        debugSink.writeMat(session, "shadowless_surface_mask", surfaceMask)
+        debugSink.writeMat(session, "shadowless_surface_tone_mask", surfaceToneMask)
+
+        val flatMix = 0.64 + 0.14 * colorRichness
+        val baseL0 = Mat()
+        Core.addWeighted(
+            analysis.denoisedL,
+            maxOf(0.0, 1.0 - flatMix),
+            analysis.flattenedL,
+            minOf(1.0, flatMix),
+            0.0,
+            baseL0,
+        )
+        val contrastedBaseL = applyChannelContrast(baseL0, 1.10)
+        val baseL = Mat()
+        Core.addWeighted(baseL0, 0.82, contrastedBaseL, 0.18, 0.0, baseL)
+        val liftedL = liftShadowedPaper(
+            baseL,
+            surfaceToneMask,
+            strength = 0.88,
+            sigma = 15.0,
+        )
+        val outputL0 = blendTowardValue(liftedL, surfaceToneMask, 253.0, 0.72)
+        val outputL1 = if (colorRichness > 0.35) {
+            blendMaskedTowardReference(outputL0, liftedL, analysis.paperColorMask, 0.10)
+        } else {
+            outputL0.clone()
+        }
+        val softenedL = softenPaperTexture(
+            outputL1,
+            surfaceToneMask,
+            preserveMask,
+            blurSigma = 3.2,
+            strength = 0.45,
+        )
+        val outputL = softenedL.clone()
+        debugSink.writeMat(session, "shadowless_base_l", baseL)
+        debugSink.writeMat(session, "shadowless_lifted_l", liftedL)
+        debugSink.writeMat(session, "shadowless_softened_l", softenedL)
+        debugSink.writeMat(session, "shadowless_output_l", outputL)
+
+        val (outputA, outputB) = buildDocumentChromaOutputs(
+            analysis.neutralizedA,
+            analysis.neutralizedB,
+            analysis.paperMask,
+            analysis.paperColorMask,
+            analysis.accentMask,
+            mutedFactor = 0.12 + 0.06 * colorRichness,
+            paperColorFactor = 0.62 + 0.18 * colorRichness,
+            accentFactor = minOf(1.0, 0.98 + 0.02 * colorRichness),
+        )
+        val finalLab = Mat()
+        Core.merge(listOf(outputL, outputA, outputB), finalLab)
+        val finalBgr = Mat()
+        Imgproc.cvtColor(finalLab, finalBgr, Imgproc.COLOR_Lab2BGR)
+        val restoredBgr = restoreContentSaturation(
+            finalBgr,
+            analysis.denoisedL,
+            analysis.neutralizedA,
+            analysis.neutralizedB,
+            analysis.paperMask,
+            analysis.accentMask,
+            analysis.paperColorMask,
+        )
+        val finalRgb = Mat()
+        Imgproc.cvtColor(restoredBgr, finalRgb, Imgproc.COLOR_BGR2RGB)
+        debugSink.writeMat(session, "shadowless_final_rgb", finalRgb, DebugMatColor.RGB)
+        val output = bitmapFromRgb(finalRgb, source.width, source.height)
+
+        rgb.release()
+        analysis.release()
+        relaxedPaperMask.release()
+        probeL.release()
+        preserveMask.release()
+        surfaceMask.release()
+        invertedPreserveMask.release()
+        surfaceToneMask.release()
+        baseL0.release()
+        contrastedBaseL.release()
+        baseL.release()
+        liftedL.release()
+        outputL0.release()
+        outputL1.release()
+        softenedL.release()
+        outputL.release()
+        outputA.release()
+        outputB.release()
+        finalLab.release()
+        finalBgr.release()
+        restoredBgr.release()
         finalRgb.release()
 
         return output
@@ -2049,6 +2169,67 @@ class ImageProcessor @Inject constructor(
             if (area > 4800 && fillRatio > 0.12) continue
             if (longEdge > maxLongEdge && fillRatio > 0.08) continue
             if (shortEdge > maxShortEdge && fillRatio > 0.22) continue
+
+            val componentMask = Mat()
+            Core.compare(labels, Scalar.all(label.toDouble()), componentMask, Core.CMP_EQ)
+            filtered.setTo(Scalar.all(255.0), componentMask)
+            componentMask.release()
+        }
+
+        labels.release()
+        stats.release()
+        centroids.release()
+        return filtered
+    }
+
+    private fun buildShadowlessInkMask(probeL: Mat, strongStructureMask: Mat): Mat {
+        val darkThreshold = maxOf(82.0, percentileOfMat(probeL, 0.06))
+        val darkMask = Mat()
+        Imgproc.threshold(probeL, darkMask, darkThreshold, 255.0, Imgproc.THRESH_BINARY_INV)
+        val inkMask = Mat()
+        Core.bitwise_and(darkMask, strongStructureMask, inkMask)
+        val filtered = filterShadowlessInkComponents(inkMask, probeL.width(), probeL.height())
+        val dilated = Mat()
+        val kernel = Imgproc.getStructuringElement(Imgproc.MORPH_ELLIPSE, Size(2.0, 2.0))
+        Imgproc.dilate(filtered, dilated, kernel, org.opencv.core.Point(-1.0, -1.0), 1)
+
+        darkMask.release()
+        inkMask.release()
+        filtered.release()
+        kernel.release()
+        return dilated
+    }
+
+    private fun filterShadowlessInkComponents(inkMask: Mat, imageWidth: Int, imageHeight: Int): Mat {
+        val filtered = Mat(inkMask.size(), CvType.CV_8U, Scalar.all(0.0))
+        val labels = Mat()
+        val stats = Mat()
+        val centroids = Mat()
+        val numLabels = Imgproc.connectedComponentsWithStats(
+            inkMask,
+            labels,
+            stats,
+            centroids,
+            8,
+            CvType.CV_32S,
+        )
+        val maxLongSparse = maxOf(70, (maxOf(imageWidth, imageHeight) * 0.11).roundToInt())
+        val maxLongEdge = maxOf(150, (maxOf(imageWidth, imageHeight) * 0.26).roundToInt())
+        val maxShortSparse = maxOf(24, (minOf(imageWidth, imageHeight) * 0.035).roundToInt())
+
+        for (label in 1 until numLabels) {
+            val area = stats.get(label, Imgproc.CC_STAT_AREA)?.getOrNull(0)?.toInt() ?: continue
+            val width = stats.get(label, Imgproc.CC_STAT_WIDTH)?.getOrNull(0)?.toInt() ?: continue
+            val height = stats.get(label, Imgproc.CC_STAT_HEIGHT)?.getOrNull(0)?.toInt() ?: continue
+            if (area < 8) continue
+
+            val fillRatio = area.toDouble() / maxOf(1, width * height).toDouble()
+            val longEdge = maxOf(width, height)
+            val shortEdge = minOf(width, height)
+
+            if (longEdge > maxLongSparse && fillRatio < 0.22) continue
+            if (longEdge > maxLongEdge) continue
+            if (shortEdge > maxShortSparse && fillRatio < 0.35) continue
 
             val componentMask = Mat()
             Core.compare(labels, Scalar.all(label.toDouble()), componentMask, Core.CMP_EQ)

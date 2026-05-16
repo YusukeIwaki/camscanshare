@@ -662,7 +662,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">マジック以外のフィルタ</span>
-              <span class="spec-detail">くっきり・白黒・ホワイトボード・鮮やかは、Step 0 画像に対して軽量な色変換を適用して preview を生成する。保存済み状態では small / large の persisted preview を表示し、フィルタ適用時にそれらを更新する。未保存の編集中だけは working preview を再生成する。</span>
+              <span class="spec-detail">くっきり・鮮やかは軽量な色変換、強化・省エネ・影なし・白黒・Magic Pro・ホワイトボードは OpenCV の文書補正として preview を生成する。保存済み状態では small / large の persisted preview を表示し、フィルタ適用時にそれらを更新する。未保存の編集中だけは working preview を再生成する。</span>
             </li>
             <li>
               <span class="spec-element">マジックフィルタ</span>
@@ -691,8 +691,8 @@ import Layout from '../layouts/Layout.astro';
 
         <div class="spec-group">
           <h3>フィルタプリセット</h3>
-          <p>オリジナル（既定） / くっきり / 白黒 / マジック / ホワイトボード / 鮮やか の6種。</p>
-          <p>報告用撮影ページでは、この6種に加えて、フィルタパネル右端にフィルタ適用を伴わない補助アクション「開発元に報告」を配置する。通常撮影ページでは表示しない。</p>
+          <p>オリジナル（既定） / くっきり / 強化 / 省エネ / 影なし / 白黒 / マジック / Magic Pro / ホワイトボード / 鮮やか の10種。</p>
+          <p>報告用撮影ページでは、この10種に加えて、フィルタパネル右端にフィルタ適用を伴わない補助アクション「開発元に報告」を配置する。通常撮影ページでは表示しない。</p>
           <p>各フィルタの効果・パラメータの詳細は <a href="/filters">フィルタ解説ページ</a> を参照。</p>
           <p class="spec-note">※ フィルタは今後の要件に応じて追加可能な拡張設計とする。</p>
         </div>

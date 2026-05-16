@@ -36,6 +36,7 @@ struct DocumentAnalysis {
 Mat applyDocumentBwFilter(const Mat& sourceRgb);
 Mat applyEnhanceFilter(const Mat& sourceRgb);
 Mat applyEcoFilter(const Mat& sourceRgb);
+Mat applyShadowlessFilter(const Mat& sourceRgb);
 Mat applyMagicFilter(const Mat& sourceRgb);
 Mat applyMagicProFilter(const Mat& sourceRgb);
 Mat applyWhiteboardFilter(const Mat& sourceRgb);
@@ -170,6 +171,9 @@ Mat applyNamedFilter(const NSString* filterName, const Mat& rgb) {
     }
     if ([filterName isEqualToString:@"eco"]) {
         return applyEcoFilter(rgb);
+    }
+    if ([filterName isEqualToString:@"shadowless"]) {
+        return applyShadowlessFilter(rgb);
     }
     if ([filterName isEqualToString:@"magic"]) {
         return applyMagicFilter(rgb);
@@ -1458,6 +1462,71 @@ Mat filterStructureForPreservation(const Mat& structureMask, const Size& imageSi
     return filtered;
 }
 
+Mat filterShadowlessInkComponents(const Mat& inkMask, const Size& imageSize) {
+    Mat filtered(inkMask.size(), CV_8U, Scalar::all(0.0));
+    Mat labels;
+    Mat stats;
+    Mat centroids;
+    const int numLabels = cv::connectedComponentsWithStats(
+        inkMask,
+        labels,
+        stats,
+        centroids,
+        8,
+        CV_32S);
+    const int maxLongSparse = std::max(
+        70,
+        static_cast<int>(std::lround(std::max(imageSize.width, imageSize.height) * 0.11)));
+    const int maxLongEdge = std::max(
+        150,
+        static_cast<int>(std::lround(std::max(imageSize.width, imageSize.height) * 0.26)));
+    const int maxShortSparse = std::max(
+        24,
+        static_cast<int>(std::lround(std::min(imageSize.width, imageSize.height) * 0.035)));
+
+    for (int label = 1; label < numLabels; ++label) {
+        const int area = stats.at<int>(label, cv::CC_STAT_AREA);
+        const int width = stats.at<int>(label, cv::CC_STAT_WIDTH);
+        const int height = stats.at<int>(label, cv::CC_STAT_HEIGHT);
+        if (area < 8) {
+            continue;
+        }
+
+        const double fillRatio = static_cast<double>(area) / static_cast<double>(std::max(1, width * height));
+        const int longEdge = std::max(width, height);
+        const int shortEdge = std::min(width, height);
+
+        if (longEdge > maxLongSparse && fillRatio < 0.22) {
+            continue;
+        }
+        if (longEdge > maxLongEdge) {
+            continue;
+        }
+        if (shortEdge > maxShortSparse && fillRatio < 0.35) {
+            continue;
+        }
+
+        Mat componentMask;
+        cv::compare(labels, Scalar::all(label), componentMask, cv::CMP_EQ);
+        filtered.setTo(Scalar::all(255.0), componentMask);
+    }
+
+    return filtered;
+}
+
+Mat buildShadowlessInkMask(const Mat& probeL, const Mat& strongStructureMask) {
+    const double darkThreshold = std::max(82.0, percentileOfMat(probeL, 0.06));
+    Mat darkMask;
+    cv::threshold(probeL, darkMask, darkThreshold, 255.0, cv::THRESH_BINARY_INV);
+    Mat inkMask;
+    cv::bitwise_and(darkMask, strongStructureMask, inkMask);
+    Mat filtered = filterShadowlessInkComponents(inkMask, probeL.size());
+    Mat dilated;
+    Mat kernel = cv::getStructuringElement(cv::MORPH_ELLIPSE, Size(2, 2));
+    cv::dilate(filtered, dilated, kernel, Point(-1, -1), 1);
+    return dilated;
+}
+
 Mat boostMagicProColors(
     const Mat& bgr,
     const Mat& paperColorMask,
@@ -1674,6 +1743,75 @@ Mat applyMagicProFilter(const Mat& sourceRgb) {
         : restoredBgr.clone();
     Mat finalRgb;
     cv::cvtColor(boostedBgr, finalRgb, cv::COLOR_BGR2RGB);
+    return finalRgb;
+}
+
+Mat applyShadowlessFilter(const Mat& sourceRgb) {
+    const auto analysis = prepareDocumentAnalysis(sourceRgb);
+    const double colorRichness = analysis.colorRichness;
+
+    Mat relaxedPaperMask = buildRelaxedPaperMask(
+        analysis.flattenedL,
+        analysis.neutralizedA,
+        analysis.neutralizedB);
+    Mat surfaceMask;
+    cv::bitwise_or(relaxedPaperMask, analysis.paperColorMask, surfaceMask);
+    Mat probeL;
+    cv::addWeighted(analysis.denoisedL, 0.35, analysis.flattenedL, 0.65, 0.0, probeL);
+    Mat preserveMask = buildShadowlessInkMask(probeL, analysis.strongStructureMask);
+    Mat invertedPreserveMask = invertMask(preserveMask);
+    Mat surfaceToneMask;
+    cv::bitwise_and(surfaceMask, invertedPreserveMask, surfaceToneMask);
+
+    const double flatMix = 0.64 + 0.14 * colorRichness;
+    Mat baseL0;
+    cv::addWeighted(
+        analysis.denoisedL,
+        std::max(0.0, 1.0 - flatMix),
+        analysis.flattenedL,
+        std::min(1.0, flatMix),
+        0.0,
+        baseL0);
+    Mat contrastedBaseL = applyChannelContrast(baseL0, 1.10);
+    Mat baseL;
+    cv::addWeighted(baseL0, 0.82, contrastedBaseL, 0.18, 0.0, baseL);
+    Mat liftedL = liftShadowedPaper(baseL, surfaceToneMask, 0.88, 15.0);
+    Mat outputL0 = blendTowardValue(liftedL, surfaceToneMask, 253.0, 0.72);
+    Mat outputL1 = colorRichness > 0.35
+        ? blendMaskedTowardReference(outputL0, liftedL, analysis.paperColorMask, 0.10)
+        : outputL0.clone();
+    Mat softenedL = softenPaperTexture(
+        outputL1,
+        surfaceToneMask,
+        preserveMask,
+        3.2,
+        0.45);
+    Mat outputL = softenedL.clone();
+
+    auto [outputA, outputB] = buildDocumentChromaOutputs(
+        analysis.neutralizedA,
+        analysis.neutralizedB,
+        analysis.paperMask,
+        analysis.paperColorMask,
+        analysis.accentMask,
+        0.12 + 0.06 * colorRichness,
+        0.62 + 0.18 * colorRichness,
+        std::min(1.0, 0.98 + 0.02 * colorRichness));
+
+    Mat finalLab;
+    cv::merge(std::vector<Mat>{outputL, outputA, outputB}, finalLab);
+    Mat finalBgr;
+    cv::cvtColor(finalLab, finalBgr, cv::COLOR_Lab2BGR);
+    Mat restoredBgr = restoreContentSaturation(
+        finalBgr,
+        analysis.denoisedL,
+        analysis.neutralizedA,
+        analysis.neutralizedB,
+        analysis.paperMask,
+        analysis.accentMask,
+        analysis.paperColorMask);
+    Mat finalRgb;
+    cv::cvtColor(restoredBgr, finalRgb, cv::COLOR_BGR2RGB);
     return finalRgb;
 }
 

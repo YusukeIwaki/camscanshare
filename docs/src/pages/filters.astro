@@ -40,6 +40,14 @@ const filters = [
     detail: '改善レポートでは見た目以上に紙面整形が強かったので、白地のしみや弱い影はかなり持ち上げる一方、色付きポスターや既に良い文書では Magic Pro ほど強く白化しない位置を狙っている。',
   },
   {
+    key: 'shadowless',
+    name: '影なし',
+    navLabel: '影なし',
+    description: 'CamScanner の「影なし」に近い、紙面の影・しわ・繊維感を抑えた白地整形フィルタ。',
+    formula: 'Flat-field correction → relaxed paper mask → ink-only preserve mask → shadow lift → paper texture smoothing',
+    detail: 'Magic Pro の文書解析を土台にしつつ、保護対象は影なし専用の ink mask で文字・濃い罫線へ絞る。しわ、折り目、紙繊維は紙面トーンとして白方向へ持ち上げ、白黒のような固定しきい値二値化は行わない。',
+  },
+  {
     key: 'bw',
     name: '白黒',
     navLabel: '白黒',
