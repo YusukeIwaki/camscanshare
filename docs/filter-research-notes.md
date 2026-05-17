@@ -1,5 +1,29 @@
 # Filter Research Notes
 
+## 2026-05-17: Wang 2020/2019 shadow-removal preprocessing before white-black not adopted
+
+References:
+
+- https://github.com/CV-Reimplementation/TraditionalDocumentShadowRemoval
+- [1] Wang, J.R. and Chuang, Y.Y., 2020. Shadow removal of text document images by estimating local and global background colors.
+- [2] Wang, B. and Chen, C.P., 2019. An effective background estimation method for shadows removal of document images.
+
+Tested two docs-side white-black variants:
+
+- `[1]+白黒`: approximate local/global background color shadow removal before the existing white-black pipeline.
+- `[2]+白黒`: approximate effective background estimation and tone adjustment before the existing white-black pipeline.
+
+Result: neither variant was effective enough to keep. The existing white-black pipeline already does flat-field correction and local-mean normalization, so adding a traditional shadow-removal pass before it mostly produced small binarization differences. In several samples the variants slightly increased black pixels, wrinkle marks, or fine-line darkness instead of cleaning the background.
+
+Sample-specific notes:
+
+- `report-clean-paper-ios`: `[2]+白黒` increased black specks and wrinkle marks; `[1]+白黒` was closer to existing but not cleaner.
+- `report-noisy-bw-android`: both variants left the major fold/shadow artifacts; `[2]+白黒` added more dark pixels.
+- `math-cheat-sheet`, `tax`, `notepad`, and `whiteboard-kazakoshi`: variants tended to darken fine structure or ruled lines slightly without improving readability.
+- `report-kids-poster-color`: `[1]+白黒` reduced some filled dark texture, but this was content-specific and did not offset the regressions.
+
+Decision: revert the docs filter sections, Python prototype code, and generated comparison assets. Keep only this note; do not move either preprocessing step into Android/iOS.
+
 ## 2026-05-17: White-black noise reduction prototypes not adopted
 
 References:
