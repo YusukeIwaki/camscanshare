@@ -27,6 +27,16 @@ source .envrc
 ./gradlew assembleDebug
 ```
 
+## Python Environment
+
+Use the repository-local virtual environment for Python work:
+
+```bash
+.venv/bin/python <script>
+```
+
+Do not infer missing Python dependencies from the system `python3`. The repo's `.venv` is the expected environment for filter scripts and includes packages such as OpenCV (`cv2`) and NumPy. When checking imports, dependency versions, or running scripts under `scripts/`, use `.venv/bin/python` unless a task explicitly says otherwise.
+
 ## Filter Evaluation Mission
 
 - `docs/src/pages/filters.astro` and `http://localhost:4321/filters` are the primary evaluation surface for filters. This page exists so humans can quickly compare before/after results across many samples.
