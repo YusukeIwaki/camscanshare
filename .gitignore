@@ -6,6 +6,7 @@ tmp/
 /iosapp/CamScanShare.xcodeproj/project.pbxproj
 /iosapp/build/
 /iosapp/ExportOptions.plist
+/android_release_build.sh
 
 # Private local evaluation sample from report_server/reports/report-2026-05-16_10-08-44.
 /docs/filter-samples.local.json

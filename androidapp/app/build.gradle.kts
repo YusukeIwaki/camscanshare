@@ -21,6 +21,23 @@ android {
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     }
 
+    signingConfigs {
+        create("release") {
+            val keystorePath = System.getenv("CAMSCANSHARE_KEYSTORE_PATH")
+                ?: rootProject.file("release.keystore").absolutePath
+            val keystorePassword = System.getenv("CAMSCANSHARE_KEYSTORE_PASSWORD")
+            val keyAliasEnv = System.getenv("CAMSCANSHARE_KEY_ALIAS")
+            val keyPasswordEnv = System.getenv("CAMSCANSHARE_KEY_PASSWORD")
+
+            if (keystorePassword != null && keyAliasEnv != null && keyPasswordEnv != null) {
+                storeFile = file(keystorePath)
+                storePassword = keystorePassword
+                keyAlias = keyAliasEnv
+                keyPassword = keyPasswordEnv
+            }
+        }
+    }
+
     buildTypes {
         release {
             isMinifyEnabled = true
@@ -28,6 +45,10 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
+            val releaseSigning = signingConfigs.getByName("release")
+            if (releaseSigning.storeFile != null) {
+                signingConfig = releaseSigning
+            }
         }
     }
 
