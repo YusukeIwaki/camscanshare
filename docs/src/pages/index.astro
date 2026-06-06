@@ -269,7 +269,7 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list">
             <li>
               <span class="spec-element">カメラビューファインダー</span>
-              <span class="spec-detail">デバイスカメラのリアルタイムプレビューを全画面表示。UIを最小限にしてファインダー領域を最大化。</span>
+              <span class="spec-detail">Android では 3:4 のビューファインダーを画面中央に表示し、CameraX の 4:3 キャプチャ全体に近い範囲を見せる。全画面クロップで紙が実際のキャプチャ内で小さく写ることを避け、ユーザーが紙をこの枠いっぱいに寄せて撮影できるようにする。iOS は現行の全画面プレビューを維持する。</span>
             </li>
             <li>
               <span class="spec-element">紙検出ガイド（矩形オーバーレイ）</span>
@@ -329,7 +329,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">リアルタイム検出の安定化</span>
-              <span class="spec-detail">カメラプレビュー中のオーバーレイ表示は、直近7フレームの検出結果を保持し、3フレーム以上で合意がある場合に各コーナーの中央値を返す。検出が一時的に失われた場合も最後の有効結果を500ms間保持し、枠の消失を防止する。さらに、コーナー座標の変化はアニメーション補間（150ms）で描画し、フレーム間の微小な座標変動による視覚的なちらつきを抑える。</span>
+              <span class="spec-detail">カメラプレビュー中のオーバーレイ表示は、直近7フレームの検出結果を保持し、3フレーム以上で合意がある場合に各コーナーの中央値を返す。検出が一時的に失われた場合も最後の有効結果を500ms間保持し、枠の消失を防止する。さらに、コーナー座標の変化はアニメーション補間（150ms）で描画し、フレーム間の微小な座標変動による視覚的なちらつきを抑える。Android では 3:4 ビューファインダー内の FIT_CENTER 表示に合わせて座標を変換し、全画面の黒帯部分には検出枠を描かない。</span>
             </li>
             <li>
               <span class="spec-element">保存時の Step 0 生成</span>

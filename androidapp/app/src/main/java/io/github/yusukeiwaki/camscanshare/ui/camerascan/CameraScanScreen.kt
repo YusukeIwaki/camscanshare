@@ -15,7 +15,6 @@ import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
-import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -30,10 +29,13 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBarsPadding
@@ -84,6 +86,8 @@ import io.github.yusukeiwaki.camscanshare.ui.components.SmallPreviewImage
 import kotlinx.coroutines.delay
 import java.util.concurrent.Executors
 
+private const val CAMERA_PREVIEW_ASPECT_RATIO = 3f / 4f
+
 @Composable
 fun CameraScanScreen(
     documentId: Long,
@@ -121,16 +125,10 @@ fun CameraScanScreen(
         else permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
-    val imageCapture = remember {
-        ImageCapture.Builder()
-            .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
-            .setJpegQuality(95)
-            .setResolutionSelector(
-                ResolutionSelector.Builder()
-                    .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
-                    .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
-                    .build()
-            )
+    val imageCapture = remember { ImageCapture.Builder().build() }
+    val previewResolutionSelector = remember {
+        ResolutionSelector.Builder()
+            .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
             .build()
     }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
@@ -159,109 +157,119 @@ fun CameraScanScreen(
 
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         if (cameraPermissionGranted) {
-            // Camera preview with ImageAnalysis for detection
-            AndroidView(
-                factory = { ctx ->
-                    PreviewView(ctx).also { previewView ->
-                        val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
-                        cameraProviderFuture.addListener({
-                            val cameraProvider = cameraProviderFuture.get()
-                            val preview = Preview.Builder().build().also {
-                                it.surfaceProvider = previewView.surfaceProvider
-                            }
-
-                            val imageAnalysis = ImageAnalysis.Builder()
-                                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                                .build()
-                                .also { analysis ->
-                                    analysis.setAnalyzer(cameraExecutor) { imageProxy ->
-                                        try {
-                                            val bitmap = imageProcessor.toBitmapWithCorrectRotation(imageProxy)
-                                            analysisImageAspectRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
-                                            val corners = paperDetector.value.detectStabilized(bitmap)
-                                            detectedCorners = corners
-                                            bitmap.recycle()
-                                        } catch (e: Exception) {
-                                            Log.e("CameraScan", "Detection failed", e)
-                                        } finally {
-                                            imageProxy.close()
-                                        }
-                                    }
-                                }
-
-                            try {
-                                cameraProvider.unbindAll()
-                                cameraProvider.bindToLifecycle(
-                                    lifecycleOwner,
-                                    CameraSelector.DEFAULT_BACK_CAMERA,
-                                    preview,
-                                    imageCapture,
-                                    imageAnalysis,
-                                )
-                            } catch (e: Exception) {
-                                Log.e("CameraScan", "Camera bind failed", e)
-                            }
-                        }, ContextCompat.getMainExecutor(ctx))
-                    }
-                },
+            BoxWithConstraints(
                 modifier = Modifier.fillMaxSize(),
-            )
+                contentAlignment = Alignment.Center,
+            ) {
+                val containerAspect = if (maxHeight.value > 0f) {
+                    maxWidth.value / maxHeight.value
+                } else {
+                    CAMERA_PREVIEW_ASPECT_RATIO
+                }
+                val viewfinderModifier = if (containerAspect > CAMERA_PREVIEW_ASPECT_RATIO) {
+                    Modifier
+                        .fillMaxHeight()
+                        .aspectRatio(CAMERA_PREVIEW_ASPECT_RATIO, matchHeightConstraintsFirst = true)
+                } else {
+                    Modifier
+                        .fillMaxWidth()
+                        .aspectRatio(CAMERA_PREVIEW_ASPECT_RATIO)
+                }
 
-            // Detection overlay — maps normalized image coords to preview coords
-            // PreviewView uses FILL scale type: image is scaled up to fill the view, center-cropped
-            // Animate corner positions for smooth visual transition between frames
-            val corners = detectedCorners
-            val animatedCorners = corners?.mapIndexed { i, pt ->
-                val ax by animateFloatAsState(pt.x, tween(150), label = "cx$i")
-                val ay by animateFloatAsState(pt.y, tween(150), label = "cy$i")
-                PointF(ax, ay)
-            }
-            if (animatedCorners != null && animatedCorners.size == 4) {
-                @Suppress("NAME_SHADOWING")
-                val corners = animatedCorners
-                Canvas(modifier = Modifier.fillMaxSize()) {
-                    val viewW = size.width
-                    val viewH = size.height
-                    val viewAspect = viewW / viewH
-                    val imgAspect = analysisImageAspectRatio
+                Box(modifier = viewfinderModifier.background(Color.Black)) {
+                    // Camera preview with ImageAnalysis for detection. The viewfinder is 3:4
+                    // portrait so it matches the usual 4:3 capture frame without side cropping.
+                    AndroidView(
+                        factory = { ctx ->
+                            PreviewView(ctx).also { previewView ->
+                                previewView.scaleType = PreviewView.ScaleType.FIT_CENTER
+                                val cameraProviderFuture = ProcessCameraProvider.getInstance(ctx)
+                                cameraProviderFuture.addListener({
+                                    val cameraProvider = cameraProviderFuture.get()
+                                    val preview = Preview.Builder()
+                                        .setResolutionSelector(previewResolutionSelector)
+                                        .build()
+                                        .also {
+                                            it.surfaceProvider = previewView.surfaceProvider
+                                        }
 
-                    // FILL: use the larger scale so image covers the entire view
-                    val scale: Float
-                    val offsetX: Float
-                    val offsetY: Float
-                    if (imgAspect > viewAspect) {
-                        // Image is wider than view → crop left/right
-                        scale = viewH // normalized coords * viewH = pixel in scaled image height
-                        val scaledImgW = viewH * imgAspect
-                        offsetX = (scaledImgW - viewW) / 2f
-                        offsetY = 0f
-                    } else {
-                        // Image is taller than view → crop top/bottom
-                        scale = viewW / imgAspect
-                        offsetX = 0f
-                        val scaledImgH = viewW / imgAspect
-                        offsetY = (scaledImgH - viewH) / 2f
+                                    val imageAnalysis = ImageAnalysis.Builder()
+                                        .setResolutionSelector(previewResolutionSelector)
+                                        .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+                                        .build()
+                                        .also { analysis ->
+                                            analysis.setAnalyzer(cameraExecutor) { imageProxy ->
+                                                try {
+                                                    val bitmap = imageProcessor.toBitmapWithCorrectRotation(imageProxy)
+                                                    analysisImageAspectRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
+                                                    val corners = paperDetector.value.detectStabilized(bitmap)
+                                                    detectedCorners = corners
+                                                    bitmap.recycle()
+                                                } catch (e: Exception) {
+                                                    Log.e("CameraScan", "Detection failed", e)
+                                                } finally {
+                                                    imageProxy.close()
+                                                }
+                                            }
+                                        }
+
+                                    try {
+                                        cameraProvider.unbindAll()
+                                        cameraProvider.bindToLifecycle(
+                                            lifecycleOwner,
+                                            CameraSelector.DEFAULT_BACK_CAMERA,
+                                            preview,
+                                            imageCapture,
+                                            imageAnalysis,
+                                        )
+                                    } catch (e: Exception) {
+                                        Log.e("CameraScan", "Camera bind failed", e)
+                                    }
+                                }, ContextCompat.getMainExecutor(ctx))
+                            }
+                        },
+                        modifier = Modifier.fillMaxSize(),
+                    )
+
+                    // Detection overlay maps normalized image coords into the FIT_CENTER preview.
+                    val corners = detectedCorners
+                    val animatedCorners = corners?.mapIndexed { i, pt ->
+                        val ax by animateFloatAsState(pt.x, tween(150), label = "cx$i")
+                        val ay by animateFloatAsState(pt.y, tween(150), label = "cy$i")
+                        PointF(ax, ay)
                     }
+                    if (animatedCorners != null && animatedCorners.size == 4) {
+                        @Suppress("NAME_SHADOWING")
+                        val corners = animatedCorners
+                        Canvas(modifier = Modifier.fillMaxSize()) {
+                            val viewW = size.width
+                            val viewH = size.height
+                            val viewAspect = viewW / viewH
+                            val imgAspect = analysisImageAspectRatio
 
-                    val pts = corners.map { corner ->
-                        val imgX = corner.x * viewH * imgAspect  // if wider
-                        val imgY = corner.y * viewH
-                        if (imgAspect > viewAspect) {
-                            Offset(corner.x * (viewH * imgAspect) - offsetX, corner.y * viewH - offsetY)
-                        } else {
-                            Offset(corner.x * (viewW) - offsetX, corner.y * (viewW / imgAspect) - offsetY)
+                            val pts = corners.map { corner ->
+                                if (imgAspect > viewAspect) {
+                                    val scaledImgH = viewW / imgAspect
+                                    val offsetY = (viewH - scaledImgH) / 2f
+                                    Offset(corner.x * viewW, offsetY + corner.y * scaledImgH)
+                                } else {
+                                    val scaledImgW = viewH * imgAspect
+                                    val offsetX = (viewW - scaledImgW) / 2f
+                                    Offset(offsetX + corner.x * scaledImgW, corner.y * viewH)
+                                }
+                            }
+
+                            val path = Path().apply {
+                                moveTo(pts[0].x, pts[0].y)
+                                pts.drop(1).forEach { lineTo(it.x, it.y) }
+                                close()
+                            }
+                            drawPath(path, Color(0x181A73E8))
+                            drawPath(path, Color(0xFF1A73E8), style = Stroke(width = 3f))
+                            for (pt in pts) {
+                                drawCircle(Color(0xFF1A73E8), radius = 8f, center = pt)
+                            }
                         }
-                    }
-
-                    val path = Path().apply {
-                        moveTo(pts[0].x, pts[0].y)
-                        pts.drop(1).forEach { lineTo(it.x, it.y) }
-                        close()
-                    }
-                    drawPath(path, Color(0x181A73E8))
-                    drawPath(path, Color(0xFF1A73E8), style = Stroke(width = 3f))
-                    for (pt in pts) {
-                        drawCircle(Color(0xFF1A73E8), radius = 8f, center = pt)
                     }
                 }
             }

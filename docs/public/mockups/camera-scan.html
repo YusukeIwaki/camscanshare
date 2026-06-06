@@ -24,18 +24,30 @@
     overflow: hidden;
   }
 
-  /* Full-screen viewfinder */
+  /* 3:4 viewfinder that matches the Android capture frame */
   .viewfinder {
     position: absolute;
     inset: 0;
+    background: #000;
+    overflow: hidden;
+  }
+
+  .camera-feed,
+  #paperContainer,
+  .detection-guide {
+    position: absolute;
+    width: 100%;
+    max-height: 100%;
+    aspect-ratio: 3/4;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
     overflow: hidden;
   }
 
   .camera-feed {
-    position: absolute;
-    inset: 0;
     background: linear-gradient(135deg, #2a2a2a 0%, #1a1a1a 30%, #222 60%, #1e1e1e 100%);
-    overflow: hidden;
+    z-index: 0;
   }
 
   .camera-feed::after {
@@ -72,15 +84,11 @@
   }
 
   #paperContainer {
-    position: absolute;
-    inset: 0;
     z-index: 1;
   }
 
   /* Paper Detection Guide */
   .detection-guide {
-    position: absolute;
-    inset: 0;
     z-index: 5;
     pointer-events: none;
   }
@@ -495,7 +503,7 @@ function createPaperEl(docType) {
 }
 
 function spawnPaper() {
-  const viewfinder = document.querySelector('.viewfinder');
+  const viewfinder = document.querySelector('.camera-feed');
   const vw = viewfinder.offsetWidth;
   const vh = viewfinder.offsetHeight;
 
