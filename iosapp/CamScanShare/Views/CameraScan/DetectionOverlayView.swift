@@ -9,7 +9,7 @@ struct DetectionOverlayView: View {
         Canvas { context, size in
             guard let rect = rectangle else { return }
 
-            // Convert normalized Vision coordinates (bottom-left origin, 0-1) to view coordinates
+            // Convert normalized bottom-left-origin coordinates to view coordinates.
             let tl = convertPoint(rect.topLeft, in: size)
             let tr = convertPoint(rect.topRight, in: size)
             let bl = convertPoint(rect.bottomLeft, in: size)

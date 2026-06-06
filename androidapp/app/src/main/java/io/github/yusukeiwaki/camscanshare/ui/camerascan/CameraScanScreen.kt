@@ -13,6 +13,9 @@ import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
 import androidx.camera.core.Preview
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.camera.core.resolutionselector.AspectRatioStrategy
+import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.view.PreviewView
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.Animatable
@@ -118,7 +121,18 @@ fun CameraScanScreen(
         else permissionLauncher.launch(Manifest.permission.CAMERA)
     }
 
-    val imageCapture = remember { ImageCapture.Builder().build() }
+    val imageCapture = remember {
+        ImageCapture.Builder()
+            .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+            .setJpegQuality(95)
+            .setResolutionSelector(
+                ResolutionSelector.Builder()
+                    .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+                    .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
+                    .build()
+            )
+            .build()
+    }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     val normalDebugSink = remember { ImageProcessingDebugSink.noOp() }
     val imageProcessor = remember(normalDebugSink) { ImageProcessor(normalDebugSink) }
@@ -453,10 +467,12 @@ fun CameraScanScreen(
                                         }
                                         var bitmap = captureImageProcessor.toBitmapWithCorrectRotation(image)
                                         image.close()
+                                        Log.d("CameraScan", "Captured image size: ${bitmap.width}x${bitmap.height}")
                                         // Re-detect paper in the captured image and apply perspective correction
                                         val corners = capturePaperDetector.detectForCapture(bitmap, previewCornersAtCapture)
                                         if (corners != null && corners.size == 4) {
                                             val corrected = capturePaperDetector.correctDocumentGeometry(bitmap, corners)
+                                            Log.d("CameraScan", "Corrected image size: ${corrected.width}x${corrected.height}")
                                             bitmap.recycle()
                                             bitmap = corrected
                                         }

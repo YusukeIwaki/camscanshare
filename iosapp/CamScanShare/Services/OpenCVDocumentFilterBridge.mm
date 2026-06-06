@@ -9,6 +9,7 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <optional>
 #include <utility>
 #include <vector>
 
@@ -43,6 +44,28 @@ struct DocumentCornerCandidate {
     double score = -1.0;
     bool valid = false;
 };
+
+struct EdgeStrategyConfig {
+    int blurSize;
+    double cannyLow;
+    double cannyHigh;
+    int dilateSize;
+    bool automatic;
+};
+
+struct DocumentDetectionConfig {
+    double detectSize;
+    double minAreaRatio;
+    double coloredMinAreaRatio;
+    double paperMinAreaRatio;
+    size_t maxCandidates;
+    size_t coloredMaxCandidates;
+    std::vector<double> epsilonCandidates;
+    bool allowMinAreaRect;
+    std::vector<EdgeStrategyConfig> strategies;
+};
+
+constexpr double EdgeSupportScoreWeight = 0.18;
 
 std::vector<uint8_t> bytesOfMat(const Mat& mat) {
     Mat continuous = mat.isContinuous() ? mat : mat.clone();
@@ -284,13 +307,115 @@ std::array<Point2f, 4> orderDocumentPoints(const std::vector<Point2f>& points) {
     return ordered;
 }
 
+DocumentDetectionConfig documentDetectionConfig(bool preview) {
+    if (preview) {
+        return {
+            500.0,
+            0.05,
+            0.08,
+            0.05,
+            12,
+            24,
+            {0.02, 0.03, 0.04, 0.05},
+            false,
+            {
+                {5, 30.0, 50.0, 5, false},
+                {5, 50.0, 150.0, 5, false},
+                {5, 75.0, 200.0, 5, false},
+                {11, 30.0, 100.0, 5, false},
+            },
+        };
+    }
+
+    return {
+        900.0,
+        0.02,
+        0.04,
+        0.03,
+        40,
+        40,
+        {0.015, 0.02, 0.025, 0.03, 0.04, 0.05, 0.06},
+        false,
+        {
+            {3, 30.0, 50.0, 3, false},
+            {5, 50.0, 150.0, 3, false},
+            {7, 75.0, 200.0, 3, false},
+            {3, 0.33, 0.0, 3, true},
+            {5, 0.50, 0.0, 3, true},
+        },
+    };
+}
+
+std::array<Point2f, 4> normalizedDocumentPoints(
+    const std::array<Point2f, 4>& points,
+    int imageWidth,
+    int imageHeight
+) {
+    std::array<Point2f, 4> normalized = points;
+    const float width = static_cast<float>(std::max(1, imageWidth));
+    const float height = static_cast<float>(std::max(1, imageHeight));
+    for (Point2f& point : normalized) {
+        point.x = point.x / width;
+        point.y = point.y / height;
+    }
+    return normalized;
+}
+
+Point2f centerOfNormalizedQuad(const std::array<Point2f, 4>& points) {
+    Point2f center(0.0f, 0.0f);
+    for (const Point2f& point : points) {
+        center.x += point.x;
+        center.y += point.y;
+    }
+    center.x /= 4.0f;
+    center.y /= 4.0f;
+    return center;
+}
+
+double normalizedPolygonArea(const std::array<Point2f, 4>& points) {
+    double area = 0.0;
+    for (size_t index = 0; index < points.size(); index++) {
+        const Point2f& current = points[index];
+        const Point2f& next = points[(index + 1) % points.size()];
+        area += static_cast<double>(current.x) * next.y - static_cast<double>(current.y) * next.x;
+    }
+    return std::abs(area) / 2.0;
+}
+
+bool matchesAnchor(
+    const std::array<Point2f, 4>& candidate,
+    const std::optional<std::array<Point2f, 4>>& anchor
+) {
+    if (!anchor.has_value()) {
+        return true;
+    }
+
+    double totalDistance = 0.0;
+    double maxDistance = 0.0;
+    for (size_t index = 0; index < candidate.size(); index++) {
+        const double distance = pointDistance(candidate[index], anchor.value()[index]);
+        totalDistance += distance;
+        maxDistance = std::max(maxDistance, distance);
+    }
+
+    const double meanDistance = totalDistance / static_cast<double>(candidate.size());
+    const double centerDistance = pointDistance(centerOfNormalizedQuad(candidate), centerOfNormalizedQuad(anchor.value()));
+    const double candidateArea = normalizedPolygonArea(candidate);
+    const double anchorArea = normalizedPolygonArea(anchor.value());
+    const double areaRatio = std::min(candidateArea, anchorArea) / std::max(0.0001, std::max(candidateArea, anchorArea));
+
+    return meanDistance <= 0.16
+        && maxDistance <= 0.28
+        && centerDistance <= 0.17
+        && areaRatio >= 0.50;
+}
+
 double scoreDocumentQuad(
     const std::array<Point2f, 4>& quad,
     double area,
     double imageArea,
     int imageWidth,
-    int imageHeight,
-    double sourceBonus
+    int imageHeight
 ) {
     const double areaRatio = area / std::max(1.0, imageArea);
 
@@ -320,7 +445,15 @@ double scoreDocumentQuad(
     const double centerDistance = std::sqrt(normalizedDx * normalizedDx + normalizedDy * normalizedDy);
     const double centerScore = std::max(0.0, 1.0 - centerDistance / 0.50);
 
-    double edgePenalty = 0.0;
+    return angleScore * 0.45 + parallelScore * 0.35 + areaRatio * 0.10 + centerScore * 0.10;
+}
+
+double coloredEdgePenalty(
+    const std::array<Point2f, 4>& quad,
+    int imageWidth,
+    int imageHeight,
+    double sourceBonus
+) {
     if (sourceBonus > 0.0) {
         const float marginX = static_cast<float>(imageWidth) * 0.02f;
         const float marginY = static_cast<float>(imageHeight) * 0.02f;
@@ -337,12 +470,61 @@ double scoreDocumentQuad(
         const int touchedSides = static_cast<int>(touchesLeft) + static_cast<int>(touchesRight)
             + static_cast<int>(touchesTop) + static_cast<int>(touchesBottom);
         if (touchedSides >= 3) {
-            edgePenalty = 0.35;
+            return 0.35;
         }
     }
+    return 0.0;
+}
 
-    return angleScore * 0.45 + parallelScore * 0.35 + areaRatio * 0.10 + centerScore * 0.10
-        + sourceBonus - edgePenalty;
+Mat buildEdgeSupportMap(const Mat& gray) {
+    Mat blurred;
+    cv::GaussianBlur(gray, blurred, Size(5, 5), 0.0);
+
+    Mat canny;
+    cv::Canny(blurred, canny, 40.0, 70.0, 3, false);
+
+    Mat gradX;
+    Mat gradY;
+    cv::Sobel(blurred, gradX, CV_16S, 1, 0, 3);
+    cv::Sobel(blurred, gradY, CV_16S, 0, 1, 3);
+
+    Mat absX;
+    Mat absY;
+    cv::convertScaleAbs(gradX, absX);
+    cv::convertScaleAbs(gradY, absY);
+
+    Mat sobel;
+    cv::addWeighted(absX, 0.5, absY, 0.5, 0.0, sobel);
+
+    Mat support;
+    cv::max(canny, sobel, support);
+    Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, Size(3, 3));
+    cv::dilate(support, support, kernel);
+    return support;
+}
+
+double scoreEdgeSupport(
+    const std::array<Point2f, 4>& quad,
+    const Mat& edgeSupportMap,
+    int imageWidth,
+    int imageHeight
+) {
+    if (edgeSupportMap.empty()) {
+        return 0.0;
+    }
+
+    Mat lineMask = Mat::zeros(edgeSupportMap.size(), CV_8U);
+    const int thickness = std::max(3, std::min(imageWidth, imageHeight) / 120);
+    for (size_t index = 0; index < quad.size(); index++) {
+        cv::line(
+            lineMask,
+            quad[index],
+            quad[(index + 1) % quad.size()],
+            Scalar::all(255.0),
+            thickness);
+    }
+
+    return std::max(0.0, std::min(1.0, cv::mean(edgeSupportMap, lineMask)[0] / 255.0));
 }
 
 std::vector<std::pair<std::array<Point2f, 4>, double>> collectDocumentCandidates(
@@ -351,7 +533,8 @@ std::vector<std::pair<std::array<Point2f, 4>, double>> collectDocumentCandidates
     double sourceBonus,
     const std::vector<double>& epsilonCandidates,
     size_t maxCandidates,
-    bool allowMinAreaRect
+    bool allowMinAreaRect,
+    const Mat& edgeSupportMap
 ) {
     std::vector<std::vector<Point>> contours;
     cv::findContours(mask, contours, cv::RETR_LIST, cv::CHAIN_APPROX_SIMPLE);
@@ -374,36 +557,42 @@ std::vector<std::pair<std::array<Point2f, 4>, double>> collectDocumentCandidates
         }
 
         const double perimeter = cv::arcLength(contour2f, true);
-        std::vector<Point2f> candidatePoints;
-        bool accepted = false;
+        bool acceptedApprox = false;
         for (double epsilon : epsilonCandidates) {
             std::vector<Point2f> polygon;
             cv::approxPolyDP(contour2f, polygon, epsilon * perimeter, true);
             if (polygon.size() == 4 && cv::isContourConvex(polygon)) {
-                candidatePoints = polygon;
-                accepted = true;
-                break;
+                acceptedApprox = true;
+                const auto ordered = orderDocumentPoints(polygon);
+                const double score = scoreDocumentQuad(
+                    ordered,
+                    area,
+                    static_cast<double>(mask.cols) * mask.rows,
+                    mask.cols,
+                    mask.rows)
+                    + scoreEdgeSupport(ordered, edgeSupportMap, mask.cols, mask.rows) * EdgeSupportScoreWeight
+                    + sourceBonus
+                    - coloredEdgePenalty(ordered, mask.cols, mask.rows, sourceBonus);
+                candidates.emplace_back(ordered, score);
             }
         }
-        if (!accepted && allowMinAreaRect) {
+        if (!acceptedApprox && allowMinAreaRect) {
             cv::RotatedRect rect = cv::minAreaRect(contour2f);
             Point2f box[4];
             rect.points(box);
-            candidatePoints.assign(box, box + 4);
+            std::vector<Point2f> candidatePoints(box, box + 4);
+            const auto ordered = orderDocumentPoints(candidatePoints);
+            const double score = scoreDocumentQuad(
+                ordered,
+                area,
+                static_cast<double>(mask.cols) * mask.rows,
+                mask.cols,
+                mask.rows)
+                + scoreEdgeSupport(ordered, edgeSupportMap, mask.cols, mask.rows) * EdgeSupportScoreWeight
+                + sourceBonus
+                - coloredEdgePenalty(ordered, mask.cols, mask.rows, sourceBonus);
+            candidates.emplace_back(ordered, score);
         }
-        if (candidatePoints.empty()) {
-            continue;
-        }
-
-        const auto ordered = orderDocumentPoints(candidatePoints);
-        const double score = scoreDocumentQuad(
-            ordered,
-            area,
-            static_cast<double>(mask.cols) * mask.rows,
-            mask.cols,
-            mask.rows,
-            sourceBonus);
-        candidates.emplace_back(ordered, score);
     }
     return candidates;
 }
@@ -453,10 +642,6 @@ Mat buildCannyMask(
     cv::Canny(blurred, edges, low, high);
     Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, Size(dilateSize, dilateSize));
     cv::dilate(edges, edges, kernel);
-    Mat closeKernel = cv::getStructuringElement(
-        cv::MORPH_RECT,
-        Size(std::max(3, dilateSize + 2), std::max(3, dilateSize + 2)));
-    cv::morphologyEx(edges, edges, cv::MORPH_CLOSE, closeKernel, Point(-1, -1), 1);
     return edges;
 }
 
@@ -487,10 +672,6 @@ DebugCannyImages buildDebugCannyImages(
     cv::Canny(images.blurred, images.rawEdges, low, high);
     Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, Size(dilateSize, dilateSize));
     cv::dilate(images.rawEdges, images.dilatedEdges, kernel);
-    Mat closeKernel = cv::getStructuringElement(
-        cv::MORPH_RECT,
-        Size(std::max(3, dilateSize + 2), std::max(3, dilateSize + 2)));
-    cv::morphologyEx(images.dilatedEdges, images.dilatedEdges, cv::MORPH_CLOSE, closeKernel, Point(-1, -1), 1);
     return images;
 }
 
@@ -582,21 +763,27 @@ Mat buildPaperCandidateMask(const Mat& rgb) {
     return mask;
 }
 
-DocumentCornerCandidate detectDocumentCornerCandidate(const Mat& sourceRgb) {
+DocumentCornerCandidate detectDocumentCornerCandidate(
+    const Mat& sourceRgb,
+    bool previewMode,
+    const std::optional<std::array<Point2f, 4>>& anchor
+) {
     DocumentCornerCandidate best;
     if (sourceRgb.empty()) {
         return best;
     }
 
+    const DocumentDetectionConfig config = documentDetectionConfig(previewMode);
     Mat resized = sourceRgb;
     const int maxSide = std::max(sourceRgb.cols, sourceRgb.rows);
-    const double scale = maxSide > 900 ? 900.0 / static_cast<double>(maxSide) : 1.0;
+    const double scale = maxSide > config.detectSize ? config.detectSize / static_cast<double>(maxSide) : 1.0;
     if (scale < 1.0) {
         cv::resize(sourceRgb, resized, cv::Size(), scale, scale, cv::INTER_AREA);
     }
 
     Mat gray;
     cv::cvtColor(resized, gray, cv::COLOR_RGB2GRAY);
+    Mat edgeSupportMap = buildEdgeSupportMap(gray);
     Mat blurred;
     cv::GaussianBlur(gray, blurred, Size(5, 5), 0.0);
 
@@ -618,68 +805,99 @@ DocumentCornerCandidate detectDocumentCornerCandidate(const Mat& sourceRgb) {
     Mat paper = buildPaperCandidateMask(resized);
 
     const double imageArea = static_cast<double>(resized.cols) * resized.rows;
-    const std::vector<double> epsilonCandidates = {0.015, 0.02, 0.025, 0.03, 0.04, 0.05, 0.06};
     std::vector<std::pair<std::array<Point2f, 4>, double>> candidates;
     auto coloredCandidates = collectDocumentCandidates(
         coloredPaper,
-        imageArea * 0.04,
+        imageArea * config.coloredMinAreaRatio,
         0.18,
-        epsilonCandidates,
-        40,
-        false);
+        config.epsilonCandidates,
+        config.coloredMaxCandidates,
+        config.allowMinAreaRect,
+        edgeSupportMap);
     candidates.insert(candidates.end(), coloredCandidates.begin(), coloredCandidates.end());
 
     auto paperCandidates = collectDocumentCandidates(
         paper,
-        imageArea * 0.03,
+        imageArea * config.paperMinAreaRatio,
         0.10,
-        epsilonCandidates,
-        40,
-        false);
+        config.epsilonCandidates,
+        config.maxCandidates,
+        config.allowMinAreaRect,
+        edgeSupportMap);
     candidates.insert(candidates.end(), paperCandidates.begin(), paperCandidates.end());
 
     auto adaptiveCandidates = collectDocumentCandidates(
         adaptive,
-        imageArea * 0.02,
+        imageArea * config.minAreaRatio,
         0.0,
-        epsilonCandidates,
-        40,
-        false);
+        config.epsilonCandidates,
+        config.maxCandidates,
+        config.allowMinAreaRect,
+        edgeSupportMap);
     candidates.insert(candidates.end(), adaptiveCandidates.begin(), adaptiveCandidates.end());
 
-    const std::vector<Mat> cannyMasks = {
-        buildCannyMask(gray, 3, 30.0, 50.0, 3, false),
-        buildCannyMask(gray, 5, 50.0, 150.0, 3, false),
-        buildCannyMask(gray, 7, 75.0, 200.0, 3, false),
-        buildCannyMask(gray, 3, 0.33, 0.0, 3, true),
-        buildCannyMask(gray, 5, 0.50, 0.0, 3, true),
-    };
-    for (const Mat& mask : cannyMasks) {
+    for (const EdgeStrategyConfig& strategy : config.strategies) {
+        Mat mask = buildCannyMask(
+            gray,
+            strategy.blurSize,
+            strategy.cannyLow,
+            strategy.cannyHigh,
+            strategy.dilateSize,
+            strategy.automatic);
         auto edgeCandidates = collectDocumentCandidates(
             mask,
-            imageArea * 0.02,
+            imageArea * config.minAreaRatio,
             0.0,
-            epsilonCandidates,
-            40,
-            false);
+            config.epsilonCandidates,
+            config.maxCandidates,
+            config.allowMinAreaRect,
+            edgeSupportMap);
         candidates.insert(candidates.end(), edgeCandidates.begin(), edgeCandidates.end());
     }
 
     for (const auto& candidate : candidates) {
+        const auto normalized = normalizedDocumentPoints(candidate.first, resized.cols, resized.rows);
+        if (!matchesAnchor(normalized, anchor)) {
+            continue;
+        }
         if (!best.valid || candidate.second > best.score) {
-            best.points = candidate.first;
+            best.points = normalized;
             best.score = candidate.second;
             best.valid = true;
         }
     }
 
-    if (best.valid && scale > 0.0) {
-        for (Point2f& point : best.points) {
-            point.x = static_cast<float>(point.x / static_cast<double>(resized.cols));
-            point.y = static_cast<float>(point.y / static_cast<double>(resized.rows));
-        }
-    }
     return best;
+}
+
+std::optional<std::array<Point2f, 4>> normalizedAnchorFromValues(NSArray<NSValue *> *values) {
+    if (values == nil || values.count != 4) {
+        return std::nullopt;
+    }
+
+    std::array<Point2f, 4> anchor{};
+    for (NSUInteger index = 0; index < values.count; index++) {
+        CGPoint point = values[index].CGPointValue;
+        anchor[index] = Point2f(
+            std::max(0.0f, std::min(1.0f, static_cast<float>(point.x))),
+            1.0f - std::max(0.0f, std::min(1.0f, static_cast<float>(point.y))));
+    }
+    return anchor;
+}
+
+NSArray<NSValue *> *cornerValuesFromCandidate(const DocumentCornerCandidate& candidate) {
+    if (!candidate.valid) {
+        return nil;
+    }
+
+    NSMutableArray<NSValue *> *points = [NSMutableArray arrayWithCapacity:4];
+    for (const Point2f& point : candidate.points) {
+        CGPoint normalizedPoint = CGPointMake(
+            std::max(0.0f, std::min(1.0f, point.x)),
+            1.0f - std::max(0.0f, std::min(1.0f, point.y)));
+        [points addObject:[NSValue valueWithCGPoint:normalizedPoint]];
+    }
+    return points;
 }
 
 int findPercentile(const std::array<int, 256>& histogram, int totalPixels, double percentile) {
@@ -1768,24 +1986,34 @@ Mat applyWhiteboardFilter(const Mat& sourceRgb) {
 }
 
 + (nullable NSArray<NSValue *> *)detectDocumentCornersInImage:(UIImage *)image {
+    return [self detectDocumentCornersInImage:image anchorCorners:nil];
+}
+
++ (nullable NSArray<NSValue *> *)detectDocumentCornersInImage:(UIImage *)image
+                                                anchorCorners:(nullable NSArray<NSValue *> *)anchorCorners {
     Mat sourceRgb = rgbMatFromUIImage(image);
     if (sourceRgb.empty()) {
         return nil;
     }
 
-    DocumentCornerCandidate candidate = detectDocumentCornerCandidate(sourceRgb);
-    if (!candidate.valid) {
+    DocumentCornerCandidate candidate = detectDocumentCornerCandidate(
+        sourceRgb,
+        false,
+        normalizedAnchorFromValues(anchorCorners));
+    return cornerValuesFromCandidate(candidate);
+}
+
++ (nullable NSArray<NSValue *> *)detectPreviewDocumentCornersInImage:(UIImage *)image {
+    Mat sourceRgb = rgbMatFromUIImage(image);
+    if (sourceRgb.empty()) {
         return nil;
     }
 
-    NSMutableArray<NSValue *> *points = [NSMutableArray arrayWithCapacity:4];
-    for (const Point2f& point : candidate.points) {
-        CGPoint visionPoint = CGPointMake(
-            std::max(0.0f, std::min(1.0f, point.x)),
-            1.0f - std::max(0.0f, std::min(1.0f, point.y)));
-        [points addObject:[NSValue valueWithCGPoint:visionPoint]];
-    }
-    return points;
+    DocumentCornerCandidate candidate = detectDocumentCornerCandidate(
+        sourceRgb,
+        true,
+        std::nullopt);
+    return cornerValuesFromCandidate(candidate);
 }
 
 + (NSDictionary<NSString *, UIImage *> *)documentDetectionDebugImagesInImage:(UIImage *)image {
@@ -1814,6 +2042,8 @@ Mat applyWhiteboardFilter(const Mat& sourceRgb) {
     Mat gray;
     cv::cvtColor(resized, gray, cv::COLOR_RGB2GRAY);
     addImage(@"grayscale", gray, false);
+    Mat edgeSupportMap = buildEdgeSupportMap(gray);
+    addImage(@"edge_support", edgeSupportMap, false);
 
     Mat blurred;
     cv::GaussianBlur(gray, blurred, cv::Size(5, 5), 0.0);

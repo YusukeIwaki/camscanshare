@@ -1,19 +1,12 @@
 import CoreImage
 import CoreImage.CIFilterBuiltins
 import UIKit
-import Vision
 
 struct DetectedRectangle: Sendable, Equatable {
     let topLeft: CGPoint
     let topRight: CGPoint
     let bottomLeft: CGPoint
     let bottomRight: CGPoint
-}
-
-private struct VisionRectangleCandidate {
-    let rectangle: DetectedRectangle
-    let confidence: Float
-    let score: Double
 }
 
 enum DocumentOrientation {
@@ -25,22 +18,6 @@ enum PaperDetectionService {
     private static let a4Portrait = 210.0 / 297.0
     private static let a4Landscape = 297.0 / 210.0
     private static let a4Tolerance = 0.20
-
-    static func createRectangleDetectionRequest(
-        completion: @escaping @Sendable (DetectedRectangle?) -> Void
-    ) -> VNDetectRectanglesRequest {
-        let request = VNDetectRectanglesRequest { request, error in
-            guard error == nil,
-                let rectangleRequest = request as? VNDetectRectanglesRequest
-            else {
-                completion(nil)
-                return
-            }
-            completion(bestVisionCandidate(from: rectangleRequest.results ?? [], anchorRectangle: nil)?.rectangle)
-        }
-        configure(request)
-        return request
-    }
 
     static func detectRectangle(
         in image: UIImage,
@@ -69,7 +46,6 @@ enum PaperDetectionService {
         let startedAt = debugSink.now()
         debugSink.writeImage(session, label: "input", image: image)
         let uprightImage = image.normalizedOrientation()
-        guard let cgImage = uprightImage.cgImage else { return nil }
 
         if session?.isEnabled == true {
             let artifactStartedAt = debugSink.now()
@@ -85,22 +61,18 @@ enum PaperDetectionService {
             )
         }
 
-        let openCVRectangle = rectangleFromOpenCV(in: uprightImage)
-        let visionRectangle = rectangleFromVision(cgImage: cgImage, anchorRectangle: anchorRectangle)
+        let openCVRectangle = rectangleFromOpenCV(in: uprightImage, anchorRectangle: anchorRectangle)
         let rectangle: DetectedRectangle?
         let source: String
-        if let openCVRectangle, matchesAnchor(openCVRectangle, anchorRectangle) {
+        if let openCVRectangle {
             rectangle = openCVRectangle
             source = "opencv"
-        } else if let visionRectangle, matchesAnchor(visionRectangle.rectangle, anchorRectangle) {
-            rectangle = visionRectangle.rectangle
-            source = "vision"
         } else if let anchorRectangle {
             rectangle = anchorRectangle
             source = "preview_anchor"
         } else {
-            rectangle = openCVRectangle ?? visionRectangle?.rectangle
-            source = rectangle == nil ? "none" : (openCVRectangle == nil ? "vision" : "opencv")
+            rectangle = nil
+            source = "none"
         }
         debugSink.writeText(session, fileName: "selected_quad.json", text: rectangleJson(rectangle))
         debugSink.writeImage(session, label: "selected_quad_overlay", image: drawRectangleOverlay(image: uprightImage, rectangle: rectangle))
@@ -174,7 +146,7 @@ enum PaperDetectionService {
         guard let ciImage = CIImage(image: image) else { return nil }
         let imageSize = ciImage.extent.size
 
-        // Convert normalized Vision coordinates to CIImage coordinates
+        // Convert normalized bottom-left-origin coordinates to CIImage coordinates.
         let tl = CGPoint(x: rectangle.topLeft.x * imageSize.width, y: rectangle.topLeft.y * imageSize.height)
         let tr = CGPoint(
             x: rectangle.topRight.x * imageSize.width, y: rectangle.topRight.y * imageSize.height)
@@ -306,106 +278,30 @@ enum PaperDetectionService {
         return sqrt(dx * dx + dy * dy)
     }
 
-    private static func matchesAnchor(_ candidate: DetectedRectangle, _ anchor: DetectedRectangle?) -> Bool {
-        guard let anchor else { return true }
-
-        let candidatePoints = orderedPoints(candidate)
-        let anchorPoints = orderedPoints(anchor)
-        let distances = zip(candidatePoints, anchorPoints).map { distance($0.0, $0.1) }
-        let meanDistance = distances.reduce(0.0, +) / Double(max(1, distances.count))
-        let maxDistance = distances.max() ?? 0.0
-        let centerDistance = distance(center(of: candidatePoints), center(of: anchorPoints))
-        let candidateArea = polygonArea(candidatePoints)
-        let anchorArea = polygonArea(anchorPoints)
-        let areaRatio = min(candidateArea, anchorArea) / max(max(candidateArea, anchorArea), 0.0001)
-
-        return meanDistance <= 0.16
-            && maxDistance <= 0.28
-            && centerDistance <= 0.17
-            && areaRatio >= 0.50
-    }
-
     private static func orderedPoints(_ rectangle: DetectedRectangle) -> [CGPoint] {
         [rectangle.topLeft, rectangle.topRight, rectangle.bottomRight, rectangle.bottomLeft]
     }
 
-    private static func center(of points: [CGPoint]) -> CGPoint {
-        guard !points.isEmpty else { return .zero }
-        let sum = points.reduce(CGPoint.zero) { partial, point in
-            CGPoint(x: partial.x + point.x, y: partial.y + point.y)
-        }
-        return CGPoint(x: sum.x / CGFloat(points.count), y: sum.y / CGFloat(points.count))
+    static func detectPreviewRectangle(in image: UIImage) -> DetectedRectangle? {
+        rectangle(from: OpenCVDocumentFilterBridge.detectPreviewDocumentCorners(in: image))
     }
 
-    private static func polygonArea(_ points: [CGPoint]) -> Double {
-        guard points.count >= 3 else { return 0.0 }
-        var area = 0.0
-        for index in points.indices {
-            let current = points[index]
-            let next = points[(index + 1) % points.count]
-            area += Double(current.x * next.y - current.y * next.x)
-        }
-        return abs(Double(area)) / 2.0
-    }
-
-    private static func configure(_ request: VNDetectRectanglesRequest) {
-        request.minimumAspectRatio = 0.3
-        request.maximumAspectRatio = 1.0
-        request.minimumSize = 0.2
-        request.minimumConfidence = 0.5
-        request.maximumObservations = 8
-    }
-
-    private static func rectangle(
-        from rect: VNRectangleObservation
-    ) -> DetectedRectangle {
-        return DetectedRectangle(
-            topLeft: rect.topLeft,
-            topRight: rect.topRight,
-            bottomLeft: rect.bottomLeft,
-            bottomRight: rect.bottomRight
-        )
-    }
-
-    private static func rectangleFromVision(
-        cgImage: CGImage,
+    private static func rectangleFromOpenCV(
+        in image: UIImage,
         anchorRectangle: DetectedRectangle?
-    ) -> VisionRectangleCandidate? {
-        let request = VNDetectRectanglesRequest()
-        configure(request)
-        let handler = VNImageRequestHandler(cgImage: cgImage, orientation: .up, options: [:])
-        try? handler.perform([request])
-        guard let results = request.results else {
-            return nil
+    ) -> DetectedRectangle? {
+        let values: [NSValue]?
+        if let anchorRectangle {
+            let anchorValues = orderedPoints(anchorRectangle).map { NSValue(cgPoint: $0) }
+            values = OpenCVDocumentFilterBridge.detectDocumentCorners(in: image, anchorCorners: anchorValues)
+        } else {
+            values = OpenCVDocumentFilterBridge.detectDocumentCorners(in: image)
         }
-
-        return bestVisionCandidate(from: results, anchorRectangle: anchorRectangle)
+        return rectangle(from: values)
     }
 
-    private static func bestVisionCandidate(
-        from observations: [VNRectangleObservation],
-        anchorRectangle: DetectedRectangle?
-    ) -> VisionRectangleCandidate? {
-        return observations
-            .map { observation -> VisionRectangleCandidate in
-                let detected = rectangle(from: observation)
-                return VisionRectangleCandidate(
-                    rectangle: detected,
-                    confidence: observation.confidence,
-                    score: scoreVisionRectangle(detected, confidence: observation.confidence)
-                )
-            }
-            .filter { matchesAnchor($0.rectangle, anchorRectangle) }
-            .max { $0.score < $1.score }
-    }
-
-    private static func rectangleFromOpenCV(in image: UIImage) -> DetectedRectangle? {
-        guard let values = OpenCVDocumentFilterBridge.detectDocumentCorners(in: image),
-            values.count == 4
-        else {
-            return nil
-        }
-
+    private static func rectangle(from values: [NSValue]?) -> DetectedRectangle? {
+        guard let values, values.count == 4 else { return nil }
         let points = values.map { $0.cgPointValue }
         return DetectedRectangle(
             topLeft: points[0],
@@ -429,23 +325,14 @@ enum PaperDetectionService {
         return "{\"corners\":[\(pointJson)]}"
     }
 
-    private static func scoreVisionRectangle(_ rectangle: DetectedRectangle, confidence: Float) -> Double {
-        let points = orderedPoints(rectangle)
-        let area = polygonArea(points)
-        let centerDistance = distance(center(of: points), CGPoint(x: 0.5, y: 0.5))
-        let centerScore = max(0.0, 1.0 - centerDistance / 0.50)
-        let areaScore = min(1.0, area / 0.60)
-        return Double(confidence) * 0.55 + centerScore * 0.30 + areaScore * 0.15
-    }
-
     private static func drawRectangleOverlay(image: UIImage, rectangle: DetectedRectangle?) -> UIImage? {
         guard let rectangle else { return nil }
         let size = image.size
         let points = [
-            uiPoint(fromVisionPoint: rectangle.topLeft, imageSize: size),
-            uiPoint(fromVisionPoint: rectangle.topRight, imageSize: size),
-            uiPoint(fromVisionPoint: rectangle.bottomRight, imageSize: size),
-            uiPoint(fromVisionPoint: rectangle.bottomLeft, imageSize: size)
+            uiPoint(fromNormalizedPoint: rectangle.topLeft, imageSize: size),
+            uiPoint(fromNormalizedPoint: rectangle.topRight, imageSize: size),
+            uiPoint(fromNormalizedPoint: rectangle.bottomRight, imageSize: size),
+            uiPoint(fromNormalizedPoint: rectangle.bottomLeft, imageSize: size)
         ]
 
         let format = UIGraphicsImageRendererFormat.default()
@@ -467,7 +354,7 @@ enum PaperDetectionService {
         }
     }
 
-    private static func uiPoint(fromVisionPoint point: CGPoint, imageSize: CGSize) -> CGPoint {
+    private static func uiPoint(fromNormalizedPoint point: CGPoint, imageSize: CGSize) -> CGPoint {
         CGPoint(x: point.x * imageSize.width, y: (1 - point.y) * imageSize.height)
     }
 }

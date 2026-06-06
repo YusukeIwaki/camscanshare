@@ -16,6 +16,11 @@ NS_ASSUME_NONNULL_BEGIN
 
 + (nullable NSArray<NSValue *> *)detectDocumentCornersInImage:(UIImage *)image;
 
++ (nullable NSArray<NSValue *> *)detectDocumentCornersInImage:(UIImage *)image
+                                                anchorCorners:(nullable NSArray<NSValue *> *)anchorCorners;
+
++ (nullable NSArray<NSValue *> *)detectPreviewDocumentCornersInImage:(UIImage *)image;
+
 + (NSDictionary<NSString *, UIImage *> *)documentDetectionDebugImagesInImage:(UIImage *)image;
 
 @end

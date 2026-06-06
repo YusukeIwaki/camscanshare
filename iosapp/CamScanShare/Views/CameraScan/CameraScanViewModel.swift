@@ -1,7 +1,7 @@
 @preconcurrency import AVFoundation
+import CoreImage
 import ImageIO
 import SwiftUI
-import Vision
 
 struct CapturedPage {
     let image: UIImage
@@ -55,7 +55,10 @@ final class CameraScanViewModel {
         session.sessionPreset = .photo
 
         if session.canAddInput(input) { session.addInput(input) }
-        if session.canAddOutput(photoOutput) { session.addOutput(photoOutput) }
+        if session.canAddOutput(photoOutput) {
+            session.addOutput(photoOutput)
+            configureHighResolutionPhotoCapture(for: device)
+        }
 
         videoOutput.setSampleBufferDelegate(cameraDelegate, queue: processingQueue)
         videoOutput.alwaysDiscardsLateVideoFrames = true
@@ -95,6 +98,11 @@ final class CameraScanViewModel {
         isCapturing = true
 
         let settings = AVCapturePhotoSettings()
+        settings.photoQualityPrioritization = photoOutput.maxPhotoQualityPrioritization
+        let maxPhotoDimensions = photoOutput.maxPhotoDimensions
+        if maxPhotoDimensions.width > 0, maxPhotoDimensions.height > 0 {
+            settings.maxPhotoDimensions = maxPhotoDimensions
+        }
         let delegate = cameraDelegate
         let photoOutput = self.photoOutput
 
@@ -105,6 +113,19 @@ final class CameraScanViewModel {
 
         isCapturing = false
         return image
+    }
+
+    private func configureHighResolutionPhotoCapture(for device: AVCaptureDevice) {
+        photoOutput.maxPhotoQualityPrioritization = .quality
+        if let largestDimensions = Self.largestSupportedPhotoDimensions(for: device) {
+            photoOutput.maxPhotoDimensions = largestDimensions
+        }
+    }
+
+    static func largestSupportedPhotoDimensions(for device: AVCaptureDevice) -> CMVideoDimensions? {
+        device.activeFormat.supportedMaxPhotoDimensions.max { lhs, rhs in
+            Int64(lhs.width) * Int64(lhs.height) < Int64(rhs.width) * Int64(rhs.height)
+        }
     }
 
     func processAndStoreCapturedImage(
@@ -217,34 +238,12 @@ final class CameraScanViewModel {
 final class CameraDelegate: NSObject, AVCaptureVideoDataOutputSampleBufferDelegate,
     AVCapturePhotoCaptureDelegate, @unchecked Sendable
 {
+    private let previewDetectionMaxDimension: CGFloat = 500
+
     var onRectangleDetected: (@Sendable (DetectedRectangle?) -> Void)?
     var onPreviewAspectRatioChanged: (@Sendable (CGFloat) -> Void)?
     var photoContinuation: CheckedContinuation<UIImage?, Never>?
-
-    private lazy var rectangleRequest: VNDetectRectanglesRequest = {
-        let request = VNDetectRectanglesRequest { [weak self] request, error in
-            guard error == nil,
-                let results = request.results as? [VNRectangleObservation],
-                let rect = results.first
-            else {
-                self?.onRectangleDetected?(nil)
-                return
-            }
-            let detected = DetectedRectangle(
-                topLeft: rect.topLeft,
-                topRight: rect.topRight,
-                bottomLeft: rect.bottomLeft,
-                bottomRight: rect.bottomRight
-            )
-            self?.onRectangleDetected?(detected)
-        }
-        request.minimumAspectRatio = 0.3
-        request.maximumAspectRatio = 1.0
-        request.minimumSize = 0.2
-        request.minimumConfidence = 0.5
-        request.maximumObservations = 1
-        return request
-    }()
+    private let ciContext = CIContext()
 
     func captureOutput(
         _ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
@@ -256,12 +255,22 @@ final class CameraDelegate: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         let portraitAspectRatio = min(width, height) / max(width, height)
         onPreviewAspectRatioChanged?(portraitAspectRatio)
 
-        let handler = VNImageRequestHandler(
-            cvPixelBuffer: pixelBuffer,
-            orientation: .right,
-            options: [:]
-        )
-        try? handler.perform([rectangleRequest])
+        guard let previewImage = previewImage(from: pixelBuffer) else {
+            onRectangleDetected?(nil)
+            return
+        }
+        onRectangleDetected?(PaperDetectionService.detectPreviewRectangle(in: previewImage))
+    }
+
+    private func previewImage(from pixelBuffer: CVPixelBuffer) -> UIImage? {
+        let orientedImage = CIImage(cvPixelBuffer: pixelBuffer).oriented(.right)
+        let maxSide = max(orientedImage.extent.width, orientedImage.extent.height)
+        let scale = maxSide > previewDetectionMaxDimension ? previewDetectionMaxDimension / maxSide : 1
+        let image = scale < 1 ? orientedImage.transformed(by: CGAffineTransform(scaleX: scale, y: scale)) : orientedImage
+        guard let cgImage = ciContext.createCGImage(image, from: image.extent) else {
+            return nil
+        }
+        return UIImage(cgImage: cgImage)
     }
 
     func photoOutput(

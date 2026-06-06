@@ -160,11 +160,11 @@ agent-browser scrollintoview "#screen-page-edit .phone-frame" && agent-browser s
 ## 技術的な注意事項
 
 - プレビュー責務: 原画像は PDF 出力と編集の基準として保持し、UI 表示は persisted preview を使う。文書一覧とカメラ左下は `small preview`、ページ一覧と保存済みページ編集は `large preview`、未保存のページ編集だけは一時 `working preview` を生成する。フィルタ適用・撮り直し・削除では preview file も source image と整合するよう更新・削除すること。
-- 画像処理デバッグ出力: 通常撮影では中間画像や処理時間ログを保存しない。ファインダー表示から5秒後に出る「開発元に報告」チップをタップして撮影したページだけ、Debug / Release のビルド種別に関わらず文書検出・台形補正のセッション単位デバッグ成果物を出力する。各セッションには `metadata.json`、番号付きPNG、`timings.jsonl` を保存する。紙検出セッションは `input`、`analysis_rgba`、`grayscale`、`colored_paper_mask`、`paper_mask`、各 Canny 戦略の `blurred` / `edges` / `dilated_edges` / `contours_overlay`、`selected_quad_overlay`、`selected_quad.json` を含める。台形補正セッションは `input`、`input_corners.json`、`warped_rgba`、`output` を含める。metadata / timings には platform、anchor 有無、採用元、解析サイズ、スコア、処理時間を入れる。Android は app-specific external files の `image-processing-debug/`、iOS は `Application Support/ImageProcessingDebug/` 配下に保存する。スキャン画像は個人情報を含みうるため、端末内確認、開発者による明示取得、またはユーザーが改善レポート送信を実行した場合の同梱に限る。
+- 画像処理デバッグ出力: 通常撮影では中間画像や処理時間ログを保存しない。ファインダー表示から5秒後に出る「開発元に報告」チップをタップして撮影したページだけ、Debug / Release のビルド種別に関わらず文書検出・台形補正のセッション単位デバッグ成果物を出力する。各セッションには `metadata.json`、番号付きPNG、`timings.jsonl` を保存する。紙検出セッションは `input`、`analysis_rgba`、`grayscale`、`edge_support`、`colored_paper_mask`、`paper_mask`、各 Canny 戦略の `blurred` / `edges` / `dilated_edges` / `contours_overlay`、`selected_quad_overlay`、`selected_quad.json` を含める。台形補正セッションは `input`、`input_corners.json`、`warped_rgba`、`output` を含める。metadata / timings には platform、anchor 有無、採用元、解析サイズ、スコア、処理時間を入れる。Android は app-specific external files の `image-processing-debug/`、iOS は `Application Support/ImageProcessingDebug/` 配下に保存する。スキャン画像は個人情報を含みうるため、端末内確認、開発者による明示取得、またはユーザーが改善レポート送信を実行した場合の同梱に限る。
 - 改善レポート: レポート送信 zip には元画像、任意の比較用追加写真、対象ページの `debugCaptureId` に紐づく画像処理デバッグセッションを同梱する。追加写真は `attachments/`、デバッグセッションは `debug/` 配下へ再帰的に入れる。`report_server/` は zip 内ディレクトリを保持して展開し、詳細ページから `attachments/`、`debug/<session>/timings.jsonl`、中間 PNG を確認できる。
 - 紙検出: GaussianBlur → Canny(複数閾値) → dilate(3x3) → findContours(RETR_LIST) → approxPolyDP → スコアリング選択。面積最大ではなく長方形度・平行度・中央への近さのスコアで選択し、前面の紙より外側・背面の四角形が勝ちにくいようにする。リアルタイム表示は5フレーム安定化+500ms保持
 - 台形補正: 検出した4点を用いた射影変換。キャプチャ画像で再検出してから適用するが、撮影直前にプレビューへ表示していた安定化済み四角形をアンカーとして渡し、再検出結果が大きく外れる場合は採用しない。候補が複数ある場合は中央に近い候補を少し優先する。一致候補がない場合はプレビュー四角形で補正する。
-- PDF変換: 全ページを順番にPDFへ統合。A4 に近い比率のページは A4 に揃え、それ以外は画像比率に合わせたキャンバスで出力する
+- PDF変換: 全ページを順番にPDFへ統合。A4 に近い比率のページは A4 に揃え、それ以外は画像比率に合わせたキャンバスで出力する。PDF 内のページ画像は Android / iOS とも JPEG quality 65 の `/DCTDecode` 画像として埋め込み、写真・スキャン画像でファイルサイズが膨らみにくい形式にする
 - 共有: OS標準の共有API（Android: Intent.ACTION_SEND, iOS: UIActivityViewController）
 - 連続撮影: 撮影後もカメラは起動したまま、完了ボタンで終了
 
@@ -227,6 +227,7 @@ Domain層・UseCaseは省略（ビジネスロジックが薄いため）。
 
 - `ImageProxy.toBitmap()` はEXIF回転を適用しない。`imageProxy.imageInfo.rotationDegrees` を取得して手動で回転すること。
 - `ImageAnalysis` フレーム（640x480等）と `ImageCapture` フレーム（4032x3024等）は解像度が大きく異なる。分析フレームで検出した座標をそのままキャプチャ画像に適用してはならない。キャプチャ画像で再検出するのが確実。
+- Android の保存用 `ImageCapture` はプレビューとは別に 4:3 優先 + 最高解像度戦略で構成する。全画面プレビューの見た目は `PreviewView` に任せ、PDF 用の元画像はセンサーに近い4:3高解像度を優先して取得する。
 - `PreviewView` はデフォルトでFILLスケーリング（画像を拡大して画面いっぱいに表示、はみ出し部分は中央クロップ）。検出座標をオーバーレイに描画する際は、画像と画面のアスペクト比差を考慮した座標変換が必要。
 
 #### OpenCV (紙検出)
