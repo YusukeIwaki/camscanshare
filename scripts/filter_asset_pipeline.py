@@ -341,8 +341,8 @@ def build_colored_paper_candidate_mask(resized: np.ndarray) -> np.ndarray:
         & (b_channel < 150)
     )
     mask = colored_paper.astype(np.uint8) * 255
-    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((11, 11), dtype=np.uint8), iterations=2)
-    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((7, 7), dtype=np.uint8), iterations=1)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_CLOSE, np.ones((7, 7), dtype=np.uint8), iterations=1)
+    mask = cv2.morphologyEx(mask, cv2.MORPH_OPEN, np.ones((5, 5), dtype=np.uint8), iterations=1)
     return mask
 
 

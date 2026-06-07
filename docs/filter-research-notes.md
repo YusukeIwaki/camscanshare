@@ -1,5 +1,44 @@
 # Filter Research Notes
 
+## 2026-06-07: External deshadow model sweep on 3-page school-event PDF
+
+Input:
+
+- User-supplied 3-page PDF `e4e86ad2-161a-486b-ab29-4152ce41dd78.pdf`, rendered at 180 dpi.
+- Visual target PDF `令和8年度能古島小中学校運動会.pdf`, also rendered at 180 dpi.
+
+Tried external pretrained deshadow/restoration candidates from `ZZZHANG-jx/Recommendations-Document-Image-Processing`:
+
+- `deshadow-1`: DocShadow-ONNX SD7K, max side 1536.
+- `deshadow-2`: DocShadow-ONNX Jung, max side 1536.
+- `deshadow-3`: DocShadow-ONNX Kligler, max side 1536.
+- `deshadow-4`: DocRes `deshadowing`, max side 1024 then upscaled.
+- `deshadow-5`: DocRes `appearance`, max side 1024 then upscaled.
+- `deshadow-6`: DocRes `deshadowing` followed by `appearance`, max side 1024 then upscaled.
+- `deshadow-7`: BGShadowNet RDD pretrained, 512 square then upscaled.
+- `deshadow-8`: BEDSR-Net Jung pretrained, 1024x768 / 768x1024 then upscaled.
+
+Execution notes:
+
+- DocShadow ONNX weights downloaded from the GitHub release and ran on CPU through onnxruntime.
+- DocRes official OneDrive link returned 403, so the Hugging Face rehosted `docres.pkl` and `mbd.pkl` were used. Inference ran on MPS after loading weights on CPU.
+- BGShadowNet Google Drive pretrained zip was downloaded successfully. The repo has hard-coded `.cuda()` tensor creation, so the local test used a monkey patch to route those tensors to MPS.
+- BEDSR-Net pretrained zip was downloaded successfully. The old PyTorch implementation needed a local temporary fix for `ConvTranspose2d` argument compatibility and CUDA-saved weight loading.
+- DocNLC was checked but not run: both OneDrive model-zoo links returned 403, and no equivalent accessible pretrained weights were found during this pass. Its documented dependency target is also old (`torch==1.7.1+cu101`).
+
+Result:
+
+- Best overall for matching the CamScanner-like target was `deshadow-5` (DocRes `appearance`). It whitened the wrinkled paper more than pure deshadow models while preserving text readability.
+- `deshadow-6` whitened similarly but introduced stronger purple color cast, especially on pages 2 and 3.
+- `deshadow-4` was useful but less scanner-like than `deshadow-5`.
+- DocShadow, BGShadowNet, and BEDSR removed little of the crease/fold shading on this sample. They preserved color more naturally in some regions, but did not approach the reference PDF's white background.
+- Page 3 remains the hardest case: DocRes appearance reduces paper shadows but weakens the colored blue/yellow/pink text panels compared with the CamScanner target, which keeps those colors stronger.
+
+Decision:
+
+- Do not adopt any external model as a product filter yet. The best candidate for this specific PDF is `deshadow-5`, but it is not a safe universal filter without all-sample evaluation and a color-cast correction stage.
+- Keep the generated artifacts in `tmp/deshadow-eval/` as local comparison output for this run.
+
 ## 2026-06-07: Foreground-masked inpaint shading prototype tried as magic+
 
 Input:

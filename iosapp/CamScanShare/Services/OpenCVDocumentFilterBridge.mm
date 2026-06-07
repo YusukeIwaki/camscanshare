@@ -729,9 +729,9 @@ Mat buildColoredPaperCandidateMask(const Mat& rgb) {
     cv::bitwise_and(mask, aMask, mask);
     cv::bitwise_and(mask, bMask, mask);
 
-    Mat closeKernel = cv::getStructuringElement(cv::MORPH_RECT, Size(11, 11));
-    Mat openKernel = cv::getStructuringElement(cv::MORPH_RECT, Size(7, 7));
-    cv::morphologyEx(mask, mask, cv::MORPH_CLOSE, closeKernel, Point(-1, -1), 2);
+    Mat closeKernel = cv::getStructuringElement(cv::MORPH_RECT, Size(7, 7));
+    Mat openKernel = cv::getStructuringElement(cv::MORPH_RECT, Size(5, 5));
+    cv::morphologyEx(mask, mask, cv::MORPH_CLOSE, closeKernel, Point(-1, -1), 1);
     cv::morphologyEx(mask, mask, cv::MORPH_OPEN, openKernel, Point(-1, -1), 1);
     return mask;
 }

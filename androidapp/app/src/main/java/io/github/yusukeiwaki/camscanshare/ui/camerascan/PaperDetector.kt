@@ -861,9 +861,9 @@ class PaperDetector(
         Core.bitwise_and(mask, aMask, mask)
         Core.bitwise_and(mask, bMask, mask)
 
-        val closeKernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(11.0, 11.0))
-        val openKernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(7.0, 7.0))
-        Imgproc.morphologyEx(mask, mask, Imgproc.MORPH_CLOSE, closeKernel, Point(-1.0, -1.0), 2)
+        val closeKernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(7.0, 7.0))
+        val openKernel = Imgproc.getStructuringElement(Imgproc.MORPH_RECT, Size(5.0, 5.0))
+        Imgproc.morphologyEx(mask, mask, Imgproc.MORPH_CLOSE, closeKernel, Point(-1.0, -1.0), 1)
         Imgproc.morphologyEx(mask, mask, Imgproc.MORPH_OPEN, openKernel, Point(-1.0, -1.0), 1)
 
         listOf(rgb, lab, a32, b32, chroma, brightMask, chromaHighMask, chromaLowMask, aMask, bMask, closeKernel, openKernel)
