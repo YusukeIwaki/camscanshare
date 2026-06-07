@@ -165,6 +165,9 @@ class ImprovementReportService @Inject constructor(
         if (parsedUrl.protocol != "https" && parsedUrl.protocol != "http") {
             throw IllegalArgumentException("送信先 URL の形式が正しくありません。")
         }
+        if (parsedUrl.protocol == "http" && !isAllowedCleartextReportHost(parsedUrl.host)) {
+            throw IllegalArgumentException("HTTP の送信先は 10.*.*.* または 192.168.*.* のプライベートIPに限定されています。")
+        }
         return ImprovementReportServerConfig(reportUrl = reportUrl, token = token)
     }
 
@@ -266,4 +269,22 @@ class ImprovementReportService @Inject constructor(
         }
         output.writeBytes("\r\n")
     }
+}
+
+internal fun isAllowedCleartextReportHost(host: String): Boolean {
+    val octets = host.split(".").map { segment ->
+        parseIpv4Octet(segment) ?: return false
+    }
+    return octets.size == 4 &&
+        (octets[0] == 10 || (octets[0] == 192 && octets[1] == 168))
+}
+
+private fun parseIpv4Octet(segment: String): Int? {
+    if (segment.isEmpty() || segment.length > 3 || segment.any { it !in '0'..'9' }) {
+        return null
+    }
+    if (segment.length > 1 && segment.startsWith("0")) {
+        return null
+    }
+    return segment.toIntOrNull()?.takeIf { it in 0..255 }
 }
