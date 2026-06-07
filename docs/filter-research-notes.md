@@ -1,5 +1,103 @@
 # Filter Research Notes
 
+## 2026-06-07: Real `DocRes` appearance filter evaluated, mobile adoption rejected
+
+Input:
+
+- Full docs sample corpus from `docs/filter-samples.json`, plus the local dev sample when present.
+- Upstream DocRes checkout at `tmp/deshadow-repos/DocRes`.
+- DocRes checkpoint from Hugging Face `DaVinciCode/doctra-docres-main/docres.pkl`.
+
+Execution:
+
+- Generated reference outputs locally with the real DocRes Restormer `appearance` task, using max side 512 for the docs sample corpus.
+- Exported fixed 512x512 mobile ONNX candidates from the same checkpoint to estimate model size and integration feasibility.
+- Temporarily integrated bundled ONNX models into Android and iOS to measure practical app behavior.
+
+Result:
+
+- This is the real DocRes Restormer `appearance` task, not the lightweight OpenCV approximation.
+- Strongly improves broad paper shading on notepad, school handout, receipt/form, and many ordinary document samples.
+- The hand-written math sample becomes cleaner but some faint pencil strokes look weaker, so it is not a universally safe product filter.
+- The color poster and whiteboard samples remain usable, but this reference is still tuned for document appearance restoration rather than color fidelity.
+- The noisy blue report sample keeps some blue/purple shadow residue around the page, confirming that DocRes appearance is not a complete crease/shadow solution on every case.
+- Android applied the filter but was far slower than normal filters, roughly an order of magnitude slower in interactive use.
+- iOS continued to crash during filter application even after reducing output memory pressure; the observed device-console termination was `signal 9`, consistent with iOS killing the app under memory pressure.
+
+Decision:
+
+- Do not ship DocRes as a product filter for now.
+- Do not keep the temporary Android/iOS ONNX Runtime implementation, bundled ONNX models, docs-side DocRes filter page entry, generated DocRes docs assets, or DocRes export/generation scripts in the repo.
+- Keep only this research note as evidence that DocRes can produce visually strong results but is currently unsuitable for this mobile app's filter pipeline.
+- Do not reintroduce `影なし` as a lightweight substitute; that approximation was also rejected.
+
+Mobile-size follow-up:
+
+- Fixed input contract: fit the page into a 512x512 square while preserving aspect ratio, replicate-pad right/bottom, run DocRes appearance, crop back to the resized page, then resize to the original preview/output size.
+- Generated mobile candidates under `tmp/docres-mobile-models/`:
+  - FP32 ONNX: `63.61 MB`.
+  - FP16 ONNX: `33.20 MB`.
+  - Dynamic INT8 ONNX: `17.87 MB`.
+  - Dynamic INT8 ORT format: `16.30 MB`.
+- ONNX Runtime CPU smoke test succeeded for FP32, FP16, dynamic INT8 ONNX, and dynamic INT8 ORT. On the local Mac CPU, FP16 was close to FP32 and fastest among the tested ONNX variants; INT8 was much smaller but slower in this local CPU test. Device-side timing still needs Android/iOS measurement.
+- The model sizes are not impossible by themselves, but the runtime and memory behavior made the mobile integration unsuitable.
+
+## 2026-06-07: Lightweight `shadowless` filter rejected after DocRes comparison
+
+Input:
+
+- Full docs sample corpus from `docs/filter-samples.json`, plus the local dev sample when present.
+- DocRes `appearance` reference outputs generated from the same Step 1 images at max side 512 for comparison.
+- User-supplied 3-page school-event PDF pages from the external deshadow sweep.
+
+Tried:
+
+- DocRes appearance reference using `tmp/deshadow-repos/DocRes/checkpoints/docres.pkl`.
+- Four deterministic OpenCV variants inspired by DocRes `appearance_prompt`:
+  - per-channel dilation + median background difference normalization,
+  - local reflect background normalization on Lab L,
+  - stronger masked paper whitening,
+  - structure/accent/color-paper protection.
+
+Result:
+
+- DocRes is still better on very broad dark shadows, especially the notepad sample. It removes the diagonal shadow more completely than any lightweight OpenCV variant.
+- The selected lightweight variant is close to DocRes on most ordinary documents, forms, receipts, dirty-white timetable samples, and the school handout examples.
+- On the user-supplied PDF, the lightweight variant leaves slightly more paper texture than DocRes but avoids the purple cast and preserves colored panels more naturally.
+- Color-heavy samples did not show catastrophic color loss. The kids poster remains usable, and whiteboard samples retain marker color.
+
+Decision:
+
+- Superseded as an implementation candidate; the real `DocRes` evaluation above also remains research-only.
+- Do not keep `shadowless` / display name `影なし` as a product filter.
+- Keep the notes only as a record of the rejected lightweight approximation.
+
+## 2026-06-07: GCDRNet checkpoint evaluation on 3-page school-event PDF
+
+Input:
+
+- User-supplied 3-page PDF `e4e86ad2-161a-486b-ab29-4152ce41dd78.pdf`, rendered at 150 dpi for this pass.
+- Visual target PDF `令和8年度能古島小中学校運動会.pdf`, rendered at 150 dpi for side-by-side comparison.
+- Paper/repo reference: `ZZZHANG-jx/GCDRNet`, "Appearance Enhancement for Camera-captured Document Images in the Wild".
+
+Execution notes:
+
+- The downloaded checkpoint filenames appeared swapped relative to the official inference code: `drnet-checkpoint.pkl` matched the 3-channel GC-Net shape, while `gcnet-checkpoint.pkl` matched the 6-channel DR-Net shape.
+- Official GCDRNet inference ran on Apple MPS after adapting the device handling outside the repository code. Full 150 dpi pages processed successfully, taking roughly 0.5-0.8 seconds per page after model load.
+- Temporary deterministic "GCDR-lite" prototypes were also checked using background/shadow-map division, paper whitening, and content protection. They could whiten the page but either left too much natural paper texture or misclassified wrinkles as dark content, so they are not suitable to keep.
+
+Result:
+
+- GCDRNet substantially improves this specific PDF toward the CamScanner-like target. Median luminance moved from `225/215/217` on the source pages to `254/254/254` after GCDRNet; the target pages are `255/254.4/244.8`.
+- Page 1 is close to the target in paper whiteness and text density. It still keeps some crease/purple-gray residue around the title and illustration, and the illustration is more contrasty/ink-like than the target.
+- Page 2 is also close for background removal and layout readability. Some pale paper texture remains near the center fold and page edges.
+- Page 3 improves strongly, especially broad paper shadows, but it is not identical to the target: color panels are less saturated and some fold/color residue remains in the lower pink area.
+
+Decision:
+
+- GCDRNet is a promising candidate for this sample and is materially closer to the target than the current docs-side `enhance`, `magic`, or `whiteboard` filters.
+- Do not move it into Android/iOS yet. It needs full `docs/filter-samples.json` evaluation, model-size/runtime review, a color-preservation/cast postprocess, and a product decision about shipping an external neural network filter.
+
 ## 2026-06-07: External deshadow model sweep on 3-page school-event PDF
 
 Input:
