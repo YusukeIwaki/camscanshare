@@ -1,6 +1,7 @@
 package io.github.yusukeiwaki.camscanshare.ui.camerascan
 
 import android.Manifest
+import android.content.res.Configuration
 import android.graphics.PointF
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -69,6 +70,7 @@ import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalHapticFeedback
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -86,7 +88,8 @@ import io.github.yusukeiwaki.camscanshare.ui.components.SmallPreviewImage
 import kotlinx.coroutines.delay
 import java.util.concurrent.Executors
 
-private const val CAMERA_PREVIEW_ASPECT_RATIO = 3f / 4f
+private const val CAMERA_PREVIEW_PORTRAIT_ASPECT_RATIO = 3f / 4f
+private const val CAMERA_PREVIEW_LANDSCAPE_ASPECT_RATIO = 4f / 3f
 
 @Composable
 fun CameraScanScreen(
@@ -98,8 +101,15 @@ fun CameraScanScreen(
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val context = LocalContext.current
+    val configuration = LocalConfiguration.current
     val lifecycleOwner = LocalLifecycleOwner.current
     val haptic = LocalHapticFeedback.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val viewfinderAspectRatio = if (isLandscape) {
+        CAMERA_PREVIEW_LANDSCAPE_ASPECT_RATIO
+    } else {
+        CAMERA_PREVIEW_PORTRAIT_ASPECT_RATIO
+    }
 
     LaunchedEffect(documentId, retakePageId) {
         viewModel.initialize(documentId, retakePageId)
@@ -155,6 +165,69 @@ fun CameraScanScreen(
         onDispose { cameraExecutor.shutdown() }
     }
 
+    val bottomControlMode = if (uiState.retakePageId != 0L) {
+        CameraBottomControlMode.CLOSE_BUTTON
+    } else {
+        cameraBottomControlMode(uiState.capturedPageCount)
+    }
+    val onCaptureClick = {
+        haptic.performHapticFeedback(HapticFeedbackType.LongPress)
+        val captureForReport = reportCaptureArmed
+        val debugCaptureId = if (captureForReport) {
+            ImageProcessingDebugSink.newCaptureId()
+        } else {
+            null
+        }
+        val previewCornersAtCapture = detectedCorners?.map { PointF(it.x, it.y) }
+        reportCaptureArmed = false
+        imageCapture.takePicture(
+            cameraExecutor,
+            object : ImageCapture.OnImageCapturedCallback() {
+                override fun onCaptureSuccess(image: ImageProxy) {
+                    val captureDebugSink = if (captureForReport) {
+                        ImageProcessingDebugSink.fromContext(
+                            context,
+                            isWritingEnabled = true,
+                            debugCaptureId = debugCaptureId,
+                        )
+                    } else {
+                        normalDebugSink
+                    }
+                    val captureImageProcessor = if (captureForReport) {
+                        ImageProcessor(captureDebugSink)
+                    } else {
+                        imageProcessor
+                    }
+                    val capturePaperDetector = if (captureForReport) {
+                        PaperDetector(captureDebugSink)
+                    } else {
+                        paperDetector.value
+                    }
+                    var bitmap = captureImageProcessor.toBitmapWithCorrectRotation(image)
+                    image.close()
+                    Log.d("CameraScan", "Captured image size: ${bitmap.width}x${bitmap.height}")
+                    // Re-detect paper in the captured image and apply perspective correction
+                    val corners = capturePaperDetector.detectForCapture(bitmap, previewCornersAtCapture)
+                    if (corners != null && corners.size == 4) {
+                        val corrected = capturePaperDetector.correctDocumentGeometry(bitmap, corners)
+                        Log.d("CameraScan", "Corrected image size: ${corrected.width}x${corrected.height}")
+                        bitmap.recycle()
+                        bitmap = corrected
+                    }
+                    viewModel.onCaptureImage(
+                        bitmap,
+                        isDebugCapture = captureForReport,
+                        debugCaptureId = debugCaptureId,
+                    )
+                }
+
+                override fun onError(exception: ImageCaptureException) {
+                    Log.e("CameraScan", "Capture failed", exception)
+                }
+            },
+        )
+    }
+
     Box(modifier = Modifier.fillMaxSize().background(Color.Black)) {
         if (cameraPermissionGranted) {
             BoxWithConstraints(
@@ -164,21 +237,21 @@ fun CameraScanScreen(
                 val containerAspect = if (maxHeight.value > 0f) {
                     maxWidth.value / maxHeight.value
                 } else {
-                    CAMERA_PREVIEW_ASPECT_RATIO
+                    viewfinderAspectRatio
                 }
-                val viewfinderModifier = if (containerAspect > CAMERA_PREVIEW_ASPECT_RATIO) {
+                val viewfinderModifier = if (containerAspect > viewfinderAspectRatio) {
                     Modifier
                         .fillMaxHeight()
-                        .aspectRatio(CAMERA_PREVIEW_ASPECT_RATIO, matchHeightConstraintsFirst = true)
+                        .aspectRatio(viewfinderAspectRatio, matchHeightConstraintsFirst = true)
                 } else {
                     Modifier
                         .fillMaxWidth()
-                        .aspectRatio(CAMERA_PREVIEW_ASPECT_RATIO)
+                        .aspectRatio(viewfinderAspectRatio)
                 }
 
                 Box(modifier = viewfinderModifier.background(Color.Black)) {
-                    // Camera preview with ImageAnalysis for detection. The viewfinder is 3:4
-                    // portrait so it matches the usual 4:3 capture frame without side cropping.
+                    // Camera preview with ImageAnalysis for detection. The viewfinder matches
+                    // the 4:3 capture frame in the current display orientation without cropping.
                     AndroidView(
                         factory = { ctx ->
                             PreviewView(ctx).also { previewView ->
@@ -285,9 +358,15 @@ fun CameraScanScreen(
 
         AnimatedVisibility(
             visible = cameraPermissionGranted && showReportChip,
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(top = 52.dp, end = 16.dp),
+            modifier = if (isLandscape) {
+                Modifier
+                    .align(Alignment.TopStart)
+                    .padding(top = 24.dp, start = 16.dp)
+            } else {
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 52.dp, end = 16.dp)
+            },
             enter = fadeIn(tween(180)),
             exit = fadeOut(tween(120)),
         ) {
@@ -344,8 +423,8 @@ fun CameraScanScreen(
             // Start: center of screen, scale 0.6. End: bottom-left thumbnail area, scale 0.12
             val startX = 0.5f
             val startY = 0.45f
-            val endX = 0.1f
-            val endY = 0.88f
+            val endX = if (isLandscape) 0.9f else 0.1f
+            val endY = if (isLandscape) 0.86f else 0.88f
             val currentX = startX + (endX - startX) * progress
             val currentY = startY + (endY - startY) * progress
             val currentScale = 0.6f + (0.12f - 0.6f) * progress
@@ -369,137 +448,194 @@ fun CameraScanScreen(
             )
         }
 
-        // Bottom controls
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .align(Alignment.BottomCenter)
-                .background(
-                    brush = androidx.compose.ui.graphics.Brush.verticalGradient(
-                        colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f)),
-                    )
-                )
-                .navigationBarsPadding()
-                .padding(bottom = 24.dp, top = 40.dp),
-        ) {
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                // Left: close button or thumbnail stack
-                val bottomControlMode = if (uiState.retakePageId != 0L) {
-                    CameraBottomControlMode.CLOSE_BUTTON
-                } else {
-                    cameraBottomControlMode(uiState.capturedPageCount)
-                }
-                when (bottomControlMode) {
-                    CameraBottomControlMode.CLOSE_BUTTON -> {
-                        Box(
-                            modifier = Modifier
-                                .size(52.dp)
-                                .clip(RoundedCornerShape(12.dp))
-                                .background(Color.White.copy(alpha = 0.15f))
-                                .border(1.5.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
-                                .clickable { onClose() },
-                            contentAlignment = Alignment.Center,
-                        ) {
-                            Icon(Icons.Default.Close, contentDescription = "閉じる", tint = Color.White, modifier = Modifier.size(24.dp))
-                        }
-                    }
-                    CameraBottomControlMode.THUMBNAIL_STACK -> {
-                        Box(
-                            modifier = Modifier.size(52.dp).clickable { onNavigateToPageList(uiState.documentId) },
-                        ) {
-                            SmallPreviewImage(
-                                absolutePath = uiState.lastPageSmallPreviewAbsPath,
-                                modifier = Modifier
-                                    .size(52.dp)
-                                    .clip(RoundedCornerShape(12.dp))
-                                    .border(1.5.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(12.dp)),
-                                contentDescription = "撮影済みページ",
-                            )
-                            Box(
-                                modifier = Modifier.align(Alignment.TopEnd).offset(x = 6.dp, y = (-6).dp)
-                                    .height(20.dp).clip(RoundedCornerShape(10.dp))
-                                    .background(MaterialTheme.colorScheme.primary).padding(horizontal = 6.dp),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Text("${uiState.capturedPageCount}", color = Color.White, fontSize = 11.sp, fontWeight = FontWeight.Bold)
-                            }
-                        }
-                    }
-                }
+        if (isLandscape) {
+            LandscapeCameraControls(
+                bottomControlMode = bottomControlMode,
+                lastPageSmallPreviewAbsPath = uiState.lastPageSmallPreviewAbsPath,
+                capturedPageCount = uiState.capturedPageCount,
+                isCaptureEnabled = !uiState.isCapturing && cameraPermissionGranted,
+                onClose = onClose,
+                onNavigateToPageList = { onNavigateToPageList(uiState.documentId) },
+                onCaptureClick = onCaptureClick,
+                modifier = Modifier.align(Alignment.CenterEnd),
+            )
+        } else {
+            PortraitCameraControls(
+                bottomControlMode = bottomControlMode,
+                lastPageSmallPreviewAbsPath = uiState.lastPageSmallPreviewAbsPath,
+                capturedPageCount = uiState.capturedPageCount,
+                isCaptureEnabled = !uiState.isCapturing && cameraPermissionGranted,
+                onClose = onClose,
+                onNavigateToPageList = { onNavigateToPageList(uiState.documentId) },
+                onCaptureClick = onCaptureClick,
+                modifier = Modifier.align(Alignment.BottomCenter),
+            )
+        }
+    }
+}
 
-                // Center: capture button
+@Composable
+private fun PortraitCameraControls(
+    bottomControlMode: CameraBottomControlMode,
+    lastPageSmallPreviewAbsPath: String?,
+    capturedPageCount: Int,
+    isCaptureEnabled: Boolean,
+    onClose: () -> Unit,
+    onNavigateToPageList: () -> Unit,
+    onCaptureClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxWidth()
+            .background(
+                brush = androidx.compose.ui.graphics.Brush.verticalGradient(
+                    colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f)),
+                )
+            )
+            .navigationBarsPadding()
+            .padding(bottom = 24.dp, top = 40.dp),
+    ) {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CameraLeftAction(
+                mode = bottomControlMode,
+                lastPageSmallPreviewAbsPath = lastPageSmallPreviewAbsPath,
+                capturedPageCount = capturedPageCount,
+                onClose = onClose,
+                onNavigateToPageList = onNavigateToPageList,
+            )
+            CameraCaptureButton(
+                enabled = isCaptureEnabled,
+                onClick = onCaptureClick,
+            )
+            Spacer(Modifier.width(52.dp))
+        }
+    }
+}
+
+@Composable
+private fun LandscapeCameraControls(
+    bottomControlMode: CameraBottomControlMode,
+    lastPageSmallPreviewAbsPath: String?,
+    capturedPageCount: Int,
+    isCaptureEnabled: Boolean,
+    onClose: () -> Unit,
+    onNavigateToPageList: () -> Unit,
+    onCaptureClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Box(
+        modifier = modifier
+            .fillMaxHeight()
+            .width(132.dp)
+            .background(
+                brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                    colors = listOf(Color.Transparent, Color.Black.copy(alpha = 0.6f)),
+                )
+            )
+            .navigationBarsPadding()
+            .padding(end = 24.dp, top = 24.dp, bottom = 24.dp),
+    ) {
+        Column(
+            modifier = Modifier.fillMaxHeight().align(Alignment.CenterEnd),
+            horizontalAlignment = Alignment.CenterHorizontally,
+            verticalArrangement = Arrangement.SpaceBetween,
+        ) {
+            Spacer(Modifier.height(52.dp))
+            CameraCaptureButton(
+                enabled = isCaptureEnabled,
+                onClick = onCaptureClick,
+            )
+            CameraLeftAction(
+                mode = bottomControlMode,
+                lastPageSmallPreviewAbsPath = lastPageSmallPreviewAbsPath,
+                capturedPageCount = capturedPageCount,
+                onClose = onClose,
+                onNavigateToPageList = onNavigateToPageList,
+            )
+        }
+    }
+}
+
+@Composable
+private fun CameraLeftAction(
+    mode: CameraBottomControlMode,
+    lastPageSmallPreviewAbsPath: String?,
+    capturedPageCount: Int,
+    onClose: () -> Unit,
+    onNavigateToPageList: () -> Unit,
+) {
+    when (mode) {
+        CameraBottomControlMode.CLOSE_BUTTON -> {
+            Box(
+                modifier = Modifier
+                    .size(52.dp)
+                    .clip(RoundedCornerShape(12.dp))
+                    .background(Color.White.copy(alpha = 0.15f))
+                    .border(1.5.dp, Color.White.copy(alpha = 0.25f), RoundedCornerShape(12.dp))
+                    .clickable { onClose() },
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    Icons.Default.Close,
+                    contentDescription = "閉じる",
+                    tint = Color.White,
+                    modifier = Modifier.size(24.dp),
+                )
+            }
+        }
+
+        CameraBottomControlMode.THUMBNAIL_STACK -> {
+            Box(
+                modifier = Modifier.size(52.dp).clickable { onNavigateToPageList() },
+            ) {
+                SmallPreviewImage(
+                    absolutePath = lastPageSmallPreviewAbsPath,
+                    modifier = Modifier
+                        .size(52.dp)
+                        .clip(RoundedCornerShape(12.dp))
+                        .border(1.5.dp, Color.White.copy(alpha = 0.3f), RoundedCornerShape(12.dp)),
+                    contentDescription = "撮影済みページ",
+                )
                 Box(
                     modifier = Modifier
-                        .size(72.dp)
-                        .clip(CircleShape)
-                        .border(4.dp, Color.White, CircleShape)
-                        .padding(6.dp)
-                        .clip(CircleShape)
-                        .background(Color.White)
-                        .clickable(enabled = !uiState.isCapturing && cameraPermissionGranted) {
-                            haptic.performHapticFeedback(HapticFeedbackType.LongPress)
-                            val captureForReport = reportCaptureArmed
-                            val debugCaptureId = if (captureForReport) {
-                                ImageProcessingDebugSink.newCaptureId()
-                            } else {
-                                null
-                            }
-                            val previewCornersAtCapture = detectedCorners?.map { PointF(it.x, it.y) }
-                            reportCaptureArmed = false
-                            imageCapture.takePicture(
-                                cameraExecutor,
-                                object : ImageCapture.OnImageCapturedCallback() {
-                                    override fun onCaptureSuccess(image: ImageProxy) {
-                                        val captureDebugSink = if (captureForReport) {
-                                            ImageProcessingDebugSink.fromContext(
-                                                context,
-                                                isWritingEnabled = true,
-                                                debugCaptureId = debugCaptureId,
-                                            )
-                                        } else {
-                                            normalDebugSink
-                                        }
-                                        val captureImageProcessor = if (captureForReport) {
-                                            ImageProcessor(captureDebugSink)
-                                        } else {
-                                            imageProcessor
-                                        }
-                                        val capturePaperDetector = if (captureForReport) {
-                                            PaperDetector(captureDebugSink)
-                                        } else {
-                                            paperDetector.value
-                                        }
-                                        var bitmap = captureImageProcessor.toBitmapWithCorrectRotation(image)
-                                        image.close()
-                                        Log.d("CameraScan", "Captured image size: ${bitmap.width}x${bitmap.height}")
-                                        // Re-detect paper in the captured image and apply perspective correction
-                                        val corners = capturePaperDetector.detectForCapture(bitmap, previewCornersAtCapture)
-                                        if (corners != null && corners.size == 4) {
-                                            val corrected = capturePaperDetector.correctDocumentGeometry(bitmap, corners)
-                                            Log.d("CameraScan", "Corrected image size: ${corrected.width}x${corrected.height}")
-                                            bitmap.recycle()
-                                            bitmap = corrected
-                                        }
-                                        viewModel.onCaptureImage(
-                                            bitmap,
-                                            isDebugCapture = captureForReport,
-                                            debugCaptureId = debugCaptureId,
-                                        )
-                                    }
-                                    override fun onError(exception: ImageCaptureException) {
-                                        Log.e("CameraScan", "Capture failed", exception)
-                                    }
-                                },
-                            )
-                        },
-                )
-
-                Spacer(Modifier.width(52.dp))
+                        .align(Alignment.TopEnd)
+                        .offset(x = 6.dp, y = (-6).dp)
+                        .height(20.dp)
+                        .clip(RoundedCornerShape(10.dp))
+                        .background(MaterialTheme.colorScheme.primary)
+                        .padding(horizontal = 6.dp),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Text(
+                        "$capturedPageCount",
+                        color = Color.White,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                    )
+                }
             }
         }
     }
+}
+
+@Composable
+private fun CameraCaptureButton(
+    enabled: Boolean,
+    onClick: () -> Unit,
+) {
+    Box(
+        modifier = Modifier
+            .size(72.dp)
+            .clip(CircleShape)
+            .border(4.dp, Color.White, CircleShape)
+            .padding(6.dp)
+            .clip(CircleShape)
+            .background(Color.White)
+            .clickable(enabled = enabled) { onClick() },
+    )
 }

@@ -269,7 +269,7 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list">
             <li>
               <span class="spec-element">カメラビューファインダー</span>
-              <span class="spec-detail">Android では 3:4 のビューファインダーを画面中央に表示し、CameraX の 4:3 キャプチャ全体に近い範囲を見せる。全画面クロップで紙が実際のキャプチャ内で小さく写ることを避け、ユーザーが紙をこの枠いっぱいに寄せて撮影できるようにする。iOS は現行の全画面プレビューを維持する。</span>
+              <span class="spec-detail">Android では縦向き時は 3:4、横向き時は 4:3 のビューファインダーを画面中央に表示し、CameraX の 4:3 キャプチャ全体に近い範囲を見せる。全画面クロップで紙が実際のキャプチャ内で小さく写ることを避け、ユーザーが紙をこの枠いっぱいに寄せて撮影できるようにする。iOS は現行の全画面プレビューを維持する。</span>
             </li>
             <li>
               <span class="spec-element">紙検出ガイド（矩形オーバーレイ）</span>
@@ -277,15 +277,15 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">撮影ボタン</span>
-              <span class="spec-detail">画面下部中央に大型の円形ボタン。物理シャッターボタンを模した2重円デザイン。グラデーション付きオーバーレイ上に配置。</span>
+              <span class="spec-detail">縦向きでは画面下部中央、Android の横向きでは右側中央に大型の円形ボタンを配置する。物理シャッターボタンを模した2重円デザイン。グラデーション付きオーバーレイ上に配置。</span>
             </li>
             <li>
               <span class="spec-element">左下アクションエリア</span>
-              <span class="spec-detail">撮影枚数に応じて表示が切り替わる。0枚時は閉じるボタン（✕アイコン）、1枚以上ではサムネイルスタック（枚数バッジ付き）を表示。最新の撮影ページがサムネイルの最前面に反映される。</span>
+              <span class="spec-detail">撮影枚数に応じて表示が切り替わる。0枚時は閉じるボタン（✕アイコン）、1枚以上ではサムネイルスタック（枚数バッジ付き）を表示。最新の撮影ページがサムネイルの最前面に反映される。Android の横向きでは縦向きレイアウトを90度回した見え方に近づけ、右側下部に配置する。</span>
             </li>
             <li>
               <span class="spec-element">開発元に報告チップ</span>
-              <span class="spec-detail">ファインダー表示から5秒以上経過すると右上に表示される。タップすると次の1枚だけ報告用撮影になり、通常撮影では作らない画像処理デバッグ成果物を保存する。</span>
+              <span class="spec-detail">ファインダー表示から5秒以上経過すると表示される。縦向きでは右上、Android の横向きでは右側操作レールと重ならない左上に配置する。タップすると次の1枚だけ報告用撮影になり、通常撮影では作らない画像処理デバッグ成果物を保存する。</span>
             </li>
           </ul>
         </div>
@@ -295,7 +295,7 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list interaction-list">
             <li>
               <span class="interaction-trigger">撮影ボタンをタップ</span>
-              <span class="interaction-result">通常時はデバッグ成果物を作らずに撮影する。フラッシュエフェクト → 撮影画像が縮小しながら左下のサムネイルスタックへ飛んでいくアニメーション → 枚数バッジがインクリメント。</span>
+              <span class="interaction-result">通常時はデバッグ成果物を作らずに撮影する。フラッシュエフェクト → 撮影画像が縮小しながらサムネイルスタックへ飛んでいくアニメーション → 枚数バッジがインクリメント。</span>
             </li>
             <li>
               <span class="interaction-trigger">5秒後の「開発元に報告」をタップ</span>
@@ -329,7 +329,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">リアルタイム検出の安定化</span>
-              <span class="spec-detail">カメラプレビュー中のオーバーレイ表示は、直近7フレームの検出結果を保持し、3フレーム以上で合意がある場合に各コーナーの中央値を返す。検出が一時的に失われた場合も最後の有効結果を500ms間保持し、枠の消失を防止する。さらに、コーナー座標の変化はアニメーション補間（150ms）で描画し、フレーム間の微小な座標変動による視覚的なちらつきを抑える。Android では 3:4 ビューファインダー内の FIT_CENTER 表示に合わせて座標を変換し、全画面の黒帯部分には検出枠を描かない。</span>
+              <span class="spec-detail">カメラプレビュー中のオーバーレイ表示は、直近7フレームの検出結果を保持し、3フレーム以上で合意がある場合に各コーナーの中央値を返す。検出が一時的に失われた場合も最後の有効結果を500ms間保持し、枠の消失を防止する。さらに、コーナー座標の変化はアニメーション補間（150ms）で描画し、フレーム間の微小な座標変動による視覚的なちらつきを抑える。Android では縦向き 3:4 / 横向き 4:3 ビューファインダー内の FIT_CENTER 表示に合わせて座標を変換し、全画面の黒帯部分には検出枠を描かない。</span>
             </li>
             <li>
               <span class="spec-element">保存時の Step 0 生成</span>
@@ -665,8 +665,8 @@ import Layout from '../layouts/Layout.astro';
               <span class="spec-detail">くっきり・鮮やかは軽量な色変換、強化・白黒・マジック・ホワイトボードは OpenCV の文書補正として preview を生成する。保存済み状態では small / large の persisted preview を表示し、フィルタ適用時にそれらを更新する。未保存の編集中だけは working preview を再生成する。</span>
             </li>
             <li>
-              <span class="spec-element">マジックフィルタ</span>
-              <span class="spec-detail">マジックは Step 0 または Step 1 を入力として、文書向けの画像補正を適用した preview を生成する。概念的には docs の Step 2・Step 3 に近い処理であり、照明ムラの補正、トーンの自動伸長、紙面の白化、色アクセントの保持をまとめて行う。A4 に近い文書では、必要に応じて Step 1 の比率正規化を経由してからマジック処理に入れる。生成結果は保存済み状態では persisted preview として保持する。</span>
+              <span class="spec-element">マジック系フィルタ</span>
+              <span class="spec-detail">マジックは Step 0 または Step 1 を入力として、文書向けの画像補正を適用した preview を生成する。概念的には docs の Step 2・Step 3 に近い処理であり、照明ムラの補正、トーンの自動伸長、紙面の白化、色アクセントの保持をまとめて行う。A4 に近い文書では、必要に応じて Step 1 の比率正規化を経由してから処理に入れる。生成結果は保存済み状態では persisted preview として保持する。</span>
             </li>
           </ul>
         </div>
