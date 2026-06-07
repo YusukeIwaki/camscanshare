@@ -1,5 +1,38 @@
 # Filter Research Notes
 
+## 2026-06-07: GL-PGENet paper implementation as deterministic mobile filter
+
+Input:
+
+- Paper: `arXiv:2505.22021v2`, GL-PGENet: A Parameterized Generation Framework for Robust Document Image Enhancement.
+- Upstream repository: `kukugpt/GL-PGENet`.
+- Full docs sample corpus from `docs/filter-samples.json`, plus the local dev sample when present.
+
+Execution:
+
+- Checked the upstream repository. `inference.py` is empty, there are no model definitions, and the README still lists pretrained model and inference-mode upload as TODO.
+- The paper's exact neural pipeline requires GPPNet pretraining and DB-LRNet training on 500,000+ synthetic samples, then task-specific fine-tuning. The public materials do not provide enough architecture/training code to reproduce a verified checkpoint in this repo.
+- Implemented an app-shippable `glpgenet` filter that follows the paper's parameterized-generation shape without learned weights:
+  - GPPNet approximation: estimate brightness, contrast, and color-preservation strength from page luminance/chroma statistics.
+  - DB-LRNet approximation: generate local `alpha`/`beta` maps from local mean/stddev over the luminance channel.
+  - Final synthesis: apply `alpha * h(I) + beta`, fuse high-frequency detail residuals, then protect text, color accents, and color-rich paper regions.
+- Generated docs outputs with `scripts/generate_simple_filter_samples.py --filter glpgenet`.
+- Product display name: `超強化`.
+
+Result:
+
+- Broadly safe on the full sample set: no checked sample had completely unreadable text, fully blown document content, or destroyed color information.
+- Improves ordinary paper samples, the dirty-white timetable, and the blue noisy report by whitening paper and increasing text contrast more strongly than `enhance`.
+- The handwritten math page becomes high contrast and somewhat harsher, but faint handwriting is still visible.
+- Color poster and paper-currency samples retain useful color; GL-PGENet is less color-destructive than a hard grayscale/BW filter.
+- Whiteboard samples remain usable, though the dedicated `whiteboard` filter is still the better preset for marker-board photos.
+
+Decision:
+
+- Ship `超強化` as a deterministic OpenCV filter inspired by GL-PGENet, not as the exact pretrained neural network.
+- Do not claim model parity with the paper's quantitative results, because no public checkpoint or complete inference/training implementation is available.
+- Keep this filter in docs, Android, and iOS because it adds a useful stronger color-preserving document cleanup option without bundling a large neural runtime.
+
 ## 2026-06-07: Real `DocRes` appearance filter evaluated, mobile adoption rejected
 
 Input:

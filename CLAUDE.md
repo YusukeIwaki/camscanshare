@@ -110,7 +110,7 @@ agent-browser scrollintoview "#screen-page-edit .phone-frame" && agent-browser s
 
 ## フィルタプリセット
 
-オリジナル（既定） / くっきり / 強化 / 白黒 / マジック / ホワイトボード / 鮮やか の7種。各フィルタの効果・パラメータの詳細は [フィルタ解説ページ](docs/src/pages/filters.astro) を参照。
+オリジナル（既定） / くっきり / 強化 / 白黒 / 超強化 / マジック / ホワイトボード / 鮮やか の8種。各フィルタの効果・パラメータの詳細は [フィルタ解説ページ](docs/src/pages/filters.astro) を参照。
 
 フィルタは今後追加可能な拡張設計とする。
 
@@ -123,7 +123,7 @@ agent-browser scrollintoview "#screen-page-edit .phone-frame" && agent-browser s
    - `scripts/generate_step0_samples.py`: 全サンプルのStep 0画像を生成（台形選択 + 射影変換）
    - `scripts/generate_step1_aspect_samples.py`: Step 0を入力に、A4 に近い文書だけ比率正規化したStep 1画像を生成
    - `scripts/generate_magic_filter_steps.py`: Step 1を入力に、マジックフィルタのStep 2/3画像を生成（OpenCVパイプライン）
-   - `scripts/generate_simple_filter_samples.py`: Step 1を入力に、くっきり・強化・白黒・ホワイトボード・鮮やかフィルタを生成
+   - `scripts/generate_simple_filter_samples.py`: Step 1を入力に、くっきり・強化・白黒・超強化・ホワイトボード・鮮やかフィルタを生成
    - `scripts/generate_filter_assets.sh`: 上記4段を順に実行して全画像を再生成
    - 入力ソース画像のリストは `docs/filter-samples.json` で管理
 3. **アプリへの実装**: 検証で確定したパラメータをAndroid/iOSアプリに移植する。Androidの実装は `androidapp/` の `ImageFilter.kt`（ColorMatrix定義）と `ImageProcessor.kt`（マジックフィルタのOpenCV実装）にある。

@@ -40,6 +40,19 @@ const filters = [
     detail: 'Lab の L チャンネルを照明補正・ヒストグラムストレッチしてからメディアンフィルタでノイズ除去。ReflectBinaryColorShift 風に推定背景で割り戻す正規化を薄く足し、大きなガウシアンカーネル（71×71）で局所平均を求め、各画素を局所平均で除算して正規化する。正規化画像にグローバル閾値を適用して二値化し、最後に連結成分分析で面積 8px 未満の孤立黒点を除去する。',
   },
   {
+    key: 'glpgenet',
+    name: '超強化',
+    navLabel: '超強化',
+    description: '論文の Global + Local Parametric Generation の考え方を、学習済みモデルなしで動く OpenCV パイプラインに落とし込んだ文書強化フィルタ。',
+    formula: 'GPP statistics → brightness/contrast/saturation params → local α/β map → detail residual fusion → color-aware paper cleanup',
+    detail: '論文の本来の GL-PGENet は、GPPNet で明るさ・コントラスト・彩度パラメータを推定し、DB-LRNet で局所線形変換パラメータを学習するニューラルネットワーク。公開 GitHub には推論コードと学習済みモデルが無いため、このアプリでは同じパラメトリック生成式を決定的推定で近似する。全体統計からグローバル補正係数を作り、局所平均と局所標準偏差から α/β マップを生成し、強い文字・罫線のディテール残差と色面保護を重ねる。',
+    steps: [
+      { label: 'GPP', description: '紙面平均・輝度分布・色量から明るさ、コントラスト、彩度保持量を推定する。' },
+      { label: 'Local α/β', description: '平滑化 L チャンネルに対して局所平均・標準偏差ベースの線形補正を適用し、ムラを抑えながら紙面を持ち上げる。' },
+      { label: 'Detail fusion', description: '強い文字・罫線・色アクセントの残差を戻し、色付き紙面や図版を白化しすぎないようにする。' },
+    ],
+  },
+  {
     key: 'magic',
     name: 'マジック',
     navLabel: 'マジック',

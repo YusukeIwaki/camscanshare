@@ -118,6 +118,7 @@ render_svg "$ICON_FOREGROUND_SVG_SOURCE" 1024 1024 "$MASTER_DIR/app-icon-foregro
 render_svg "$ICON_MONOCHROME_SVG_SOURCE" 1024 1024 "$MASTER_DIR/app-icon-monochrome.png"
 capture_asset "filter-original" 384 480 "$MASTER_DIR/filter-original.png"
 capture_asset "filter-sharpen" 384 480 "$MASTER_DIR/filter-sharpen.png"
+capture_asset "filter-glpgenet" 384 480 "$MASTER_DIR/filter-glpgenet.png"
 capture_asset "filter-bw" 384 480 "$MASTER_DIR/filter-bw.png"
 capture_asset "filter-magic" 384 480 "$MASTER_DIR/filter-magic.png"
 capture_asset "filter-whiteboard" 384 480 "$MASTER_DIR/filter-whiteboard.png"
@@ -138,6 +139,7 @@ done
 
 resize_box "$MASTER_DIR/filter-original.png" 192 240 "$ANDROID_DRAWABLE_DIR/filter_thumbnail_original.png"
 resize_box "$MASTER_DIR/filter-sharpen.png" 192 240 "$ANDROID_DRAWABLE_DIR/filter_thumbnail_sharpen.png"
+resize_box "$MASTER_DIR/filter-glpgenet.png" 192 240 "$ANDROID_DRAWABLE_DIR/filter_thumbnail_glpgenet.png"
 resize_box "$MASTER_DIR/filter-bw.png" 192 240 "$ANDROID_DRAWABLE_DIR/filter_thumbnail_bw.png"
 resize_box "$MASTER_DIR/filter-magic.png" 192 240 "$ANDROID_DRAWABLE_DIR/filter_thumbnail_magic.png"
 resize_box "$MASTER_DIR/filter-whiteboard.png" 192 240 "$ANDROID_DRAWABLE_DIR/filter_thumbnail_whiteboard.png"
@@ -146,6 +148,7 @@ resize_box "$MASTER_DIR/filter-vivid.png" 192 240 "$ANDROID_DRAWABLE_DIR/filter_
 declare -A IOS_FILTERS=(
   [FilterOriginal.imageset]="filter-original.png"
   [FilterSharpen.imageset]="filter-sharpen.png"
+  [FilterGLPGENet.imageset]="filter-glpgenet.png"
   [FilterBW.imageset]="filter-bw.png"
   [FilterMagic.imageset]="filter-magic.png"
   [FilterWhiteboard.imageset]="filter-whiteboard.png"

@@ -362,6 +362,60 @@
         conic-gradient(#0d2135 0 42%, #4fd9c1 42% 72%, #ff865d 72% 100%);
     }
 
+    .filter-glpgenet {
+      background:
+        radial-gradient(circle at 74% 18%, rgba(255, 255, 255, 0.74), transparent 22%),
+        radial-gradient(circle at 28% 78%, rgba(110, 222, 255, 0.22), transparent 24%),
+        linear-gradient(180deg, #f7fbff 0%, #e7eff8 100%);
+    }
+
+    .filter-glpgenet .badge::after {
+      content: "Boost";
+    }
+
+    .filter-glpgenet .doc-front {
+      background: linear-gradient(180deg, #ffffff 0%, #f9fcff 56%, #edf5fb 100%);
+      border-color: rgba(10, 26, 44, 0.12);
+      box-shadow:
+        0 0 0 3px rgba(255, 255, 255, 0.72),
+        0 18px 30px rgba(15, 30, 48, 0.16);
+    }
+
+    .filter-glpgenet .doc-title,
+    .filter-glpgenet .doc-line {
+      background: rgba(9, 24, 39, 0.88);
+    }
+
+    .filter-glpgenet .doc-line {
+      height: 10px;
+    }
+
+    .filter-glpgenet .mini-bars span {
+      background: linear-gradient(180deg, #102f49, #0a2034);
+    }
+
+    .filter-glpgenet .mini-bars span:nth-child(2) {
+      background: linear-gradient(180deg, #ff9a64, #f1673e);
+    }
+
+    .filter-glpgenet .mini-bars span:nth-child(3) {
+      background: linear-gradient(180deg, #56e4d0, #25b8a8);
+    }
+
+    .filter-glpgenet .mini-chart {
+      background:
+        radial-gradient(circle at center, #ffffff 0 20px, transparent 21px),
+        conic-gradient(#082237 0 42%, #51dec8 42% 72%, #ff7d57 72% 100%);
+      box-shadow:
+        inset 0 0 0 1px rgba(8, 34, 55, 0.08),
+        0 0 18px rgba(255, 255, 255, 0.76);
+    }
+
+    .filter-glpgenet .stamp {
+      background: rgba(255, 255, 255, 0.62);
+      border-color: rgba(255, 127, 95, 0.42);
+    }
+
     .filter-bw {
       background:
         linear-gradient(180deg, #f8f8f8 0%, #dfdfdf 100%);
@@ -667,6 +721,38 @@
           </div>
         </div>
         <p>線を濃く、輪郭を締めて「くっきり」を一目で出す。</p>
+      </article>
+
+      <article class="gallery-panel">
+        <h2>GL-PGENet</h2>
+        <div class="gallery-preview">
+          <div class="asset filter-card filter-glpgenet" data-asset="filter-glpgenet" data-width="384" data-height="480" aria-label="filter-glpgenet">
+            <span class="badge"></span>
+            <div class="board-shadow"></div>
+            <div class="doc-stack">
+              <div class="doc-back"></div>
+              <div class="doc-front">
+                <div class="doc-content">
+                  <span class="doc-title"></span>
+                  <div class="doc-line-group">
+                    <span class="doc-line long"></span>
+                    <span class="doc-line mid"></span>
+                    <span class="doc-line long"></span>
+                    <span class="doc-line short"></span>
+                  </div>
+                  <div class="doc-visuals">
+                    <div class="mini-bars">
+                      <span></span><span></span><span></span><span></span>
+                    </div>
+                    <div class="mini-chart"></div>
+                  </div>
+                  <span class="stamp"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p>強化よりも白く、線をさらに濃く見せる「超強化」のサムネイル。</p>
       </article>
 
       <article class="gallery-panel">

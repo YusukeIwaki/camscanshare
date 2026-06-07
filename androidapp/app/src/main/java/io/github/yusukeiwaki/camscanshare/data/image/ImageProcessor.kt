@@ -93,6 +93,7 @@ class ImageProcessor @Inject constructor(
 
         val output = when (filterKey) {
             "enhance" -> applyEnhanceFilter(source, session)
+            "glpgenet" -> applyGlpgenetFilter(source, session)
             "magic" -> applyMagicFilter(source, session)
             "bw" -> applyDocumentBwFilter(source, session)
             "whiteboard" -> applyWhiteboardFilter(source, session)
@@ -132,6 +133,7 @@ class ImageProcessor @Inject constructor(
     fun getColorMatrix(filterKey: String): ColorMatrix? = when (filterKey) {
         "original" -> null
         "enhance" -> null
+        "glpgenet" -> null
         "magic" -> null
         "sharpen" -> contrastMatrix(1.4f).apply { postConcat(brightnessMatrix(1.05f)) }
         "bw" -> null
@@ -509,6 +511,121 @@ class ImageProcessor @Inject constructor(
         baseL.release()
         outputL0.release()
         outputL1.release()
+        outputL.release()
+        outputA.release()
+        outputB.release()
+        finalLab.release()
+        finalBgr.release()
+        restoredBgr.release()
+        finalRgb.release()
+
+        return output
+    }
+
+    private fun applyGlpgenetFilter(
+        source: Bitmap,
+        session: ImageProcessingDebugSession?,
+    ): Bitmap {
+        val rgb = bitmapToRgb(source)
+        val analysis = prepareDocumentAnalysis(rgb, session)
+
+        val q08 = percentileOfMat(analysis.denoisedL, 0.08)
+        val q92 = percentileOfMat(analysis.denoisedL, 0.92)
+        val contrastGain = (154.0 / maxOf(q92 - q08, 1.0)).coerceIn(1.06, 1.34)
+        val paperMean = when {
+            Core.countNonZero(analysis.paperCleanMask) > 0 -> {
+                Core.mean(analysis.denoisedL, analysis.paperCleanMask).`val`[0]
+            }
+            Core.countNonZero(analysis.paperMask) > 0 -> {
+                Core.mean(analysis.denoisedL, analysis.paperMask).`val`[0]
+            }
+            else -> q92
+        }
+        val brightnessOffset = ((236.0 - paperMean) * 0.20).coerceIn(-8.0, 22.0)
+
+        val globalL32 = Mat()
+        analysis.denoisedL.convertTo(globalL32, CvType.CV_32F)
+        Core.multiply(globalL32, Scalar.all(contrastGain), globalL32)
+        Core.add(globalL32, Scalar.all(128.0 * (1.0 - contrastGain) + brightnessOffset), globalL32)
+        val globalL = Mat()
+        globalL32.convertTo(globalL, CvType.CV_8U)
+
+        val smoothedL = Mat()
+        Imgproc.bilateralFilter(globalL, smoothedL, 7, 28.0, 15.0)
+        val (localMean, localStd) = computeLocalMeanStd(globalL, windowSize = 41)
+        val parametricL = buildGlpgenetParametricL(
+            globalL,
+            smoothedL,
+            localMean,
+            localStd,
+            analysis.strongStructureMask,
+            analysis.colorRichness,
+        )
+
+        val paperWhitenStrength = (0.18 + (238.0 - paperMean) / 210.0).coerceIn(0.18, 0.42)
+        val whitenedL = blendTowardValue(parametricL, analysis.paperCleanMask, 246.0, paperWhitenStrength)
+        val paperMixedL = blendMaskedTowardReference(
+            whitenedL,
+            analysis.denoisedL,
+            analysis.paperColorMask,
+            0.28 + 0.18 * analysis.colorRichness,
+        )
+        val accentMixedL = blendMaskedTowardReference(
+            paperMixedL,
+            globalL,
+            analysis.accentMask,
+            0.44,
+        )
+        val outputL = maskedMinScaled(accentMixedL, globalL, analysis.strongStructureMask, 0.98)
+        debugSink.writeMat(session, "glpgenet_global_l", globalL)
+        debugSink.writeMat(session, "glpgenet_smoothed_l", smoothedL)
+        debugSink.writeMat(session, "glpgenet_output_l", outputL)
+        debugSink.writeText(
+            session,
+            "glpgenet-analysis.json",
+            "{\"contrastGain\":\"${contrastGain}\",\"brightnessOffset\":\"${brightnessOffset}\",\"paperWhitenStrength\":\"${paperWhitenStrength}\"}",
+        )
+
+        val (outputA, outputB) = buildDocumentChromaOutputs(
+            analysis.neutralizedA,
+            analysis.neutralizedB,
+            analysis.paperMask,
+            analysis.paperColorMask,
+            analysis.accentMask,
+            mutedFactor = 0.42 + 0.16 * analysis.colorRichness,
+            paperColorFactor = 0.70 + 0.18 * analysis.colorRichness,
+            accentFactor = minOf(1.10, 1.00 + 0.10 * analysis.colorRichness),
+        )
+
+        val finalLab = Mat()
+        Core.merge(listOf(outputL, outputA, outputB), finalLab)
+        val finalBgr = Mat()
+        Imgproc.cvtColor(finalLab, finalBgr, Imgproc.COLOR_Lab2BGR)
+        val restoredBgr = restoreContentSaturation(
+            finalBgr,
+            outputL,
+            analysis.neutralizedA,
+            analysis.neutralizedB,
+            analysis.paperMask,
+            analysis.accentMask,
+            analysis.paperColorMask,
+        )
+        val finalRgb = Mat()
+        Imgproc.cvtColor(restoredBgr, finalRgb, Imgproc.COLOR_BGR2RGB)
+        debugSink.writeMat(session, "glpgenet_final_rgb", finalRgb, DebugMatColor.RGB)
+        val output = bitmapFromRgb(finalRgb, source.width, source.height)
+
+        rgb.release()
+        analysis.release()
+        globalL32.release()
+        globalL.release()
+        smoothedL.release()
+        localMean.release()
+        localStd.release()
+        parametricL.release()
+        whitenedL.release()
+        paperMixedL.release()
+        accentMixedL.release()
         outputL.release()
         outputA.release()
         outputB.release()
@@ -1209,6 +1326,45 @@ class ImageProcessor @Inject constructor(
         }
 
         val output = Mat(base.size(), CvType.CV_8U)
+        output.put(0, 0, outputBytes)
+        return output
+    }
+
+    private fun buildGlpgenetParametricL(
+        globalL: Mat,
+        smoothedL: Mat,
+        localMean: Mat,
+        localStd: Mat,
+        strongStructureMask: Mat,
+        colorRichness: Double,
+    ): Mat {
+        val globalBytes = ByteArray((globalL.total() * globalL.channels()).toInt())
+        val smoothedBytes = ByteArray((smoothedL.total() * smoothedL.channels()).toInt())
+        val strongBytes = ByteArray((strongStructureMask.total() * strongStructureMask.channels()).toInt())
+        val meanValues = FloatArray((localMean.total() * localMean.channels()).toInt())
+        val stdValues = FloatArray((localStd.total() * localStd.channels()).toInt())
+        globalL.get(0, 0, globalBytes)
+        smoothedL.get(0, 0, smoothedBytes)
+        strongStructureMask.get(0, 0, strongBytes)
+        localMean.get(0, 0, meanValues)
+        localStd.get(0, 0, stdValues)
+
+        val outputBytes = ByteArray(globalBytes.size)
+        for (index in outputBytes.indices) {
+            val globalValue = globalBytes[index].toInt() and 0xFF
+            val smoothedValue = smoothedBytes[index].toInt() and 0xFF
+            val alpha = 1.0 + ((36.0 - stdValues[index]) / 130.0).coerceIn(0.0, 0.18)
+            val beta = ((238.0 - meanValues[index]) * 0.22).coerceIn(-14.0, 34.0)
+            val detailGain = if ((strongBytes[index].toInt() and 0xFF) > 0) {
+                1.30 + 0.08 * colorRichness
+            } else {
+                1.14 + 0.08 * colorRichness
+            }
+            val value = smoothedValue * alpha + beta + (globalValue - smoothedValue) * detailGain
+            outputBytes[index] = value.roundToInt().coerceIn(0, 255).toByte()
+        }
+
+        val output = Mat(globalL.size(), CvType.CV_8U)
         output.put(0, 0, outputBytes)
         return output
     }

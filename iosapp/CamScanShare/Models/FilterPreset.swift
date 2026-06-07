@@ -6,6 +6,7 @@ enum FilterPreset: String, CaseIterable, Identifiable, Sendable {
     case sharpen
     case enhance
     case bw
+    case glpgenet
     case magic
     case whiteboard
     case vivid
@@ -18,6 +19,7 @@ enum FilterPreset: String, CaseIterable, Identifiable, Sendable {
         case .sharpen: "くっきり"
         case .enhance: "強化"
         case .bw: "白黒"
+        case .glpgenet: "超強化"
         case .magic: "マジック"
         case .whiteboard: "ホワイトボード"
         case .vivid: "鮮やか"
@@ -30,6 +32,7 @@ enum FilterPreset: String, CaseIterable, Identifiable, Sendable {
         case .sharpen: "FilterSharpen"
         case .enhance: "FilterSharpen"
         case .bw: "FilterBW"
+        case .glpgenet: "FilterGLPGENet"
         case .magic: "FilterMagic"
         case .whiteboard: "FilterWhiteboard"
         case .vivid: "FilterVivid"

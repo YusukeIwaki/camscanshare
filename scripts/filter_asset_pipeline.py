@@ -22,6 +22,10 @@ FILTERS = {
         # illumination correction + local-mean adaptive threshold
         "pipeline": "document_bw",
     },
+    "glpgenet": {
+        # GL-PGENet paper-inspired parametric generation pipeline.
+        "pipeline": "glpgenet",
+    },
     "whiteboard": {
         # flat-field correction + board whitening + marker color preservation
         "pipeline": "whiteboard",
@@ -1360,6 +1364,94 @@ def apply_magic_pipeline(cropped: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
     return step1_bgr, final_bgr
 
 
+def apply_glpgenet_pipeline(image: np.ndarray) -> np.ndarray:
+    doc = prepare_document_analysis(image)
+    denoised_l = doc["denoised_l"]
+    paper_mask = doc["paper_mask"]
+    paper_clean_mask = doc["paper_clean_mask"]
+    paper_color_mask = doc["paper_color_mask"]
+    accent_mask = doc["accent_mask"]
+    strong_structure_mask = doc["strong_structure_mask"]
+    neutralized_a = doc["neutralized_a"]
+    neutralized_b = doc["neutralized_b"]
+    color_richness = float(doc["color_richness"])
+
+    visible = denoised_l[denoised_l > 8]
+    if len(visible) == 0:
+        visible = denoised_l.reshape(-1)
+    q08, _, q92 = np.percentile(visible, [8, 50, 92])
+    contrast_gain = float(np.clip(154.0 / max(q92 - q08, 1.0), 1.06, 1.34))
+
+    if int(cv2.countNonZero(paper_clean_mask)) > 0:
+        paper_mean = float(cv2.mean(denoised_l, mask=paper_clean_mask)[0])
+    elif int(cv2.countNonZero(paper_mask)) > 0:
+        paper_mean = float(cv2.mean(denoised_l, mask=paper_mask)[0])
+    else:
+        paper_mean = float(q92)
+    brightness_offset = float(np.clip((236.0 - paper_mean) * 0.20, -8.0, 22.0))
+
+    global_l32 = denoised_l.astype(np.float32) * contrast_gain
+    global_l32 += 128.0 * (1.0 - contrast_gain) + brightness_offset
+    global_l = np.clip(global_l32, 0, 255).astype(np.uint8)
+
+    smoothed_l = cv2.bilateralFilter(global_l, 7, 28.0, 15.0)
+    local_mean, local_std = compute_local_mean_std(global_l, window_size=41)
+    alpha = 1.0 + np.clip((36.0 - local_std) / 130.0, 0.0, 0.18)
+    beta = np.clip((238.0 - local_mean) * 0.22, -14.0, 34.0)
+    parametric_l32 = smoothed_l.astype(np.float32) * alpha + beta
+    detail = global_l.astype(np.float32) - smoothed_l.astype(np.float32)
+    detail_gain = np.full(global_l.shape, 1.14 + 0.08 * color_richness, dtype=np.float32)
+    detail_gain[strong_structure_mask > 0] = 1.30 + 0.08 * color_richness
+    output_l = np.clip(parametric_l32 + detail * detail_gain, 0, 255).astype(np.uint8)
+
+    paper_whiten_strength = float(np.clip(0.18 + (238.0 - paper_mean) / 210.0, 0.18, 0.42))
+    output_l = blend_toward_value(output_l, paper_clean_mask, 246.0, paper_whiten_strength)
+
+    paper_color_idx = paper_color_mask > 0
+    paper_color_mix = 0.28 + 0.18 * color_richness
+    output_l[paper_color_idx] = np.clip(
+        output_l[paper_color_idx].astype(np.float32) * (1.0 - paper_color_mix)
+        + denoised_l[paper_color_idx].astype(np.float32) * paper_color_mix,
+        0,
+        255,
+    ).astype(np.uint8)
+
+    accent_idx = accent_mask > 0
+    output_l[accent_idx] = np.clip(
+        output_l[accent_idx].astype(np.float32) * 0.56
+        + global_l[accent_idx].astype(np.float32) * 0.44,
+        0,
+        255,
+    ).astype(np.uint8)
+
+    strong_idx = strong_structure_mask > 0
+    output_l[strong_idx] = np.minimum(
+        output_l[strong_idx],
+        np.clip(global_l[strong_idx].astype(np.float32) * 0.98, 0, 255).astype(np.uint8),
+    )
+
+    output_a, output_b = build_document_chroma_outputs(
+        neutralized_a,
+        neutralized_b,
+        paper_mask,
+        paper_color_mask,
+        accent_mask,
+        muted_factor=0.42 + 0.16 * color_richness,
+        paper_color_factor=0.70 + 0.18 * color_richness,
+        accent_factor=min(1.10, 1.00 + 0.10 * color_richness),
+    )
+    final_bgr = bgr_from_lab_channels(output_l, output_a, output_b)
+    return restore_content_saturation(
+        final_bgr,
+        output_l,
+        neutralized_a,
+        neutralized_b,
+        paper_mask,
+        accent_mask,
+        paper_color_mask,
+    )
+
+
 def apply_whiteboard_pipeline(image: np.ndarray) -> np.ndarray:
     rgb = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
     lab = cv2.cvtColor(rgb, cv2.COLOR_RGB2LAB)
@@ -1529,6 +1621,8 @@ def apply_filter(image: np.ndarray, filter_key: str) -> np.ndarray:
         return apply_enhance_pipeline(image)
     if spec.get("pipeline") == "document_bw":
         return apply_document_bw_pipeline(image)
+    if spec.get("pipeline") == "glpgenet":
+        return apply_glpgenet_pipeline(image)
     if spec.get("pipeline") == "whiteboard":
         return apply_whiteboard_pipeline(image)
     result = image.copy()

@@ -116,7 +116,7 @@ enum ImageFilterService {
             filter.contrast = 1.2
             return filter.outputImage ?? image
 
-        case .enhance, .bw, .magic, .whiteboard:
+        case .enhance, .bw, .glpgenet, .magic, .whiteboard:
             assertionFailure("Document filters must be handled by OpenCV")
             return image
         }
@@ -141,7 +141,7 @@ enum ImageFilterService {
 
     private static func usesOpenCVPipeline(for preset: FilterPreset) -> Bool {
         switch preset {
-        case .enhance, .bw, .magic, .whiteboard:
+        case .enhance, .bw, .glpgenet, .magic, .whiteboard:
             true
         case .original, .sharpen, .vivid:
             false

@@ -329,6 +329,7 @@
   .filter-preview.original {}
   .filter-preview.sharpen { filter: contrast(1.4) brightness(1.05); }
   .filter-preview.bw { filter: grayscale(1) contrast(1.3); }
+  .filter-preview.glpgenet { filter: brightness(1.28) contrast(1.65) saturate(0.72); }
   .filter-preview.whiteboard { filter: brightness(1.25) contrast(1.45) saturate(1.6); }
   .filter-preview.color-limit { filter: saturate(2) contrast(1.2); }
   .filter-preview.magic { filter: brightness(1.4) contrast(2) saturate(0.3); }
@@ -577,6 +578,18 @@
         <div class="fline" style="width:80%"></div>
       </div>
       <span class="filter-name">白黒</span>
+    </button>
+
+    <button class="filter-item" data-filter="glpgenet" data-css="brightness(1.28) contrast(1.65) saturate(0.72)" >
+      <div class="filter-preview glpgenet">
+        <div class="fline" style="width:50%"></div>
+        <div class="fline" style="width:85%"></div>
+        <div class="fline" style="width:70%"></div>
+        <div class="fline" style="width:90%"></div>
+        <div class="fline" style="width:65%"></div>
+        <div class="fline" style="width:80%"></div>
+      </div>
+      <span class="filter-name">超強化</span>
     </button>
 
     <button class="filter-item" data-filter="magic" data-css="brightness(1.4) contrast(2) saturate(0.3)" >

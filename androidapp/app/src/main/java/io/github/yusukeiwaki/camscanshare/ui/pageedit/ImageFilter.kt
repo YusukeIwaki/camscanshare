@@ -13,6 +13,7 @@ enum class ImageFilter(
     SHARPEN("くっきり", "sharpen", R.drawable.filter_thumbnail_sharpen),
     ENHANCE("強化", "enhance", R.drawable.filter_thumbnail_sharpen),
     BW("白黒", "bw", R.drawable.filter_thumbnail_bw),
+    GLPGENET("超強化", "glpgenet", R.drawable.filter_thumbnail_glpgenet),
     MAGIC("マジック", "magic", R.drawable.filter_thumbnail_magic),
     WHITEBOARD("ホワイトボード", "whiteboard", R.drawable.filter_thumbnail_whiteboard),
     VIVID("鮮やか", "vivid", R.drawable.filter_thumbnail_vivid);
@@ -39,6 +40,7 @@ fun ImageFilter.toColorMatrixFilter(): ColorMatrixColorFilter? {
 
         ImageFilter.ENHANCE -> return null
         ImageFilter.BW -> return null
+        ImageFilter.GLPGENET -> return null
         ImageFilter.MAGIC -> return null
         ImageFilter.WHITEBOARD -> return null
 

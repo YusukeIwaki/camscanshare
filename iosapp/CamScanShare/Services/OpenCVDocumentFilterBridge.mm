@@ -36,6 +36,7 @@ struct DocumentAnalysis {
 
 Mat applyDocumentBwFilter(const Mat& sourceRgb);
 Mat applyEnhanceFilter(const Mat& sourceRgb);
+Mat applyGlpgenetFilter(const Mat& sourceRgb);
 Mat applyMagicFilter(const Mat& sourceRgb);
 Mat applyWhiteboardFilter(const Mat& sourceRgb);
 
@@ -188,6 +189,9 @@ UIImage* debugUIImageFromMat(const Mat& source, bool sourceIsRgb = false) {
 Mat applyNamedFilter(const NSString* filterName, const Mat& rgb) {
     if ([filterName isEqualToString:@"enhance"]) {
         return applyEnhanceFilter(rgb);
+    }
+    if ([filterName isEqualToString:@"glpgenet"]) {
+        return applyGlpgenetFilter(rgb);
     }
     if ([filterName isEqualToString:@"magic"]) {
         return applyMagicFilter(rgb);
@@ -1524,6 +1528,40 @@ Mat maskedMinScaled(const Mat& base, const Mat& reference, const Mat& mask, doub
     return matFromBytes(base.size(), CV_8U, baseBytes);
 }
 
+Mat buildGlpgenetParametricL(
+    const Mat& globalL,
+    const Mat& smoothedL,
+    const Mat& localMean,
+    const Mat& localStd,
+    const Mat& strongStructureMask,
+    double colorRichness
+) {
+    Mat output(globalL.size(), CV_8U);
+    for (int y = 0; y < globalL.rows; y++) {
+        const uint8_t* globalRow = globalL.ptr<uint8_t>(y);
+        const uint8_t* smoothedRow = smoothedL.ptr<uint8_t>(y);
+        const float* meanRow = localMean.ptr<float>(y);
+        const float* stdRow = localStd.ptr<float>(y);
+        const uint8_t* strongRow = strongStructureMask.ptr<uint8_t>(y);
+        uint8_t* outputRow = output.ptr<uint8_t>(y);
+        for (int x = 0; x < globalL.cols; x++) {
+            const double globalValue = static_cast<double>(globalRow[x]);
+            const double smoothedValue = static_cast<double>(smoothedRow[x]);
+            const double alpha = 1.0 + std::clamp((36.0 - static_cast<double>(stdRow[x])) / 130.0, 0.0, 0.18);
+            const double beta = std::clamp((238.0 - static_cast<double>(meanRow[x])) * 0.22, -14.0, 34.0);
+            const double detailGain = strongRow[x] > 0
+                ? 1.30 + 0.08 * colorRichness
+                : 1.14 + 0.08 * colorRichness;
+            const double value = smoothedValue * alpha + beta + (globalValue - smoothedValue) * detailGain;
+            outputRow[x] = static_cast<uint8_t>(std::clamp(
+                static_cast<int>(std::lround(value)),
+                0,
+                255));
+        }
+    }
+    return output;
+}
+
 Mat boostWhiteboardAccentColors(const Mat& bgr, const Mat& accentMask) {
     Mat hsv;
     cv::cvtColor(bgr, hsv, cv::COLOR_BGR2HSV);
@@ -1685,6 +1723,80 @@ Mat applyEnhanceFilter(const Mat& sourceRgb) {
         analysis.paperMask,
         analysis.accentMask,
         analysis.paperColorMask);
+    Mat finalRgb;
+    cv::cvtColor(restoredBgr, finalRgb, cv::COLOR_BGR2RGB);
+    return finalRgb;
+}
+
+Mat applyGlpgenetFilter(const Mat& sourceRgb) {
+    const auto analysis = prepareDocumentAnalysis(sourceRgb);
+
+    const double q08 = percentileOfMat(analysis.denoisedL, 0.08);
+    const double q92 = percentileOfMat(analysis.denoisedL, 0.92);
+    const double contrastGain = std::clamp(154.0 / std::max(q92 - q08, 1.0), 1.06, 1.34);
+    double paperMean = q92;
+    if (cv::countNonZero(analysis.paperCleanMask) > 0) {
+        paperMean = cv::mean(analysis.denoisedL, analysis.paperCleanMask)[0];
+    } else if (cv::countNonZero(analysis.paperMask) > 0) {
+        paperMean = cv::mean(analysis.denoisedL, analysis.paperMask)[0];
+    }
+    const double brightnessOffset = std::clamp((236.0 - paperMean) * 0.20, -8.0, 22.0);
+
+    Mat globalL32;
+    analysis.denoisedL.convertTo(globalL32, CV_32F);
+    cv::multiply(globalL32, Scalar::all(contrastGain), globalL32);
+    cv::add(globalL32, Scalar::all(128.0 * (1.0 - contrastGain) + brightnessOffset), globalL32);
+    Mat globalL;
+    globalL32.convertTo(globalL, CV_8U);
+
+    Mat smoothedL;
+    cv::bilateralFilter(globalL, smoothedL, 7, 28.0, 15.0);
+    auto [localMean, localStd] = computeLocalMeanStd(globalL, 41);
+    Mat parametricL = buildGlpgenetParametricL(
+        globalL,
+        smoothedL,
+        localMean,
+        localStd,
+        analysis.strongStructureMask,
+        analysis.colorRichness);
+
+    const double paperWhitenStrength = std::clamp(0.18 + (238.0 - paperMean) / 210.0, 0.18, 0.42);
+    Mat whitenedL = blendTowardValue(parametricL, analysis.paperCleanMask, 246.0, paperWhitenStrength);
+    Mat paperMixedL = blendMaskedTowardReference(
+        whitenedL,
+        analysis.denoisedL,
+        analysis.paperColorMask,
+        0.28 + 0.18 * analysis.colorRichness);
+    Mat accentMixedL = blendMaskedTowardReference(
+        paperMixedL,
+        globalL,
+        analysis.accentMask,
+        0.44);
+    Mat outputL = maskedMinScaled(accentMixedL, globalL, analysis.strongStructureMask, 0.98);
+
+    auto [outputA, outputB] = buildDocumentChromaOutputs(
+        analysis.neutralizedA,
+        analysis.neutralizedB,
+        analysis.paperMask,
+        analysis.paperColorMask,
+        analysis.accentMask,
+        0.42 + 0.16 * analysis.colorRichness,
+        0.70 + 0.18 * analysis.colorRichness,
+        std::min(1.10, 1.00 + 0.10 * analysis.colorRichness));
+
+    Mat finalLab;
+    cv::merge(std::vector<Mat>{outputL, outputA, outputB}, finalLab);
+    Mat finalBgr;
+    cv::cvtColor(finalLab, finalBgr, cv::COLOR_Lab2BGR);
+    Mat restoredBgr = restoreContentSaturation(
+        finalBgr,
+        outputL,
+        analysis.neutralizedA,
+        analysis.neutralizedB,
+        analysis.paperMask,
+        analysis.accentMask,
+        analysis.paperColorMask);
+
     Mat finalRgb;
     cv::cvtColor(restoredBgr, finalRgb, cv::COLOR_BGR2RGB);
     return finalRgb;
