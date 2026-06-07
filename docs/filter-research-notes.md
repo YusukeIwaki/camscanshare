@@ -1,5 +1,27 @@
 # Filter Research Notes
 
+## 2026-06-07: Foreground-masked inpaint shading prototype tried as magic+
+
+Input:
+
+- User-supplied 3-page scanned PDF rendered at 180 dpi for a quick restoration check.
+
+Tested a local-only prototype based on foreground-aware background estimation:
+
+- Lab luminance correction with foreground masks from saturation, black-hat response, dark pixels, local texture, and Laplacian energy.
+- Reduced-size Telea inpainting over the protected foreground mask, followed by morphological close and Gaussian smoothing to estimate the paper shading field.
+- Ratio/log-domain luminance normalization, then soft whitening only on bright low-chroma pixels outside the protected mask.
+
+Result: the direction is relevant, but it is not safe enough to replace the existing `magic` filter. It made page 1 and the colored timetable on page 2 a little cleaner while preserving most photo/color content, but it weakened thin map lines and pale labels on page 2. On page 3 it treated parts of the yellow and pink background text areas as removable paper/background, causing faint vertical text to lose contrast.
+
+Initial decision: this direction was tried as a separate aggressive `magic_plus` filter after the user explicitly accepted that some document types may be damaged. The existing `magic` filter remained the safer default. The prototype should be treated as a non-universal cleanup preset: it can strongly whiten paper and suppress shading, but it may damage faint lines, handwriting, colored backgrounds, notebook paper, and dirty reports.
+
+Follow-up from a 2-page wrinkled school handout PDF: the first adopted version protected too many wrinkle pixels as foreground/structure, then darkened them during the final content-preservation step. That made creases look like gray dirt after whitening. The prototype added a low-chroma, moderate-blackhat, moderate-local-delta `removable_texture_mask`; these weak wrinkle candidates were removed from foreground protection, included in paper whitening, and excluded from the final structure darkening mask. This reduced gray speckling on heavily wrinkled paper while keeping `magic_plus` explicitly aggressive and non-universal.
+
+Second follow-up: local/global background color estimation was checked as a way to lift remaining gray smudges. A guided version could whiten broader paper haze, but the visible artifact on the wrinkled handout was mostly a final rendering-mask problem: weak gray halo around text and isolated gray dots were being preserved as foreground-adjacent content. A final low-saturation gray halo cleanup based on strong text cores, weak candidates, connected components, and distance-to-core limiting was tried. It keeps only gray pixels connected to a strong text/line core and close enough to be anti-aliasing; disconnected gray candidates and near-white low-saturation paper pixels are forced to white.
+
+2026-06-07 rollback: Magic+ is removed from docs, Android, and iOS for now. Keep this section as a research record only; do not treat `magic_plus` as a current product filter or implementation target without re-evaluating it across the full sample corpus.
+
 ## 2026-05-18: Paired dark/bright crease-mask prototype
 
 References:
