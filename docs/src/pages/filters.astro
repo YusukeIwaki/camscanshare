@@ -53,6 +53,19 @@ const filters = [
     ],
   },
   {
+    key: 'deshadow',
+    name: '影除去',
+    navLabel: '影除去',
+    description: '学習済みニューラルネットワーク GCDRNet による紙面影・しわ陰影の除去。広い影やしわの陰影を白く整えつつ、文字・色面・写真を保持する。',
+    formula: 'GCNet(512²) → shadow map → input/shadow → DRNet(1024²) → gain map → full-res apply',
+    detail: 'GCDRNet（Zhang et al., IEEE TAI 2023, "Appearance Enhancement for Camera-captured Document Images in the Wild"）の公開チェックポイントをそのまま使う2段構成。GCNet（UNeXt 3ch, 約1.5Mパラメータ）が512×512でグローバル陰影マップを推定し、入力を陰影で割った補正画像とともにDRNet（UNeXt 6ch, 約4.2Mパラメータ）へ入力する。DRNetは最長辺1024の縮小画像で動かし、出力÷入力のゲインマップ（σ=2.0で平滑化）をフル解像度へ拡大して乗算する。これにより低周波の陰影除去・紙白化はモデル出力に従いながら、文字や写真のディテールは原寸画像のシャープさを維持する。モデルはfp16 ONNX（合計約11.5MB）でアプリに同梱し、Android は ONNX Runtime、iOS は Core ML 変換版で同一パイプラインを実行する。',
+    steps: [
+      { label: 'GCNet', description: '512×512に正方リサイズした入力からグローバル陰影マップを推定する。' },
+      { label: 'DRNet', description: '最長辺1024へ縮小した入力と陰影補正画像（6ch）から、影・しわ陰影を除去した補正画像を生成する。' },
+      { label: 'Gain map', description: 'DRNet出力÷入力の比をガウシアン平滑化してフル解像度へ拡大し、原画像に乗算する。低周波の影だけをモデルに従って補正し、文字のシャープさは原寸を維持する。' },
+    ],
+  },
+  {
     key: 'magic',
     name: 'マジック',
     navLabel: 'マジック',

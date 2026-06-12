@@ -416,6 +416,56 @@
       border-color: rgba(255, 127, 95, 0.42);
     }
 
+    .filter-deshadow {
+      background:
+        linear-gradient(135deg, rgba(34, 48, 72, 0.42) 0%, rgba(34, 48, 72, 0.16) 34%, transparent 58%),
+        linear-gradient(180deg, #f3f8ff 0%, #e3edf9 100%);
+    }
+
+    .filter-deshadow .badge::after {
+      content: "Deshadow";
+    }
+
+    .filter-deshadow .doc-front {
+      background: #ffffff;
+      border-color: rgba(10, 26, 44, 0.1);
+      box-shadow:
+        0 0 0 3px rgba(255, 255, 255, 0.85),
+        0 18px 30px rgba(15, 30, 48, 0.14);
+    }
+
+    .filter-deshadow .doc-back {
+      background: linear-gradient(135deg, rgba(31, 45, 66, 0.55), rgba(31, 45, 66, 0.08) 70%);
+    }
+
+    .filter-deshadow .doc-title,
+    .filter-deshadow .doc-line {
+      background: rgba(16, 30, 46, 0.82);
+    }
+
+    .filter-deshadow .mini-bars span {
+      background: linear-gradient(180deg, #16344f, #0c2238);
+    }
+
+    .filter-deshadow .mini-bars span:nth-child(2) {
+      background: linear-gradient(180deg, #ffb074, #f08048);
+    }
+
+    .filter-deshadow .mini-bars span:nth-child(3) {
+      background: linear-gradient(180deg, #63dcc9, #2fbcab);
+    }
+
+    .filter-deshadow .mini-chart {
+      background:
+        radial-gradient(circle at center, #ffffff 0 20px, transparent 21px),
+        conic-gradient(#10283f 0 42%, #54d9c4 42% 72%, #ff8a60 72% 100%);
+    }
+
+    .filter-deshadow .stamp {
+      background: rgba(255, 255, 255, 0.7);
+      border-color: rgba(84, 130, 188, 0.4);
+    }
+
     .filter-bw {
       background:
         linear-gradient(180deg, #f8f8f8 0%, #dfdfdf 100%);
@@ -753,6 +803,38 @@
           </div>
         </div>
         <p>強化よりも白く、線をさらに濃く見せる「超強化」のサムネイル。</p>
+      </article>
+
+      <article class="gallery-panel">
+        <h2>Deshadow</h2>
+        <div class="gallery-preview">
+          <div class="asset filter-card filter-deshadow" data-asset="filter-deshadow" data-width="384" data-height="480" aria-label="filter-deshadow">
+            <span class="badge"></span>
+            <div class="board-shadow"></div>
+            <div class="doc-stack">
+              <div class="doc-back"></div>
+              <div class="doc-front">
+                <div class="doc-content">
+                  <span class="doc-title"></span>
+                  <div class="doc-line-group">
+                    <span class="doc-line long"></span>
+                    <span class="doc-line mid"></span>
+                    <span class="doc-line long"></span>
+                    <span class="doc-line short"></span>
+                  </div>
+                  <div class="doc-visuals">
+                    <div class="mini-bars">
+                      <span></span><span></span><span></span><span></span>
+                    </div>
+                    <div class="mini-chart"></div>
+                  </div>
+                  <span class="stamp"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p>背景の影が晴れて紙が白く戻る「影除去」のサムネイル。</p>
       </article>
 
       <article class="gallery-panel">

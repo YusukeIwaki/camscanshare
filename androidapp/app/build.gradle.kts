@@ -110,6 +110,9 @@ dependencies {
     // OpenCV
     implementation(libs.opencv)
 
+    // ONNX Runtime (影除去 deshadow filter)
+    implementation(libs.onnxruntime.android)
+
     // WorkManager
     implementation(libs.work.runtime.ktx)
 

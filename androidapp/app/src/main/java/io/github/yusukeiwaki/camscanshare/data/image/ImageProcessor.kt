@@ -24,9 +24,8 @@ import kotlin.math.roundToInt
 @Singleton
 class ImageProcessor @Inject constructor(
     private val debugSink: ImageProcessingDebugSink,
+    private val deshadowFilter: DeshadowFilter,
 ) {
-
-    constructor() : this(ImageProcessingDebugSink.noOp())
 
     init {
         OpenCVLoader.initLocal()
@@ -92,6 +91,7 @@ class ImageProcessor @Inject constructor(
         debugSink.writeBitmap(session, "input", source)
 
         val output = when (filterKey) {
+            "deshadow" -> deshadowFilter.apply(source, session)
             "enhance" -> applyEnhanceFilter(source, session)
             "glpgenet" -> applyGlpgenetFilter(source, session)
             "magic" -> applyMagicFilter(source, session)
@@ -132,6 +132,7 @@ class ImageProcessor @Inject constructor(
      */
     fun getColorMatrix(filterKey: String): ColorMatrix? = when (filterKey) {
         "original" -> null
+        "deshadow" -> null
         "enhance" -> null
         "glpgenet" -> null
         "magic" -> null

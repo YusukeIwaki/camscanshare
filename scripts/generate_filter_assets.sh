@@ -30,3 +30,11 @@ python "$ROOT_DIR/scripts/generate_step0_samples.py" "$@"
 python "$ROOT_DIR/scripts/generate_step1_aspect_samples.py" "$@"
 python "$ROOT_DIR/scripts/generate_magic_filter_steps.py" "$@"
 python "$ROOT_DIR/scripts/generate_simple_filter_samples.py" "$@"
+
+# 影除去 (deshadow) は onnxruntime が必要。リポジトリの .venv を優先して使う。
+if [ -x "$ROOT_DIR/.venv/bin/python" ] && "$ROOT_DIR/.venv/bin/python" -c "import onnxruntime" 2>/dev/null; then
+  "$ROOT_DIR/.venv/bin/python" "$ROOT_DIR/scripts/generate_deshadow_filter_samples.py" "$@"
+else
+  pip install onnxruntime >/dev/null
+  python "$ROOT_DIR/scripts/generate_deshadow_filter_samples.py" "$@"
+fi

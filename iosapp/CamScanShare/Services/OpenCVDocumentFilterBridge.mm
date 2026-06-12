@@ -4,6 +4,7 @@
 #import <opencv2/imgproc.hpp>
 
 #import <CoreGraphics/CoreGraphics.h>
+#import <CoreML/CoreML.h>
 
 #include <algorithm>
 #include <array>
@@ -35,6 +36,7 @@ struct DocumentAnalysis {
 };
 
 Mat applyDocumentBwFilter(const Mat& sourceRgb);
+Mat applyDeshadowFilter(const Mat& sourceRgb);
 Mat applyEnhanceFilter(const Mat& sourceRgb);
 Mat applyGlpgenetFilter(const Mat& sourceRgb);
 Mat applyMagicFilter(const Mat& sourceRgb);
@@ -187,6 +189,9 @@ UIImage* debugUIImageFromMat(const Mat& source, bool sourceIsRgb = false) {
 }
 
 Mat applyNamedFilter(const NSString* filterName, const Mat& rgb) {
+    if ([filterName isEqualToString:@"deshadow"]) {
+        return applyDeshadowFilter(rgb);
+    }
     if ([filterName isEqualToString:@"enhance"]) {
         return applyEnhanceFilter(rgb);
     }
@@ -1800,6 +1805,213 @@ Mat applyGlpgenetFilter(const Mat& sourceRgb) {
     Mat finalRgb;
     cv::cvtColor(restoredBgr, finalRgb, cv::COLOR_BGR2RGB);
     return finalRgb;
+}
+
+// MARK: - 影除去 (deshadow) filter
+//
+// GCDRNet appearance-enhancement models (Zhang et al., IEEE TAI 2023).
+// Mirrors scripts/deshadow_pipeline.py and the Android DeshadowFilter:
+//   1. GCNet on a 512x512 square resize -> global shadow map
+//   2. DRNet on an aspect-fit resize inside a 1024x1024 replicate-padded
+//      square, fed with [input, input/shadow]
+//   3. gain map = DRNet output / DRNet input, Gaussian-smoothed, upsampled
+//      and multiplied onto the full-resolution image
+// Both nets take BGR channel order to match the original training pipeline.
+
+constexpr int kDeshadowGcSize = 512;
+constexpr int kDeshadowDrSize = 1024;
+constexpr float kDeshadowGainEps = 8.0f;
+constexpr double kDeshadowGainBlurSigma = 2.0;
+
+MLModel *deshadowModel(NSString *name, MLComputeUnits computeUnits) {
+    NSURL *url = [[NSBundle mainBundle] URLForResource:name withExtension:@"mlmodelc"];
+    if (url == nil) {
+        return nil;
+    }
+    MLModelConfiguration *config = [[MLModelConfiguration alloc] init];
+    config.computeUnits = computeUnits;
+    NSError *error = nil;
+    MLModel *model = [MLModel modelWithContentsOfURL:url configuration:config error:&error];
+    if (model == nil) {
+        NSLog(@"deshadow: failed to load %@: %@", name, error);
+    }
+    return model;
+}
+
+MLModel *deshadowGcnetModel(void) {
+    static MLModel *model = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        model = deshadowModel(@"GCNet", MLComputeUnitsAll);
+    });
+    return model;
+}
+
+MLModel *deshadowDrnetModel(void) {
+    static MLModel *model = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        // DRNet fails to build an ANE plan at 1024x1024; restrict to CPU+GPU.
+        model = deshadowModel(@"DRNet", MLComputeUnitsCPUAndGPU);
+    });
+    return model;
+}
+
+/// Copy a CV_32FC3 Mat into a planar CHW float buffer.
+void deshadowFillChw(const Mat& mat32, float *dest) {
+    std::vector<Mat> channels;
+    cv::split(mat32, channels);
+    const size_t planeSize = static_cast<size_t>(mat32.rows) * mat32.cols;
+    for (size_t c = 0; c < channels.size(); c++) {
+        Mat channel = channels[c];
+        if (!channel.isContinuous()) {
+            channel = channel.clone();
+        }
+        std::memcpy(dest + c * planeSize, channel.ptr<float>(0), planeSize * sizeof(float));
+    }
+}
+
+/// Build a CV_32FC3 Mat from a planar CHW float buffer (3 channels).
+Mat deshadowMatFromChw(const float *src, int height, int width) {
+    const size_t planeSize = static_cast<size_t>(height) * width;
+    std::vector<Mat> channels;
+    channels.reserve(3);
+    for (int c = 0; c < 3; c++) {
+        Mat channel(height, width, CV_32F);
+        std::memcpy(channel.ptr<float>(0), src + c * planeSize, planeSize * sizeof(float));
+        channels.push_back(channel);
+    }
+    Mat merged;
+    cv::merge(channels, merged);
+    return merged;
+}
+
+/// Run a deshadow model on a CHW float input. Returns false on failure.
+bool deshadowRunModel(MLModel *model,
+                      const float *input,
+                      NSArray<NSNumber *> *shape,
+                      size_t inputCount,
+                      std::vector<float>& output) {
+    NSError *error = nil;
+    MLMultiArray *inputArray = [[MLMultiArray alloc] initWithShape:shape
+                                                          dataType:MLMultiArrayDataTypeFloat32
+                                                             error:&error];
+    if (inputArray == nil) {
+        NSLog(@"deshadow: failed to allocate input array: %@", error);
+        return false;
+    }
+    std::memcpy(inputArray.dataPointer, input, inputCount * sizeof(float));
+
+    MLDictionaryFeatureProvider *provider = [[MLDictionaryFeatureProvider alloc]
+        initWithDictionary:@{@"input" : [MLFeatureValue featureValueWithMultiArray:inputArray]}
+                     error:&error];
+    if (provider == nil) {
+        NSLog(@"deshadow: failed to build feature provider: %@", error);
+        return false;
+    }
+
+    id<MLFeatureProvider> result = [model predictionFromFeatures:provider error:&error];
+    if (result == nil) {
+        NSLog(@"deshadow: prediction failed: %@", error);
+        return false;
+    }
+    MLMultiArray *outputArray = [result featureValueForName:@"output"].multiArrayValue;
+    if (outputArray == nil) {
+        NSLog(@"deshadow: missing output feature");
+        return false;
+    }
+    output.resize(static_cast<size_t>(outputArray.count));
+    std::memcpy(output.data(), outputArray.dataPointer, output.size() * sizeof(float));
+    return true;
+}
+
+Mat applyDeshadowFilter(const Mat& sourceRgb) {
+    MLModel *gcnet = deshadowGcnetModel();
+    MLModel *drnet = deshadowDrnetModel();
+    if (gcnet == nil || drnet == nil) {
+        return Mat();
+    }
+
+    const int width = sourceRgb.cols;
+    const int height = sourceRgb.rows;
+
+    Mat bgr;
+    cv::cvtColor(sourceRgb, bgr, cv::COLOR_RGB2BGR);
+
+    // 1. GCNet: global shadow map from a 512x512 square resize
+    Mat gcInput;
+    cv::resize(bgr, gcInput, Size(kDeshadowGcSize, kDeshadowGcSize), 0, 0, cv::INTER_AREA);
+    Mat gcInput32;
+    gcInput.convertTo(gcInput32, CV_32FC3, 1.0 / 255.0);
+    std::vector<float> gcChw(3 * kDeshadowGcSize * kDeshadowGcSize);
+    deshadowFillChw(gcInput32, gcChw.data());
+    std::vector<float> shadowChw;
+    if (!deshadowRunModel(gcnet, gcChw.data(),
+                          @[ @1, @3, @(kDeshadowGcSize), @(kDeshadowGcSize) ],
+                          gcChw.size(), shadowChw)) {
+        return Mat();
+    }
+    Mat shadow = deshadowMatFromChw(shadowChw.data(), kDeshadowGcSize, kDeshadowGcSize);
+
+    // 2. DRNet on an aspect-fit resize inside a replicate-padded square
+    const double scale = static_cast<double>(kDeshadowDrSize) / std::max(width, height);
+    const int drWidth = scale < 1.0 ? static_cast<int>(std::lround(width * scale)) : width;
+    const int drHeight = scale < 1.0 ? static_cast<int>(std::lround(height * scale)) : height;
+    Mat drImg;
+    cv::resize(bgr, drImg, Size(drWidth, drHeight), 0, 0, cv::INTER_AREA);
+    Mat drPad;
+    cv::copyMakeBorder(drImg, drPad, 0, kDeshadowDrSize - drHeight, 0, kDeshadowDrSize - drWidth,
+                       cv::BORDER_REPLICATE);
+    Mat drInput;
+    drPad.convertTo(drInput, CV_32FC3, 1.0 / 255.0);
+
+    Mat shadowBig;
+    cv::resize(shadow, shadowBig, Size(kDeshadowDrSize, kDeshadowDrSize), 0, 0, cv::INTER_LINEAR);
+    cv::max(shadowBig, 1e-4, shadowBig);
+    Mat gcCorrected;
+    cv::divide(drInput, shadowBig, gcCorrected);
+    cv::min(gcCorrected, 1.0, gcCorrected);
+    cv::max(gcCorrected, 0.0, gcCorrected);
+
+    const size_t drPlane = static_cast<size_t>(kDeshadowDrSize) * kDeshadowDrSize;
+    std::vector<float> drChw(6 * drPlane);
+    deshadowFillChw(drInput, drChw.data());
+    deshadowFillChw(gcCorrected, drChw.data() + 3 * drPlane);
+    std::vector<float> predChw;
+    if (!deshadowRunModel(drnet, drChw.data(),
+                          @[ @1, @6, @(kDeshadowDrSize), @(kDeshadowDrSize) ],
+                          drChw.size(), predChw)) {
+        return Mat();
+    }
+    Mat predFull = deshadowMatFromChw(predChw.data(), kDeshadowDrSize, kDeshadowDrSize);
+    cv::min(predFull, 1.0, predFull);
+    cv::max(predFull, 0.0, predFull);
+    Mat pred8;
+    predFull(cv::Rect(0, 0, drWidth, drHeight)).convertTo(pred8, CV_8UC3, 255.0);
+
+    // 3. Smoothed gain map applied to the full-resolution image
+    Mat pred32;
+    pred8.convertTo(pred32, CV_32FC3);
+    pred32 += Scalar::all(kDeshadowGainEps);
+    Mat drImg32;
+    drImg.convertTo(drImg32, CV_32FC3);
+    drImg32 += Scalar::all(kDeshadowGainEps);
+    Mat gain;
+    cv::divide(pred32, drImg32, gain);
+    cv::GaussianBlur(gain, gain, Size(0, 0), kDeshadowGainBlurSigma);
+    Mat gainFull;
+    cv::resize(gain, gainFull, Size(width, height), 0, 0, cv::INTER_LINEAR);
+
+    Mat source32;
+    bgr.convertTo(source32, CV_32FC3);
+    Mat result32;
+    cv::multiply(source32, gainFull, result32);
+    Mat result8;
+    result32.convertTo(result8, CV_8UC3);
+
+    Mat resultRgb;
+    cv::cvtColor(result8, resultRgb, cv::COLOR_BGR2RGB);
+    return resultRgb;
 }
 
 Mat applyMagicFilter(const Mat& sourceRgb) {

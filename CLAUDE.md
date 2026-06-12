@@ -110,7 +110,9 @@ agent-browser scrollintoview "#screen-page-edit .phone-frame" && agent-browser s
 
 ## フィルタプリセット
 
-オリジナル（既定） / くっきり / 強化 / 白黒 / 超強化 / マジック / ホワイトボード / 鮮やか の8種。各フィルタの効果・パラメータの詳細は [フィルタ解説ページ](docs/src/pages/filters.astro) を参照。
+オリジナル（既定） / くっきり / 強化 / 白黒 / 超強化 / 影除去 / マジック / ホワイトボード / 鮮やか の9種。各フィルタの効果・パラメータの詳細は [フィルタ解説ページ](docs/src/pages/filters.astro) を参照。
+
+影除去は学習済みニューラルネットワーク GCDRNet（GCNet 512² + DRNet 1024² + ゲインマップのフル解像度適用）による紙面影・しわ陰影の除去。fp16 ONNX モデル（合計約11.5MB）を `androidapp/app/src/main/assets/deshadow/` に同梱し、これが docs の Python パイプライン（`scripts/deshadow_pipeline.py`）と Android（ONNX Runtime）の単一ソース。iOS は同じチェックポイントを Core ML 変換した `iosapp/CamScanShare/MLModels/*.mlpackage` を使う（DRNet は ANE 非対応のため CPU+GPU 指定）。
 
 フィルタは今後追加可能な拡張設計とする。
 
@@ -124,7 +126,8 @@ agent-browser scrollintoview "#screen-page-edit .phone-frame" && agent-browser s
    - `scripts/generate_step1_aspect_samples.py`: Step 0を入力に、A4 に近い文書だけ比率正規化したStep 1画像を生成
    - `scripts/generate_magic_filter_steps.py`: Step 1を入力に、マジックフィルタのStep 2/3画像を生成（OpenCVパイプライン）
    - `scripts/generate_simple_filter_samples.py`: Step 1を入力に、くっきり・強化・白黒・超強化・ホワイトボード・鮮やかフィルタを生成
-   - `scripts/generate_filter_assets.sh`: 上記4段を順に実行して全画像を再生成
+   - `scripts/generate_deshadow_filter_samples.py`: Step 1を入力に、影除去フィルタを生成（onnxruntime が必要。リポジトリの `.venv` を使う）
+   - `scripts/generate_filter_assets.sh`: 上記の各段を順に実行して全画像を再生成
    - 入力ソース画像のリストは `docs/filter-samples.json` で管理
 3. **アプリへの実装**: 検証で確定したパラメータをAndroid/iOSアプリに移植する。Androidの実装は `androidapp/` の `ImageFilter.kt`（ColorMatrix定義）と `ImageProcessor.kt`（マジックフィルタのOpenCV実装）にある。
 

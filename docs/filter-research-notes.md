@@ -1,5 +1,28 @@
 # Filter Research Notes
 
+## 2026-06-12: GCDRNet adopted as the 影除去 (deshadow) product filter
+
+Input:
+
+- User-supplied 3-page school-event PDF `tmp/e4e86ad2-161a-486b-ab29-4152ce41dd78.pdf` rendered at 150/300 dpi, with `tmp/令和8年度能古島小中学校運動会.pdf` as the CamScanner-like visual target.
+- Full docs sample corpus from `docs/filter-samples.json` plus the local dev sample.
+- GCDRNet code from `ZZZHANG-jx/GCDRNet`, checkpoints from Hugging Face `FahNos/GCDRnet` (`gcnet.pkl` 3ch/1.47M params, `drnet.pkl` 6ch/4.18M params; this rehost has correct file naming, unlike the earlier swap).
+
+Execution:
+
+- Reproduced the 2026-06-07 GCDRNet result: full-res inference on MPS reaches near-target paper whiteness on all 3 pages in 0.4-1.6 s/page.
+- Designed a mobile-shaped pipeline: GCNet on a fixed 512x512 square resize, DRNet on an aspect-fit resize inside a 1024x1024 replicate-padded square, then a gain map (DRNet output / DRNet input, Gaussian sigma 2.0, +8 epsilon) bilinearly upsampled and multiplied onto the full-resolution image. The gain map keeps original-resolution text/photo sharpness; direct upsampling of the 1024 output visibly thickens fine strokes.
+- Exported fixed-shape ONNX (opset 17). fp16 conversion is visually lossless (max diff 5/255): gcnet 3.2 MB + drnet 8.3 MB = 11.5 MB total. Mac CPU end-to-end via onnxruntime: ~0.46 s for a 2480x3509 page, so a mid-range phone should stay well inside the 10 s/A4 budget.
+- OpenCV dnn cannot load the ONNX (the torch.roll Slice decomposition is unsupported), so Android uses ONNX Runtime (`com.microsoft.onnxruntime:onnxruntime-android`).
+- Converted the same checkpoints to Core ML mlpackages (fp16 mlprogram, iOS17 target) via torch.export + run_decompositions; the legacy jit.trace path fails on aten::Int. GCNet runs on all compute units; DRNet fails to build an ANE plan at 1024x1024 and must be loaded with CPU+GPU compute units (Mac GPU warm run ~0.04 s). Core ML pipeline output matches the ONNX pipeline (max diff 5/255).
+- Full-corpus evaluation: all 17 docs samples are broadly safe. Strong improvements on shadowed/creased paper (notepad, school handouts, timetable); color posters, whiteboard marker colors, and the dollar bill remain intact; faint pencil on the math sheet stays readable. The blue noisy report keeps some blue crease residue (improved but not fully cleaned), consistent with the earlier DocRes evaluation.
+
+Decision:
+
+- Ship as product filter 影除去 (`deshadow`), placed between 超強化 and マジック.
+- Single source of truth for the models is the fp16 ONNX pair committed under `androidapp/app/src/main/assets/deshadow/`; `scripts/deshadow_pipeline.py` (used by `scripts/generate_deshadow_filter_samples.py`) runs the identical pipeline for docs, and iOS uses Core ML conversions under `iosapp/CamScanShare/MLModels/`.
+- This supersedes the 2026-06-07 "do not ship DocRes" decision only in the sense that GCDRNet (a far smaller UNeXt pair from the same group) is shippable; the DocRes Restormer itself remains rejected for mobile.
+
 ## 2026-06-07: GL-PGENet paper implementation as deterministic mobile filter
 
 Input:

@@ -6,6 +6,7 @@ import android.graphics.PointF
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import io.github.yusukeiwaki.camscanshare.data.image.DeshadowFilter
 import io.github.yusukeiwaki.camscanshare.data.image.ImageProcessor
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
@@ -143,7 +144,9 @@ fun CameraScanScreen(
     }
     val cameraExecutor = remember { Executors.newSingleThreadExecutor() }
     val normalDebugSink = remember { ImageProcessingDebugSink.noOp() }
-    val imageProcessor = remember(normalDebugSink) { ImageProcessor(normalDebugSink) }
+    val imageProcessor = remember(normalDebugSink) {
+        ImageProcessor(normalDebugSink, DeshadowFilter(context.applicationContext, normalDebugSink))
+    }
     val paperDetector = remember(normalDebugSink) { lazy { PaperDetector(normalDebugSink) } }
 
     // Detected corners for overlay (normalized 0..1) + source image aspect ratio
@@ -194,7 +197,10 @@ fun CameraScanScreen(
                         normalDebugSink
                     }
                     val captureImageProcessor = if (captureForReport) {
-                        ImageProcessor(captureDebugSink)
+                        ImageProcessor(
+                            captureDebugSink,
+                            DeshadowFilter(context.applicationContext, captureDebugSink),
+                        )
                     } else {
                         imageProcessor
                     }
