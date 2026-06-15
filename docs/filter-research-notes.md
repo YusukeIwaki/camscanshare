@@ -1,5 +1,38 @@
 # Filter Research Notes
 
+## 2026-06-15: LDRNet-style document corner detector evaluated, mobile integration rolled back
+
+Input:
+
+- User request to improve paper detection quality toward CamScanner-like behavior using LDRNet.
+- SmartDoc 2015 Challenge 1 frames release downloaded to `tmp/smartdoc15`.
+- Current docs sample corpus from `docs/filter-samples.json`.
+
+Execution:
+
+- Added a repository-local PyTorch implementation of an LDRNet-style detector: MobileNetV2 features plus an 8-value corner regression head, fixed 224x224 RGB input, ImageNet normalization, and top-left/top-right/bottom-right/bottom-left normalized output.
+- Trained locally with `.venv/bin/python scripts/train_ldrnet_detector.py --dataset-dir tmp/smartdoc15 --out-dir tmp/ldrnet-camscanshare --epochs 5 --batch-size 64 --max-train 12000 --max-val 2000 --stride 2 --num-workers 4 --pretrained`.
+- Best checkpoint: `tmp/ldrnet-camscanshare/best.pt`, epoch 5, train records `11156`, validation records `1289`, validation IoU mean on the script's 200-sample check `0.5351`, IoU >= 0.90 pass rate `0.0`.
+- Evaluated with `.venv/bin/python scripts/evaluate_document_detection.py --dataset-dir tmp/smartdoc15 --checkpoint tmp/ldrnet-camscanshare/best.pt --out-dir tmp/ldrnet-camscanshare/eval --smartdoc-limit 1000 --smartdoc-stride 4 --overlay-limit 24 --write-docs-assets`.
+- SmartDoc background05 validation subset, 645 evaluated frames:
+  - OpenCV mean IoU `0.3423`, median `0.2491`, p05 `0.1482`, IoU >= 0.80 pass rate `0.1116`, IoU >= 0.90 pass rate `0.0279`.
+  - LDRNet-style mean IoU `0.5376`, median `0.5517`, p05 `0.3887`, IoU >= 0.80 pass rate `0.0`, IoU >= 0.90 pass rate `0.0`.
+- Temporarily exported mobile models:
+  - Android: `androidapp/app/src/main/assets/document_detection/ldrnet-224-fp32.onnx`, opset 18, single-file ONNX, about 9.1 MB, ONNX Runtime CPU smoke test passed.
+  - iOS: `iosapp/CamScanShare/MLModels/LDRNet.mlpackage`, Core ML mlprogram, Xcode `coremlc` compile passed in the simulator build.
+- Temporarily generated docs-side overlays under `docs/public/algorithm/detection/` and added OpenCV/LDRNet toggles to the `台形選択` section.
+
+Result:
+
+- LDRNet improves average overlap on the SmartDoc validation subset compared with the current OpenCV detector, especially by avoiding some very low-overlap OpenCV failures.
+- The trained local model is still not precise enough to replace the OpenCV detector outright: high-IoU pass rates are zero on this evaluation pass, and docs sample overlays show rough global quadrilateral placement rather than consistently tight paper boundaries.
+- The temporary app integration therefore treated LDRNet as a gated capture-time candidate only. Even that conservative shape was not kept, because the quality was not yet high enough to justify the model/runtime surface.
+
+Decision:
+
+- Do not adopt the LDRNet-style detector in Android/iOS or docs for now. Remove the temporary scripts, mobile model assets, app integration, and docs overlay UI from the working tree, keeping this note as the record of the experiment.
+- Do not claim CamScanner parity. The next useful iteration is better training data and target shaping before integration: more epochs, higher-resolution or feature-map-based corner prediction, synthetic hard negatives, real improvement-report frames, and evaluation against a manually labeled subset from this app.
+
 ## 2026-06-12: GCDRNet adopted as the 影除去 (deshadow) product filter
 
 Input:
