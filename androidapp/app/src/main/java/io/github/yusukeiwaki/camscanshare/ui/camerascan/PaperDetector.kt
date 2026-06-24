@@ -588,20 +588,22 @@ class PaperDetector(
                 if (approx.rows() == 4 && isConvex(approx)) {
                     acceptedApprox = true
                     val points = approx.toArray()
-                    val score = scoreQuad(approx, area, imageArea, imageWidth, imageHeight) +
-                        scoreEdgeSupport(points, edgeSupportMap, imageWidth, imageHeight) * EDGE_SUPPORT_SCORE_WEIGHT +
-                        scoreBonus -
-                        coloredEdgePenalty(points, imageWidth, imageHeight, scoreBonus)
-                    if (score > bestScore) {
-                        val normalizedCorners = orderPoints(points).map { pt ->
-                            PointF(
-                                (pt.x / imageWidth).toFloat(),
-                                (pt.y / imageHeight).toFloat(),
-                            )
-                        }
-                        if (matchesAnchor(normalizedCorners, anchorCorners)) {
-                            bestScore = score
-                            bestCorners = normalizedCorners
+                    if (!hasTooManyImageEdgePoints(points, imageWidth, imageHeight)) {
+                        val score = scoreQuad(approx, area, imageArea, imageWidth, imageHeight) +
+                            scoreEdgeSupport(points, edgeSupportMap, imageWidth, imageHeight) * EDGE_SUPPORT_SCORE_WEIGHT +
+                            scoreBonus -
+                            coloredEdgePenalty(points, imageWidth, imageHeight, scoreBonus)
+                        if (score > bestScore) {
+                            val normalizedCorners = orderPoints(points).map { pt ->
+                                PointF(
+                                    (pt.x / imageWidth).toFloat(),
+                                    (pt.y / imageHeight).toFloat(),
+                                )
+                            }
+                            if (matchesAnchor(normalizedCorners, anchorCorners)) {
+                                bestScore = score
+                                bestCorners = normalizedCorners
+                            }
                         }
                     }
                 }
@@ -613,20 +615,22 @@ class PaperDetector(
                 val box = Array(4) { Point() }
                 rect.points(box)
                 val rectQuad = MatOfPoint2f(*box)
-                val score = scoreQuad(rectQuad, area, imageArea, imageWidth, imageHeight) +
-                    scoreEdgeSupport(box, edgeSupportMap, imageWidth, imageHeight) * EDGE_SUPPORT_SCORE_WEIGHT +
-                    scoreBonus -
-                    coloredEdgePenalty(box, imageWidth, imageHeight, scoreBonus)
-                if (score > bestScore) {
-                    val normalizedCorners = orderPoints(box).map { pt ->
-                        PointF(
-                            (pt.x / imageWidth).toFloat(),
-                            (pt.y / imageHeight).toFloat(),
-                        )
-                    }
-                    if (matchesAnchor(normalizedCorners, anchorCorners)) {
-                        bestScore = score
-                        bestCorners = normalizedCorners
+                if (!hasTooManyImageEdgePoints(box, imageWidth, imageHeight)) {
+                    val score = scoreQuad(rectQuad, area, imageArea, imageWidth, imageHeight) +
+                        scoreEdgeSupport(box, edgeSupportMap, imageWidth, imageHeight) * EDGE_SUPPORT_SCORE_WEIGHT +
+                        scoreBonus -
+                        coloredEdgePenalty(box, imageWidth, imageHeight, scoreBonus)
+                    if (score > bestScore) {
+                        val normalizedCorners = orderPoints(box).map { pt ->
+                            PointF(
+                                (pt.x / imageWidth).toFloat(),
+                                (pt.y / imageHeight).toFloat(),
+                            )
+                        }
+                        if (matchesAnchor(normalizedCorners, anchorCorners)) {
+                            bestScore = score
+                            bestCorners = normalizedCorners
+                        }
                     }
                 }
                 rectQuad.release()
@@ -696,6 +700,18 @@ class PaperDetector(
         return corners.map { point ->
             PointF(point.x.coerceIn(0f, 1f), point.y.coerceIn(0f, 1f))
         }
+    }
+
+    private fun hasTooManyImageEdgePoints(points: Array<Point>, imageWidth: Int, imageHeight: Int): Boolean {
+        val marginX = imageWidth * 0.02
+        val marginY = imageHeight * 0.02
+        val edgePointCount = points.count {
+            it.x < marginX ||
+                it.x > imageWidth - marginX ||
+                it.y < marginY ||
+                it.y > imageHeight - marginY
+        }
+        return edgePointCount >= 3
     }
 
     private fun coloredEdgePenalty(points: Array<Point>, imageWidth: Int, imageHeight: Int, scoreBonus: Double): Double {

@@ -485,6 +485,25 @@ double coloredEdgePenalty(
     return 0.0;
 }
 
+bool hasTooManyImageEdgePoints(
+    const std::array<Point2f, 4>& quad,
+    int imageWidth,
+    int imageHeight
+) {
+    const float marginX = static_cast<float>(imageWidth) * 0.02f;
+    const float marginY = static_cast<float>(imageHeight) * 0.02f;
+    int edgePointCount = 0;
+    for (const Point2f& point : quad) {
+        if (point.x < marginX ||
+            point.x > static_cast<float>(imageWidth) - marginX ||
+            point.y < marginY ||
+            point.y > static_cast<float>(imageHeight) - marginY) {
+            edgePointCount++;
+        }
+    }
+    return edgePointCount >= 3;
+}
+
 Mat buildEdgeSupportMap(const Mat& gray) {
     Mat blurred;
     cv::GaussianBlur(gray, blurred, Size(5, 5), 0.0);
@@ -573,6 +592,9 @@ std::vector<std::pair<std::array<Point2f, 4>, double>> collectDocumentCandidates
             if (polygon.size() == 4 && cv::isContourConvex(polygon)) {
                 acceptedApprox = true;
                 const auto ordered = orderDocumentPoints(polygon);
+                if (hasTooManyImageEdgePoints(ordered, mask.cols, mask.rows)) {
+                    continue;
+                }
                 const double score = scoreDocumentQuad(
                     ordered,
                     area,
@@ -591,6 +613,9 @@ std::vector<std::pair<std::array<Point2f, 4>, double>> collectDocumentCandidates
             rect.points(box);
             std::vector<Point2f> candidatePoints(box, box + 4);
             const auto ordered = orderDocumentPoints(candidatePoints);
+            if (hasTooManyImageEdgePoints(ordered, mask.cols, mask.rows)) {
+                continue;
+            }
             const double score = scoreDocumentQuad(
                 ordered,
                 area,
