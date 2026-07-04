@@ -147,7 +147,10 @@ fun CameraScanScreen(
     val imageProcessor = remember(normalDebugSink) {
         ImageProcessor(normalDebugSink, DeshadowFilter(context.applicationContext, normalDebugSink))
     }
-    val paperDetector = remember(normalDebugSink) { lazy { PaperDetector(normalDebugSink) } }
+    val documentSegmenter = remember { DocumentSegmenter(context.applicationContext) }
+    val paperDetector = remember(normalDebugSink, documentSegmenter) {
+        lazy { PaperDetector(normalDebugSink, documentSegmenter) }
+    }
 
     // Detected corners for overlay (normalized 0..1) + source image aspect ratio
     var detectedCorners by remember { mutableStateOf<List<PointF>?>(null) }
@@ -205,7 +208,7 @@ fun CameraScanScreen(
                         imageProcessor
                     }
                     val capturePaperDetector = if (captureForReport) {
-                        PaperDetector(captureDebugSink)
+                        PaperDetector(captureDebugSink, documentSegmenter)
                     } else {
                         paperDetector.value
                     }

@@ -19,14 +19,15 @@ import org.opencv.core.Size
 import org.opencv.imgproc.Imgproc
 
 /**
- * Detects paper/document edges in camera frames using OpenCV.
+ * Detects paper/document boundaries in camera frames.
  *
- * Uses multiple detection strategies (varying blur, threshold, morphology)
- * and picks the best quadrilateral found. This makes detection robust
- * across different lighting conditions, paper colors, and backgrounds.
+ * The optional neural segmenter produces a page-region mask. That mask and the
+ * classical OpenCV masks/edge strategies are all refined through the same
+ * contour, quadrilateral scoring, and anchor-validation path.
  */
 class PaperDetector(
     private val debugSink: ImageProcessingDebugSink = ImageProcessingDebugSink.noOp(),
+    private val segmenter: DocumentSegmenter? = null,
 ) {
 
     companion object {
@@ -42,6 +43,8 @@ class PaperDetector(
         private const val A4_LANDSCAPE = 297.0 / 210.0
         private const val A4_TOLERANCE = 0.20
         private const val EDGE_SUPPORT_SCORE_WEIGHT = 0.18
+        /** Score bonus for the neural page-segmentation candidate. */
+        private const val MODEL_SCORE_BONUS = 0.22
         /** Number of recent frames to keep for stabilization. */
         private const val STABLE_BUFFER_SIZE = 7
         /** Minimum number of detections in the buffer to consider it stable. */
@@ -171,6 +174,39 @@ class PaperDetector(
 
         var bestCorners: List<PointF>? = null
         var bestScore = 0.0
+
+        // Neural page-boundary candidate. The model mask is fed through the same
+        // findBestQuad refinement as the OpenCV masks, so a weak/empty mask
+        // cannot override the OpenCV fallback; a confident one wins via the bonus.
+        segmenter?.let { seg ->
+            val modelStarted = SystemClock.elapsedRealtimeNanos()
+            val modelMask = seg.segment(small)
+            if (modelMask != null) {
+                debugSink.writeMat(session, "model_mask", modelMask)
+                findBestQuad(
+                    edges = modelMask,
+                    minArea = minArea,
+                    currentBestScore = bestScore,
+                    imageWidth = small.width(),
+                    imageHeight = small.height(),
+                    maxCandidates = config.maxCandidates,
+                    epsilonCandidates = config.epsilonCandidates,
+                    debugSession = session,
+                    debugSource = small,
+                    debugLabel = "model",
+                    scoreBonus = MODEL_SCORE_BONUS,
+                    allowMinAreaRect = config.allowMinAreaRect,
+                    allowImageEdgePoints = true,
+                    anchorCorners = anchorCorners,
+                    edgeSupportMap = edgeSupportMap,
+                )?.let { result ->
+                    bestCorners = result.first
+                    bestScore = result.second
+                }
+                modelMask.release()
+            }
+            debugSink.recordTimingSince(session, "detection.model", modelStarted)
+        }
 
         val coloredPaperMask = buildColoredPaperCandidateMask(small)
         debugSink.writeMat(session, "colored_paper_mask", coloredPaperMask)
@@ -548,6 +584,7 @@ class PaperDetector(
         debugLabel: String = "strategy",
         scoreBonus: Double = 0.0,
         allowMinAreaRect: Boolean = false,
+        allowImageEdgePoints: Boolean = false,
         anchorCorners: List<PointF>? = null,
         edgeSupportMap: Mat? = null,
     ): Pair<List<PointF>, Double>? {
@@ -588,7 +625,7 @@ class PaperDetector(
                 if (approx.rows() == 4 && isConvex(approx)) {
                     acceptedApprox = true
                     val points = approx.toArray()
-                    if (!hasTooManyImageEdgePoints(points, imageWidth, imageHeight)) {
+                    if (allowImageEdgePoints || !hasTooManyImageEdgePoints(points, imageWidth, imageHeight)) {
                         val score = scoreQuad(approx, area, imageArea, imageWidth, imageHeight) +
                             scoreEdgeSupport(points, edgeSupportMap, imageWidth, imageHeight) * EDGE_SUPPORT_SCORE_WEIGHT +
                             scoreBonus -
@@ -615,7 +652,7 @@ class PaperDetector(
                 val box = Array(4) { Point() }
                 rect.points(box)
                 val rectQuad = MatOfPoint2f(*box)
-                if (!hasTooManyImageEdgePoints(box, imageWidth, imageHeight)) {
+                if (allowImageEdgePoints || !hasTooManyImageEdgePoints(box, imageWidth, imageHeight)) {
                     val score = scoreQuad(rectQuad, area, imageArea, imageWidth, imageHeight) +
                         scoreEdgeSupport(box, edgeSupportMap, imageWidth, imageHeight) * EDGE_SUPPORT_SCORE_WEIGHT +
                         scoreBonus -

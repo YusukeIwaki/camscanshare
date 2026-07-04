@@ -321,7 +321,7 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list">
             <li>
               <span class="spec-element">紙検出アルゴリズム</span>
-              <span class="spec-detail">ファインダー中は、紙の四隅を見つけるための軽量なリアルタイム検出のみを行う。低解像度フレームを対象に、ぼかし → エッジ抽出 → 膨張 → 輪郭検出 → 四角形近似 → スコアリング選択を複数条件で試し、もっとも文書らしい四角形をオーバーレイ表示する。ここでの目的は保存用画像を作ることではなく、ユーザーに「今どこが紙として認識されているか」を安定して見せることにある。</span>
+              <span class="spec-detail">ファインダー中は、同梱の軽量 PageSegNet（320×320 の紙領域セグメンテーション）で紙らしい領域のマスクを推定し、そのマスクを輪郭検出 → 四角形近似 → スコアリング選択にかける。加えて、低解像度フレームを対象にした従来のぼかし → エッジ抽出 → 膨張 → 輪郭検出や、紙色・適応しきい値マスクも候補として使い、もっとも文書らしい四角形をオーバーレイ表示する。モデル候補だけは近接撮影で紙が画面端に触れる四角形も許容し、従来候補は端に張り付いた誤検出を引き続き除外する。モデル候補が弱い・空の場合は OpenCV 側の候補だけで検出を継続する。ここでの目的は保存用画像を作ることではなく、ユーザーに「今どこが紙として認識されているか」を安定して見せることにある。</span>
             </li>
             <li>
               <span class="spec-element">四角形のスコアリング</span>
@@ -684,7 +684,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">保存形式</span>
-              <span class="spec-detail">セッションディレクトリ内に metadata.json、番号付き PNG、timings.jsonl を保存する。紙検出セッションには input、analysis_rgba、grayscale、edge_support、colored_paper_mask、paper_mask、各 Canny 戦略の blurred / edges / dilated_edges / contours_overlay、selected_quad_overlay、selected_quad.json を含める。台形補正セッションには input、input_corners.json、warped_rgba、output を含める。metadata と timings には platform、anchor の有無、採用元（opencv / preview_anchor 等）、解析サイズ、スコア、処理時間を入れ、Android / iOS のレポートを同じ観点で比較できるようにする。Android は app-specific external files の image-processing-debug 配下、iOS は Application Support/ImageProcessingDebug 配下に保存する。</span>
+              <span class="spec-detail">セッションディレクトリ内に metadata.json、番号付き PNG、timings.jsonl を保存する。紙検出セッションには input、analysis_rgba、grayscale、edge_support、model_mask、colored_paper_mask、paper_mask、adaptive_mask、各候補の contours_overlay、各 Canny 戦略の blurred / edges / dilated_edges / contours_overlay、selected_quad_overlay、selected_quad.json を含める。台形補正セッションには input、input_corners.json、warped_rgba、output を含める。metadata と timings には platform、anchor の有無、採用元（model / opencv / preview_anchor 等）、解析サイズ、スコア、処理時間を入れ、Android / iOS のレポートを同じ観点で比較できるようにする。Android は app-specific external files の image-processing-debug 配下、iOS は Application Support/ImageProcessingDebug 配下に保存する。</span>
             </li>
             <li>
               <span class="spec-element">取り扱い</span>

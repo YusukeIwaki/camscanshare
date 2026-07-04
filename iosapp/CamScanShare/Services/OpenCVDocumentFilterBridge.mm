@@ -562,6 +562,7 @@ std::vector<std::pair<std::array<Point2f, 4>, double>> collectDocumentCandidates
     const std::vector<double>& epsilonCandidates,
     size_t maxCandidates,
     bool allowMinAreaRect,
+    bool allowImageEdgePoints,
     const Mat& edgeSupportMap
 ) {
     std::vector<std::vector<Point>> contours;
@@ -592,7 +593,7 @@ std::vector<std::pair<std::array<Point2f, 4>, double>> collectDocumentCandidates
             if (polygon.size() == 4 && cv::isContourConvex(polygon)) {
                 acceptedApprox = true;
                 const auto ordered = orderDocumentPoints(polygon);
-                if (hasTooManyImageEdgePoints(ordered, mask.cols, mask.rows)) {
+                if (!allowImageEdgePoints && hasTooManyImageEdgePoints(ordered, mask.cols, mask.rows)) {
                     continue;
                 }
                 const double score = scoreDocumentQuad(
@@ -613,7 +614,7 @@ std::vector<std::pair<std::array<Point2f, 4>, double>> collectDocumentCandidates
             rect.points(box);
             std::vector<Point2f> candidatePoints(box, box + 4);
             const auto ordered = orderDocumentPoints(candidatePoints);
-            if (hasTooManyImageEdgePoints(ordered, mask.cols, mask.rows)) {
+            if (!allowImageEdgePoints && hasTooManyImageEdgePoints(ordered, mask.cols, mask.rows)) {
                 continue;
             }
             const double score = scoreDocumentQuad(
@@ -797,6 +798,60 @@ Mat buildPaperCandidateMask(const Mat& rgb) {
     return mask;
 }
 
+// --- Neural page-boundary segmenter -----------------------------------------
+// Compact depthwise-separable U-Net (scripts/document_detection/) whose
+// Conv/Sigmoid head yields a page-probability mask. Mirrors CamScanner's modern
+// detector shape (CNN mask -> OpenCV refine) and the Android DocumentSegmenter.
+static const int kPageSegSize = 320;
+static const double kPageSegThreshold = 0.5;
+
+// Defined alongside the deshadow models later in this file.
+MLModel *deshadowModel(NSString *name, MLComputeUnits computeUnits);
+void deshadowFillChw(const Mat& mat32, float *dest);
+bool deshadowRunModel(MLModel *model, const float *input, NSArray<NSNumber *> *shape,
+                      size_t inputCount, std::vector<float>& output);
+
+MLModel *pageSegModel(void) {
+    static MLModel *model = nil;
+    static dispatch_once_t onceToken;
+    dispatch_once(&onceToken, ^{
+        model = deshadowModel(@"PageSegNet", MLComputeUnitsAll);
+    });
+    return model;
+}
+
+/// Run the segmenter on an RGB Mat and return an 8U binary page mask (page=255)
+/// at the same resolution, or an empty Mat on failure.
+Mat buildModelDocumentMask(const Mat& resizedRgb) {
+    MLModel *model = pageSegModel();
+    if (model == nil || resizedRgb.empty()) {
+        return Mat();
+    }
+    Mat square;
+    cv::resize(resizedRgb, square, Size(kPageSegSize, kPageSegSize), 0, 0, cv::INTER_AREA);
+    Mat square32;
+    square.convertTo(square32, CV_32FC3, 1.0 / 255.0);  // already RGB, model expects RGB
+    std::vector<float> chw(3 * kPageSegSize * kPageSegSize);
+    deshadowFillChw(square32, chw.data());
+
+    std::vector<float> out;
+    if (!deshadowRunModel(model, chw.data(),
+                          @[ @1, @3, @(kPageSegSize), @(kPageSegSize) ],
+                          chw.size(), out)) {
+        return Mat();
+    }
+    Mat prob(kPageSegSize, kPageSegSize, CV_32F);
+    std::memcpy(prob.ptr<float>(0), out.data(),
+                static_cast<size_t>(kPageSegSize) * kPageSegSize * sizeof(float));
+    Mat mask;
+    cv::compare(prob, kPageSegThreshold, mask, cv::CMP_GE);  // 8U 0/255
+    Mat full;
+    cv::resize(mask, full, resizedRgb.size(), 0, 0, cv::INTER_NEAREST);
+    Mat kernel = cv::getStructuringElement(cv::MORPH_RECT, Size(5, 5));
+    cv::morphologyEx(full, full, cv::MORPH_CLOSE, kernel);
+    return full;
+}
+
 DocumentCornerCandidate detectDocumentCornerCandidate(
     const Mat& sourceRgb,
     bool previewMode,
@@ -840,6 +895,24 @@ DocumentCornerCandidate detectDocumentCornerCandidate(
 
     const double imageArea = static_cast<double>(resized.cols) * resized.rows;
     std::vector<std::pair<std::array<Point2f, 4>, double>> candidates;
+
+    // Neural page-boundary candidate, refined by the same contour/scoring path.
+    // A weak/empty mask yields no candidate, so the OpenCV masks remain a
+    // fallback; a confident mask wins via the score bonus.
+    Mat modelMask = buildModelDocumentMask(resized);
+    if (!modelMask.empty()) {
+        auto modelCandidates = collectDocumentCandidates(
+            modelMask,
+            imageArea * config.minAreaRatio,
+            0.22,
+            config.epsilonCandidates,
+            config.maxCandidates,
+            config.allowMinAreaRect,
+            true,
+            edgeSupportMap);
+        candidates.insert(candidates.end(), modelCandidates.begin(), modelCandidates.end());
+    }
+
     auto coloredCandidates = collectDocumentCandidates(
         coloredPaper,
         imageArea * config.coloredMinAreaRatio,
@@ -847,6 +920,7 @@ DocumentCornerCandidate detectDocumentCornerCandidate(
         config.epsilonCandidates,
         config.coloredMaxCandidates,
         config.allowMinAreaRect,
+        false,
         edgeSupportMap);
     candidates.insert(candidates.end(), coloredCandidates.begin(), coloredCandidates.end());
 
@@ -857,6 +931,7 @@ DocumentCornerCandidate detectDocumentCornerCandidate(
         config.epsilonCandidates,
         config.maxCandidates,
         config.allowMinAreaRect,
+        false,
         edgeSupportMap);
     candidates.insert(candidates.end(), paperCandidates.begin(), paperCandidates.end());
 
@@ -867,6 +942,7 @@ DocumentCornerCandidate detectDocumentCornerCandidate(
         config.epsilonCandidates,
         config.maxCandidates,
         config.allowMinAreaRect,
+        false,
         edgeSupportMap);
     candidates.insert(candidates.end(), adaptiveCandidates.begin(), adaptiveCandidates.end());
 
@@ -885,6 +961,7 @@ DocumentCornerCandidate detectDocumentCornerCandidate(
             config.epsilonCandidates,
             config.maxCandidates,
             config.allowMinAreaRect,
+            false,
             edgeSupportMap);
         candidates.insert(candidates.end(), edgeCandidates.begin(), edgeCandidates.end());
     }
@@ -2385,6 +2462,7 @@ Mat applyWhiteboardFilter(const Mat& sourceRgb) {
             images[label] = debugImage;
         }
     };
+    const double imageArea = static_cast<double>(resized.cols) * resized.rows;
 
     addImage(@"analysis_rgba", resized, true);
 
@@ -2393,6 +2471,13 @@ Mat applyWhiteboardFilter(const Mat& sourceRgb) {
     addImage(@"grayscale", gray, false);
     Mat edgeSupportMap = buildEdgeSupportMap(gray);
     addImage(@"edge_support", edgeSupportMap, false);
+
+    Mat modelMask = buildModelDocumentMask(resized);
+    if (!modelMask.empty()) {
+        addImage(@"model_mask", modelMask, false);
+        Mat modelOverlay = contoursOverlay(resized, modelMask, imageArea * 0.02, 40);
+        addImage(@"model_contours_overlay", modelOverlay, true);
+    }
 
     Mat blurred;
     cv::GaussianBlur(gray, blurred, cv::Size(5, 5), 0.0);
@@ -2411,7 +2496,6 @@ Mat applyWhiteboardFilter(const Mat& sourceRgb) {
 
     Mat coloredPaper = buildColoredPaperCandidateMask(resized);
     Mat paper = buildPaperCandidateMask(resized);
-    const double imageArea = static_cast<double>(resized.cols) * resized.rows;
 
     addImage(@"colored_paper_mask", coloredPaper, false);
     Mat coloredOverlay = contoursOverlay(resized, coloredPaper, imageArea * 0.04, 40);

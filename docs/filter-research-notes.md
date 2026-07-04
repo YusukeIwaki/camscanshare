@@ -1,5 +1,41 @@
 # Filter Research Notes
 
+## 2026-07-04: Page-segmentation paper detector adopted (supersedes the LDRNet corner-regression attempt)
+
+Input:
+
+- User report that finder-preview paper detection is worse than CamScanner, with two example frames (a document inside a translucent plastic folder on a lap, and a white handout close-up). CamScanner hugs the true page tightly; our OpenCV detector picks a loose/edge-hugging quad.
+- CamScanner reverse-engineering notes in `../CamScannerInspection` (`libpagescanner.so`, `libscannercs.so`).
+- Reference list `ZZZHANG-jx/Recommendations-Document-Image-Processing`.
+- SmartDoc 2015 Challenge 1 frames+models (24,889 real handheld frames with ground-truth quads), downloaded to `tmp/smartdoc15/`.
+- Real improvement-report `source.jpg` frames under `report_server/reports/` (product-domain, no GT — visual eval only).
+
+Candidate analysis:
+
+- CamScanner's modern detector (`libpagescanner.so`) is a small **MNN CNN** with a Conv/Sigmoid head that produces a page region (`pagescan::InferNet::forward` + `SingleRectCrop`), refined by OpenCV and Catmull-Rom curve fitting; the legacy `libscannercs.so` classical Canny/contour path (downscale-to-320) is only a fallback. So the robust route is **page segmentation → contour → quad**, not direct corner regression.
+- The 2026-06-15 LDRNet attempt (MobileNetV2 + 8-value corner regression, 224²) plateaued at ~0.53 IoU with a 0.0 high-IoU rate and was rejected. Segmentation is refinable by the existing OpenCV scoring/anchor code and degrades gracefully, so it was chosen instead.
+
+Execution:
+
+- Added a repository-local pipeline under `scripts/document_detection/`: a compact depthwise-separable U-Net (`seg_model.py`, export-clean: Conv/BN/ReLU6/bilinear/sigmoid only) at 320² RGB → 1-channel page-probability mask; a dataset (`dataset.py`) combining SmartDoc real frames (mask rasterized from the quad) with on-the-fly synthetic composites (a warped page over cluttered desk/lap backgrounds, with translucent plastic-folder overlay, cast shadow, and partial-occlusion hard cases, and background documents left unmasked as hard negatives); training/eval/export scripts.
+- First pass (256², documents only ever sub-region): beat the OpenCV baseline on the SmartDoc background05 holdout but **collapsed on near-full-frame documents** (predicted a small central blob on full-page report frames). Fixed the distribution gap by adding full-frame/edge-touching synthetic placement plus a tight-crop augmentation that turns real SmartDoc sub-region frames into real near-full-frame examples with exact boundaries, and raised input to 320².
+- Quad extraction: threshold the mask at 0.5, largest external contour, approxPolyDP (4-pt convex) with a minAreaRect fallback.
+
+Result (SmartDoc background05 holdout, quad IoU; OpenCV baseline is a reference Canny+contour reimplementation on the identical set):
+
+- Adopted checkpoint: `tmp/docdet-v2/best.pt` (epoch 2). Evaluation script on 300 held-out background05 frames (`--limit 300 --stride 8`): model mean IoU `0.5978`, median `0.6577`, p05 `0.0135`, IoU >= 0.80 `0.1100`, IoU >= 0.90 `0.0100`; reference OpenCV baseline mean IoU `0.0181`, median `0.0000`, p05 `0.0000`, IoU >= 0.80/0.90 `0.0000`. The training-time full validation pass for the same checkpoint recorded mean `0.6057`, median `0.6600`, p05 `0.0201`, IoU >= 0.80 `0.1207`, IoU >= 0.90 `0.0186`.
+- Rejected follow-up: low-LR fine-tuning from the epoch-2 checkpoint (`tmp/docdet-v2ft`) degraded the held-out mean to `0.4006` at its best and then lower, so it was not exported.
+- Report-frame overlays: the full-frame poster and the white-on-white handout that both the OpenCV baseline and the 256² model failed are now tracked tightly by the segmentation model.
+
+Integration:
+
+- Exported fp16 ONNX (`androidapp/app/src/main/assets/document_detection/pageseg-320-fp16.onnx`, ~0.23 MB) and Core ML (`iosapp/CamScanShare/MLModels/PageSegNet.mlpackage`) from the single PyTorch checkpoint. ONNX-to-PyTorch max diff on a deterministic smoke input is `0.0042`; Core ML converts and compiles cleanly (no torch.roll issue).
+- Wired the model mask into the existing detector as one more candidate for the shared findBestQuad refinement (Android `DocumentSegmenter.kt` via ONNX Runtime, already a dependency; iOS `buildModelDocumentMask` in `OpenCVDocumentFilterBridge.mm` via Core ML). Score bonus 0.22. A weak/empty mask yields no candidate, so the OpenCV masks remain the fallback and a confident mask wins. Edge-touching quads are allowed only for the model candidate so near-full-frame scans can pass while the OpenCV fallback still rejects edge-hugging false positives. Both apps build.
+
+Decision:
+
+- Adopt PageSegNet as an app-bundled candidate, not as an outright replacement for OpenCV. It gets a score bonus and uses the same contour/scoring/anchor validation path; weak or empty model masks fall back to the existing OpenCV candidates.
+
 ## 2026-06-15: LDRNet-style document corner detector evaluated, mobile integration rolled back
 
 Input:
