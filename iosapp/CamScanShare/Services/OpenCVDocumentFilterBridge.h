@@ -23,9 +23,6 @@ NS_ASSUME_NONNULL_BEGIN
 
 + (NSDictionary<NSString *, UIImage *> *)documentDetectionDebugImagesInImage:(UIImage *)image;
 
-+ (NSDictionary<NSString *, id> *)documentDetectionDebugInfoInImage:(UIImage *)image
-                                                      anchorCorners:(nullable NSArray<NSValue *> *)anchorCorners;
-
 @end
 
 NS_ASSUME_NONNULL_END

@@ -8,13 +8,11 @@ final class ImageProcessingDebugSession: @unchecked Sendable {
 
     private let lock = NSLock()
     private var imageIndex = 0
-    private var metadata: [String: String]
 
-    init(directory: URL?, category: String, label: String, metadata: [String: String] = [:]) {
+    init(directory: URL?, category: String, label: String) {
         self.directory = directory
         self.category = category
         self.label = label
-        self.metadata = metadata
     }
 
     var isEnabled: Bool {
@@ -52,23 +50,6 @@ final class ImageProcessingDebugSession: @unchecked Sendable {
         let scalars = value.unicodeScalars.map { allowed.contains($0) ? Character($0) : "_" }
         let sanitized = String(scalars).trimmingCharacters(in: CharacterSet(charactersIn: "_"))
         return sanitized.isEmpty ? "artifact" : sanitized
-    }
-
-    func updateMetadata(_ values: [String: String]) -> [String: String] {
-        lock.lock()
-        for (key, value) in values {
-            metadata[key] = value
-        }
-        let snapshot = metadata
-        lock.unlock()
-        return snapshot
-    }
-
-    func metadataSnapshot() -> [String: String] {
-        lock.lock()
-        let snapshot = metadata
-        lock.unlock()
-        return snapshot
     }
 }
 
@@ -110,7 +91,7 @@ final class ImageProcessingDebugSink: @unchecked Sendable {
         metadata: [String: String] = [:]
     ) -> ImageProcessingDebugSession {
         guard isWritingEnabled, let rootDirectory else {
-            return ImageProcessingDebugSession(directory: nil, category: category, label: label, metadata: metadata)
+            return ImageProcessingDebugSession(directory: nil, category: category, label: label)
         }
 
         let timestamp = timestampFormatter.string(from: Date())
@@ -121,6 +102,7 @@ final class ImageProcessingDebugSink: @unchecked Sendable {
         let directory = rootDirectory.appendingPathComponent(directoryName, isDirectory: true)
         do {
             try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            let session = ImageProcessingDebugSession(directory: directory, category: category, label: label)
             var values = metadata
             if let debugCaptureId {
                 values["debugCaptureId"] = debugCaptureId
@@ -129,25 +111,13 @@ final class ImageProcessingDebugSink: @unchecked Sendable {
             values["label"] = label
             values["createdAt"] = timestamp
             values["path"] = directory.path
-            let session = ImageProcessingDebugSession(
-                directory: directory,
-                category: category,
-                label: label,
-                metadata: values
-            )
-            writeMetadata(session)
+            writeText(session, fileName: "metadata.json", text: jsonObject(values))
             NSLog("ImageProcessingDebug session: %@", directory.path)
             return session
         } catch {
             NSLog("ImageProcessingDebug failed to create session: %@", String(describing: error))
-            return ImageProcessingDebugSession(directory: nil, category: category, label: label, metadata: metadata)
+            return ImageProcessingDebugSession(directory: nil, category: category, label: label)
         }
-    }
-
-    func updateMetadata(_ session: ImageProcessingDebugSession?, metadata: [String: String]) {
-        guard let session, session.isEnabled else { return }
-        _ = session.updateMetadata(metadata)
-        writeMetadata(session)
     }
 
     func writeImage(_ session: ImageProcessingDebugSession?, label: String, image: UIImage?) {
@@ -168,10 +138,6 @@ final class ImageProcessingDebugSink: @unchecked Sendable {
         } catch {
             NSLog("ImageProcessingDebug failed to write text %@: %@", fileName, String(describing: error))
         }
-    }
-
-    private func writeMetadata(_ session: ImageProcessingDebugSession) {
-        writeText(session, fileName: "metadata.json", text: jsonObject(session.metadataSnapshot()))
     }
 
     func recordTiming(

@@ -8,11 +8,9 @@
 
 #include <algorithm>
 #include <array>
-#include <chrono>
 #include <cmath>
 #include <cstring>
 #include <optional>
-#include <string>
 #include <utility>
 #include <vector>
 
@@ -47,46 +45,7 @@ Mat applyWhiteboardFilter(const Mat& sourceRgb);
 struct DocumentCornerCandidate {
     std::array<Point2f, 4> points;
     double score = -1.0;
-    double edgeSupportAverage = 0.0;
-    double edgeSupportMinimum = 0.0;
     bool valid = false;
-    std::string source = "none";
-};
-
-enum class CandidateSource {
-    OpenCV,
-};
-
-struct ScoredDocumentCandidate {
-    std::array<Point2f, 4> points;
-    double score = -1.0;
-    CandidateSource source = CandidateSource::OpenCV;
-};
-
-struct PageSegCandidateInfo {
-    bool modelAvailable = false;
-    bool inferenceSucceeded = false;
-    double inferenceDurationMs = -1.0;
-    bool quadFound = false;
-    bool candidateAccepted = false;
-    bool anchorMatched = true;
-    bool edgeTouchAllowed = false;
-    bool edgeTouched = false;
-    double maskAreaRatio = 0.0;
-    double componentMeanProbability = 0.0;
-    double score = -1.0;
-    double edgeSupportAverage = 0.0;
-    double edgeSupportMinimum = 0.0;
-    double agreementIoU = -1.0;
-    double fallbackExpansion = 0.0;
-    Mat probability;
-    Mat mask;
-    std::optional<std::array<Point2f, 4>> normalizedQuad;
-};
-
-struct DocumentDetectionResult {
-    DocumentCornerCandidate selected;
-    PageSegCandidateInfo model;
 };
 
 struct EdgeStrategyConfig {
@@ -110,12 +69,6 @@ struct DocumentDetectionConfig {
 };
 
 constexpr double EdgeSupportScoreWeight = 0.18;
-
-struct BoundaryEdgeEvidence {
-    std::array<double, 4> sides{};
-    double average = 0.0;
-    double minimum = 0.0;
-};
 
 std::vector<uint8_t> bytesOfMat(const Mat& mat) {
     Mat continuous = mat.isContinuous() ? mat : mat.clone();
@@ -417,21 +370,6 @@ std::array<Point2f, 4> normalizedDocumentPoints(
     return normalized;
 }
 
-std::array<Point2f, 4> denormalizedDocumentPoints(
-    const std::array<Point2f, 4>& points,
-    int imageWidth,
-    int imageHeight
-) {
-    std::array<Point2f, 4> denormalized = points;
-    const float width = static_cast<float>(std::max(1, imageWidth));
-    const float height = static_cast<float>(std::max(1, imageHeight));
-    for (Point2f& point : denormalized) {
-        point.x = point.x * width;
-        point.y = point.y * height;
-    }
-    return denormalized;
-}
-
 Point2f centerOfNormalizedQuad(const std::array<Point2f, 4>& points) {
     Point2f center(0.0f, 0.0f);
     for (const Point2f& point : points) {
@@ -617,48 +555,13 @@ double scoreEdgeSupport(
     return std::max(0.0, std::min(1.0, cv::mean(edgeSupportMap, lineMask)[0] / 255.0));
 }
 
-BoundaryEdgeEvidence measureBoundaryEdgeEvidence(
-    const std::array<Point2f, 4>& quad,
-    const Mat& edgeSupportMap,
-    int imageWidth,
-    int imageHeight
-) {
-    BoundaryEdgeEvidence evidence;
-    if (edgeSupportMap.empty()) {
-        return evidence;
-    }
-
-    const int thickness = std::max(3, std::min(imageWidth, imageHeight) / 120);
-    evidence.minimum = 1.0;
-    for (size_t index = 0; index < quad.size(); index++) {
-        Mat lineMask = Mat::zeros(edgeSupportMap.size(), CV_8U);
-        cv::line(
-            lineMask,
-            quad[index],
-            quad[(index + 1) % quad.size()],
-            Scalar::all(255.0),
-            thickness);
-        const double support = std::max(
-            0.0,
-            std::min(1.0, cv::mean(edgeSupportMap, lineMask)[0] / 255.0));
-        evidence.sides[index] = support;
-        evidence.average += support;
-        evidence.minimum = std::min(evidence.minimum, support);
-    }
-    evidence.average /= static_cast<double>(quad.size());
-    return evidence;
-}
-
-std::vector<ScoredDocumentCandidate> collectDocumentCandidates(
+std::vector<std::pair<std::array<Point2f, 4>, double>> collectDocumentCandidates(
     const Mat& mask,
     double minArea,
     double sourceBonus,
     const std::vector<double>& epsilonCandidates,
     size_t maxCandidates,
     bool allowMinAreaRect,
-    bool allowImageEdgePoints,
-    bool applyColoredEdgePenalty,
-    CandidateSource source,
     const Mat& edgeSupportMap
 ) {
     std::vector<std::vector<Point>> contours;
@@ -667,7 +570,7 @@ std::vector<ScoredDocumentCandidate> collectDocumentCandidates(
         return cv::contourArea(lhs) > cv::contourArea(rhs);
     });
 
-    std::vector<ScoredDocumentCandidate> candidates;
+    std::vector<std::pair<std::array<Point2f, 4>, double>> candidates;
     const size_t limit = std::min<size_t>(contours.size(), maxCandidates);
     for (size_t index = 0; index < limit; index++) {
         const double area = cv::contourArea(contours[index]);
@@ -689,7 +592,7 @@ std::vector<ScoredDocumentCandidate> collectDocumentCandidates(
             if (polygon.size() == 4 && cv::isContourConvex(polygon)) {
                 acceptedApprox = true;
                 const auto ordered = orderDocumentPoints(polygon);
-                if (!allowImageEdgePoints && hasTooManyImageEdgePoints(ordered, mask.cols, mask.rows)) {
+                if (hasTooManyImageEdgePoints(ordered, mask.cols, mask.rows)) {
                     continue;
                 }
                 const double score = scoreDocumentQuad(
@@ -700,8 +603,8 @@ std::vector<ScoredDocumentCandidate> collectDocumentCandidates(
                     mask.rows)
                     + scoreEdgeSupport(ordered, edgeSupportMap, mask.cols, mask.rows) * EdgeSupportScoreWeight
                     + sourceBonus
-                    - (applyColoredEdgePenalty ? coloredEdgePenalty(ordered, mask.cols, mask.rows, sourceBonus) : 0.0);
-                candidates.push_back({ordered, score, source});
+                    - coloredEdgePenalty(ordered, mask.cols, mask.rows, sourceBonus);
+                candidates.emplace_back(ordered, score);
             }
         }
         if (!acceptedApprox && allowMinAreaRect) {
@@ -710,7 +613,7 @@ std::vector<ScoredDocumentCandidate> collectDocumentCandidates(
             rect.points(box);
             std::vector<Point2f> candidatePoints(box, box + 4);
             const auto ordered = orderDocumentPoints(candidatePoints);
-            if (!allowImageEdgePoints && hasTooManyImageEdgePoints(ordered, mask.cols, mask.rows)) {
+            if (hasTooManyImageEdgePoints(ordered, mask.cols, mask.rows)) {
                 continue;
             }
             const double score = scoreDocumentQuad(
@@ -721,8 +624,8 @@ std::vector<ScoredDocumentCandidate> collectDocumentCandidates(
                 mask.rows)
                 + scoreEdgeSupport(ordered, edgeSupportMap, mask.cols, mask.rows) * EdgeSupportScoreWeight
                 + sourceBonus
-                - (applyColoredEdgePenalty ? coloredEdgePenalty(ordered, mask.cols, mask.rows, sourceBonus) : 0.0);
-            candidates.push_back({ordered, score, source});
+                - coloredEdgePenalty(ordered, mask.cols, mask.rows, sourceBonus);
+            candidates.emplace_back(ordered, score);
         }
     }
     return candidates;
@@ -827,23 +730,6 @@ Mat contoursOverlay(const Mat& rgb, const Mat& mask, double minArea, size_t maxC
     return overlay;
 }
 
-Mat quadOverlay(const Mat& rgb, const std::optional<std::array<Point2f, 4>>& normalizedQuad, const Scalar& color) {
-    Mat overlay = rgb.clone();
-    if (!normalizedQuad.has_value()) {
-        return overlay;
-    }
-
-    const auto points = denormalizedDocumentPoints(normalizedQuad.value(), rgb.cols, rgb.rows);
-    const int thickness = std::max(2, std::min(rgb.cols, rgb.rows) / 160);
-    for (size_t index = 0; index < points.size(); index++) {
-        cv::line(overlay, points[index], points[(index + 1) % points.size()], color, thickness, cv::LINE_AA);
-    }
-    for (const Point2f& point : points) {
-        cv::circle(overlay, point, std::max(4, thickness + 2), color, -1, cv::LINE_AA);
-    }
-    return overlay;
-}
-
 Mat buildColoredPaperCandidateMask(const Mat& rgb) {
     Mat lab;
     cv::cvtColor(rgb, lab, cv::COLOR_RGB2Lab);
@@ -911,337 +797,14 @@ Mat buildPaperCandidateMask(const Mat& rgb) {
     return mask;
 }
 
-// --- Neural page-boundary segmenter -----------------------------------------
-// MobileNetV3-Small + U-Net decoder exported from scripts/document_detection/.
-// The model takes NCHW RGB [0, 1] at 320x320 and emits a probability map.
-constexpr int kPageSegInputSize = 320;
-constexpr double kPageSegThreshold = 0.48;
-constexpr double kPageSegMinAreaRatio = 0.012;
-constexpr double kPageSegMinPeak = 0.20;
-constexpr double kPageSegMinComponentMean = 0.55;
-constexpr double kPageSegAgreementIoUThreshold = 0.85;
-constexpr double kPageSegSameObjectIoUThreshold = 0.35;
-constexpr double kPageSegModelFallbackExpansion = 0.02;
-constexpr double kPageSegNearFullFrameMaskAreaRatio = 0.68;
-constexpr double kOpenCVEdgeAverageThreshold = 0.44;
-constexpr double kOpenCVEdgeMinimumThreshold = 0.20;
-constexpr double kOpenCVEdgeAverageAdvantage = 0.06;
-constexpr double kOpenCVEdgeMinimumAdvantage = 0.20;
-
-MLModel *bundledMLModel(NSString *name, MLComputeUnits computeUnits, NSString *logPrefix);
-void deshadowFillChw(const Mat& mat32, float *dest);
-bool runMLModel(MLModel *model,
-                NSString *inputFeatureName,
-                NSString *outputFeatureName,
-                const float *input,
-                NSArray<NSNumber *> *shape,
-                size_t inputCount,
-                std::vector<float>& output,
-                NSString *logPrefix,
-                NSArray<NSNumber *> *expectedOutputShape = nil);
-
-std::array<Point2f, 4> expandedNormalizedDocumentPoints(
-    const std::array<Point2f, 4>& points,
-    double expansion
-) {
-    std::vector<Point2f> expanded;
-    expanded.reserve(points.size());
-    Point2f center(0.0f, 0.0f);
-    for (const Point2f& point : points) {
-        center.x += point.x;
-        center.y += point.y;
-    }
-    center.x /= static_cast<float>(points.size());
-    center.y /= static_cast<float>(points.size());
-    for (const Point2f& point : points) {
-        const float x = center.x + (point.x - center.x) * static_cast<float>(1.0 + expansion);
-        const float y = center.y + (point.y - center.y) * static_cast<float>(1.0 + expansion);
-        expanded.emplace_back(
-            std::max(0.0f, std::min(1.0f, x)),
-            std::max(0.0f, std::min(1.0f, y)));
-    }
-    return orderDocumentPoints(expanded);
-}
-
-Mat maskFromNormalizedQuad(const std::array<Point2f, 4>& quad, int size) {
-    Mat mask = Mat::zeros(Size(size, size), CV_8U);
-    std::vector<Point> points;
-    points.reserve(quad.size());
-    for (const Point2f& point : quad) {
-        points.emplace_back(
-            static_cast<int>(std::round(point.x * static_cast<float>(size))),
-            static_cast<int>(std::round(point.y * static_cast<float>(size))));
-    }
-    cv::fillConvexPoly(mask, points, Scalar::all(1.0));
-    return mask;
-}
-
-double normalizedQuadIoU(
-    const std::array<Point2f, 4>& lhs,
-    const std::array<Point2f, 4>& rhs
-) {
-    Mat lhsMask = maskFromNormalizedQuad(lhs, kPageSegInputSize);
-    Mat rhsMask = maskFromNormalizedQuad(rhs, kPageSegInputSize);
-    Mat intersection;
-    Mat unionMask;
-    cv::bitwise_and(lhsMask, rhsMask, intersection);
-    cv::bitwise_or(lhsMask, rhsMask, unionMask);
-    const int unionCount = cv::countNonZero(unionMask);
-    if (unionCount <= 0) {
-        return 0.0;
-    }
-    return static_cast<double>(cv::countNonZero(intersection)) / static_cast<double>(unionCount);
-}
-
-MLModel *pageSegModel(void) {
-    static MLModel *model = nil;
-    static dispatch_once_t onceToken;
-    dispatch_once(&onceToken, ^{
-        model = bundledMLModel(@"PageSegNet", MLComputeUnitsAll, @"pageseg");
-    });
-    return model;
-}
-
-double floatMatPercentile(const Mat& mat, double percentile) {
-    std::vector<float> values;
-    values.reserve(static_cast<size_t>(mat.rows) * mat.cols);
-    for (int y = 0; y < mat.rows; y++) {
-        const float *row = mat.ptr<float>(y);
-        for (int x = 0; x < mat.cols; x++) {
-            values.push_back(row[x]);
-        }
-    }
-    if (values.empty()) {
-        return 0.0;
-    }
-    std::sort(values.begin(), values.end());
-    const double clamped = std::max(0.0, std::min(1.0, percentile));
-    const double position = (static_cast<double>(values.size()) - 1.0) * clamped;
-    const size_t lower = static_cast<size_t>(std::floor(position));
-    const size_t upper = static_cast<size_t>(std::ceil(position));
-    const double fraction = position - static_cast<double>(lower);
-    return static_cast<double>(values[lower]) * (1.0 - fraction)
-        + static_cast<double>(values[upper]) * fraction;
-}
-
-struct PageSegMaskQuad {
-    Mat mask;
-    std::optional<std::array<Point2f, 4>> normalizedQuad;
-    double maskAreaRatio = 0.0;
-    double componentMeanProbability = 0.0;
-};
-
-PageSegMaskQuad quadFromPageSegProbability(const Mat& probability) {
-    PageSegMaskQuad result;
-    if (probability.empty() || probability.channels() != 1) {
-        return result;
-    }
-
-    Mat prob;
-    probability.convertTo(prob, CV_32F);
-    const int height = prob.rows;
-    const int width = prob.cols;
-    if (height <= 0 || width <= 0) {
-        return result;
-    }
-
-    double minValue = 0.0;
-    double maxValue = 0.0;
-    cv::minMaxLoc(prob, &minValue, &maxValue);
-    if (maxValue < kPageSegMinPeak) {
-        return result;
-    }
-
-    Mat binary;
-    cv::compare(prob, kPageSegThreshold, binary, cv::CMP_GE);
-    if (cv::countNonZero(binary) == 0) {
-        const double adaptiveThreshold = std::max(kPageSegMinPeak, floatMatPercentile(prob, 0.92));
-        cv::compare(prob, adaptiveThreshold, binary, cv::CMP_GE);
-    }
-    if (cv::countNonZero(binary) == 0) {
-        return result;
-    }
-
-    Mat closeKernel = cv::getStructuringElement(cv::MORPH_RECT, Size(5, 5));
-    Mat openKernel = cv::getStructuringElement(cv::MORPH_RECT, Size(3, 3));
-    cv::morphologyEx(binary, binary, cv::MORPH_CLOSE, closeKernel, Point(-1, -1), 2);
-    cv::morphologyEx(binary, binary, cv::MORPH_OPEN, openKernel, Point(-1, -1), 1);
-    result.mask = binary.clone();
-
-    Mat labels;
-    Mat stats;
-    Mat centroids;
-    const int count = cv::connectedComponentsWithStats(binary, labels, stats, centroids, 8, CV_32S);
-    if (count <= 1) {
-        return result;
-    }
-
-    int bestLabel = 1;
-    int bestArea = stats.at<int>(1, cv::CC_STAT_AREA);
-    for (int label = 2; label < count; label++) {
-        const int area = stats.at<int>(label, cv::CC_STAT_AREA);
-        if (area > bestArea) {
-            bestArea = area;
-            bestLabel = label;
-        }
-    }
-
-    Mat component = Mat::zeros(binary.size(), CV_8U);
-    for (int y = 0; y < labels.rows; y++) {
-        const int *labelRow = labels.ptr<int>(y);
-        uint8_t *componentRow = component.ptr<uint8_t>(y);
-        for (int x = 0; x < labels.cols; x++) {
-            componentRow[x] = labelRow[x] == bestLabel ? 255 : 0;
-        }
-    }
-    result.mask = component;
-    result.maskAreaRatio = static_cast<double>(bestArea) / std::max(1.0, static_cast<double>(height) * width);
-    result.componentMeanProbability = cv::mean(prob, component)[0];
-    if (result.componentMeanProbability < kPageSegMinComponentMean) {
-        return result;
-    }
-
-    std::vector<std::vector<Point>> contours;
-    cv::findContours(component, contours, cv::RETR_EXTERNAL, cv::CHAIN_APPROX_SIMPLE);
-    if (contours.empty()) {
-        return result;
-    }
-    auto contourIt = std::max_element(contours.begin(), contours.end(), [](const auto& lhs, const auto& rhs) {
-        return cv::contourArea(lhs) < cv::contourArea(rhs);
-    });
-    const double minArea = kPageSegMinAreaRatio * static_cast<double>(height) * width;
-    if (cv::contourArea(*contourIt) < minArea) {
-        return result;
-    }
-
-    std::vector<Point> hull;
-    cv::convexHull(*contourIt, hull);
-    const double perimeter = cv::arcLength(hull, true);
-    std::optional<std::array<Point2f, 4>> quad;
-    const std::array<double, 7> epsilons = {0.012, 0.018, 0.024, 0.032, 0.045, 0.06, 0.08};
-    for (double epsilon : epsilons) {
-        std::vector<Point> approx;
-        cv::approxPolyDP(hull, approx, epsilon * perimeter, true);
-        if (approx.size() == 4 && cv::isContourConvex(approx) && cv::contourArea(approx) >= minArea) {
-            std::vector<Point2f> points;
-            points.reserve(4);
-            for (const Point& point : approx) {
-                points.emplace_back(static_cast<float>(point.x), static_cast<float>(point.y));
-            }
-            quad = orderDocumentPoints(points);
-            break;
-        }
-    }
-
-    if (!quad.has_value()) {
-        cv::RotatedRect rect = cv::minAreaRect(hull);
-        Point2f box[4];
-        rect.points(box);
-        std::vector<Point2f> points(box, box + 4);
-        if (cv::contourArea(points) < minArea) {
-            return result;
-        }
-        quad = orderDocumentPoints(points);
-    }
-
-    std::array<Point2f, 4> normalized = quad.value();
-    for (Point2f& point : normalized) {
-        point.x = std::max(0.0f, std::min(1.0f, point.x / static_cast<float>(std::max(1, width))));
-        point.y = std::max(0.0f, std::min(1.0f, point.y / static_cast<float>(std::max(1, height))));
-    }
-    result.normalizedQuad = normalized;
-    return result;
-}
-
-PageSegCandidateInfo buildPageSegCandidate(
-    const Mat& resizedRgb,
-    const Mat& edgeSupportMap
-) {
-    PageSegCandidateInfo info;
-    MLModel *model = pageSegModel();
-    info.modelAvailable = model != nil;
-    if (model == nil || resizedRgb.empty()) {
-        return info;
-    }
-
-    Mat square;
-    cv::resize(resizedRgb, square, Size(kPageSegInputSize, kPageSegInputSize), 0.0, 0.0, cv::INTER_AREA);
-    Mat square32;
-    square.convertTo(square32, CV_32FC3, 1.0 / 255.0);
-    std::vector<float> chw(3 * kPageSegInputSize * kPageSegInputSize);
-    deshadowFillChw(square32, chw.data());
-
-    std::vector<float> output;
-    const auto startedAt = std::chrono::steady_clock::now();
-    const bool ok = runMLModel(
-        model,
-        @"input",
-        @"probability",
-        chw.data(),
-        @[ @1, @3, @(kPageSegInputSize), @(kPageSegInputSize) ],
-        chw.size(),
-        output,
-        @"pageseg",
-        @[ @1, @1, @(kPageSegInputSize), @(kPageSegInputSize) ]);
-    info.inferenceDurationMs = std::chrono::duration<double, std::milli>(
-        std::chrono::steady_clock::now() - startedAt).count();
-    info.inferenceSucceeded = ok;
-    if (!ok || output.size() < static_cast<size_t>(kPageSegInputSize * kPageSegInputSize)) {
-        return info;
-    }
-
-    Mat probability(kPageSegInputSize, kPageSegInputSize, CV_32F);
-    std::memcpy(
-        probability.ptr<float>(0),
-        output.data(),
-        static_cast<size_t>(kPageSegInputSize) * kPageSegInputSize * sizeof(float));
-    info.probability = probability.clone();
-
-    PageSegMaskQuad maskQuad = quadFromPageSegProbability(probability);
-    info.mask = maskQuad.mask;
-    info.maskAreaRatio = maskQuad.maskAreaRatio;
-    info.componentMeanProbability = maskQuad.componentMeanProbability;
-    if (!maskQuad.normalizedQuad.has_value()) {
-        return info;
-    }
-
-    info.quadFound = true;
-    info.normalizedQuad = maskQuad.normalizedQuad;
-    const auto denormalized = denormalizedDocumentPoints(maskQuad.normalizedQuad.value(), resizedRgb.cols, resizedRgb.rows);
-    info.edgeTouched = hasTooManyImageEdgePoints(denormalized, resizedRgb.cols, resizedRgb.rows);
-    info.edgeTouchAllowed = info.maskAreaRatio >= kPageSegNearFullFrameMaskAreaRatio;
-    if (info.edgeTouched && !info.edgeTouchAllowed) {
-        return info;
-    }
-
-    const std::vector<Point2f> contourPoints(denormalized.begin(), denormalized.end());
-    const double area = cv::contourArea(contourPoints);
-    info.score = scoreDocumentQuad(
-        denormalized,
-        area,
-        static_cast<double>(resizedRgb.cols) * resizedRgb.rows,
-        resizedRgb.cols,
-        resizedRgb.rows)
-        + scoreEdgeSupport(denormalized, edgeSupportMap, resizedRgb.cols, resizedRgb.rows) * EdgeSupportScoreWeight;
-    const BoundaryEdgeEvidence evidence = measureBoundaryEdgeEvidence(
-        denormalized,
-        edgeSupportMap,
-        resizedRgb.cols,
-        resizedRgb.rows);
-    info.edgeSupportAverage = evidence.average;
-    info.edgeSupportMinimum = evidence.minimum;
-    info.candidateAccepted = true;
-    return info;
-}
-
-DocumentDetectionResult detectDocumentCornerCandidate(
+DocumentCornerCandidate detectDocumentCornerCandidate(
     const Mat& sourceRgb,
     bool previewMode,
     const std::optional<std::array<Point2f, 4>>& anchor
 ) {
-    DocumentDetectionResult result;
+    DocumentCornerCandidate best;
     if (sourceRgb.empty()) {
-        return result;
+        return best;
     }
 
     const DocumentDetectionConfig config = documentDetectionConfig(previewMode);
@@ -1276,9 +839,7 @@ DocumentDetectionResult detectDocumentCornerCandidate(
     Mat paper = buildPaperCandidateMask(resized);
 
     const double imageArea = static_cast<double>(resized.cols) * resized.rows;
-    std::vector<ScoredDocumentCandidate> candidates;
-    result.model = buildPageSegCandidate(resized, edgeSupportMap);
-
+    std::vector<std::pair<std::array<Point2f, 4>, double>> candidates;
     auto coloredCandidates = collectDocumentCandidates(
         coloredPaper,
         imageArea * config.coloredMinAreaRatio,
@@ -1286,9 +847,6 @@ DocumentDetectionResult detectDocumentCornerCandidate(
         config.epsilonCandidates,
         config.coloredMaxCandidates,
         config.allowMinAreaRect,
-        false,
-        true,
-        CandidateSource::OpenCV,
         edgeSupportMap);
     candidates.insert(candidates.end(), coloredCandidates.begin(), coloredCandidates.end());
 
@@ -1299,9 +857,6 @@ DocumentDetectionResult detectDocumentCornerCandidate(
         config.epsilonCandidates,
         config.maxCandidates,
         config.allowMinAreaRect,
-        false,
-        true,
-        CandidateSource::OpenCV,
         edgeSupportMap);
     candidates.insert(candidates.end(), paperCandidates.begin(), paperCandidates.end());
 
@@ -1312,9 +867,6 @@ DocumentDetectionResult detectDocumentCornerCandidate(
         config.epsilonCandidates,
         config.maxCandidates,
         config.allowMinAreaRect,
-        false,
-        false,
-        CandidateSource::OpenCV,
         edgeSupportMap);
     candidates.insert(candidates.end(), adaptiveCandidates.begin(), adaptiveCandidates.end());
 
@@ -1333,81 +885,23 @@ DocumentDetectionResult detectDocumentCornerCandidate(
             config.epsilonCandidates,
             config.maxCandidates,
             config.allowMinAreaRect,
-            false,
-            false,
-            CandidateSource::OpenCV,
             edgeSupportMap);
         candidates.insert(candidates.end(), edgeCandidates.begin(), edgeCandidates.end());
     }
 
     for (const auto& candidate : candidates) {
-        const auto normalized = normalizedDocumentPoints(candidate.points, resized.cols, resized.rows);
-        const bool anchorMatched = matchesAnchor(normalized, anchor);
-        if (!anchorMatched) {
+        const auto normalized = normalizedDocumentPoints(candidate.first, resized.cols, resized.rows);
+        if (!matchesAnchor(normalized, anchor)) {
             continue;
         }
-        if (!result.selected.valid || candidate.score > result.selected.score) {
-            result.selected.points = normalized;
-            result.selected.score = candidate.score;
-            result.selected.valid = true;
-            result.selected.source = "opencv";
+        if (!best.valid || candidate.second > best.score) {
+            best.points = normalized;
+            best.score = candidate.second;
+            best.valid = true;
         }
     }
 
-    if (result.selected.valid) {
-        const auto denormalized = denormalizedDocumentPoints(
-            result.selected.points,
-            resized.cols,
-            resized.rows);
-        const BoundaryEdgeEvidence evidence = measureBoundaryEdgeEvidence(
-            denormalized,
-            edgeSupportMap,
-            resized.cols,
-            resized.rows);
-        result.selected.edgeSupportAverage = evidence.average;
-        result.selected.edgeSupportMinimum = evidence.minimum;
-    }
-
-    if (result.model.candidateAccepted && result.model.normalizedQuad.has_value()) {
-        const auto modelQuad = result.model.normalizedQuad.value();
-        result.model.anchorMatched = matchesAnchor(modelQuad, anchor);
-        if (result.model.anchorMatched) {
-            if (result.selected.valid) {
-                result.model.agreementIoU = normalizedQuadIoU(result.selected.points, modelQuad);
-                if (result.model.agreementIoU >= kPageSegAgreementIoUThreshold) {
-                    result.selected.source = "opencv_model_agreed";
-                } else if (
-                    result.model.agreementIoU >= kPageSegSameObjectIoUThreshold
-                    && result.selected.edgeSupportAverage >= kOpenCVEdgeAverageThreshold
-                    && result.selected.edgeSupportMinimum >= kOpenCVEdgeMinimumThreshold
-                    && result.selected.edgeSupportAverage - result.model.edgeSupportAverage
-                        >= kOpenCVEdgeAverageAdvantage
-                    && result.selected.edgeSupportMinimum - result.model.edgeSupportMinimum
-                        >= kOpenCVEdgeMinimumAdvantage
-                ) {
-                    result.selected.source = "opencv_edge_supported";
-                } else {
-                    result.selected.points = expandedNormalizedDocumentPoints(
-                        modelQuad,
-                        kPageSegModelFallbackExpansion);
-                    result.selected.score = result.model.score;
-                    result.selected.valid = true;
-                    result.selected.source = "model";
-                    result.model.fallbackExpansion = kPageSegModelFallbackExpansion;
-                }
-            } else {
-                result.selected.points = expandedNormalizedDocumentPoints(
-                    modelQuad,
-                    kPageSegModelFallbackExpansion);
-                result.selected.score = result.model.score;
-                result.selected.valid = true;
-                result.selected.source = "model";
-                result.model.fallbackExpansion = kPageSegModelFallbackExpansion;
-            }
-        }
-    }
-
-    return result;
+    return best;
 }
 
 std::optional<std::array<Point2f, 4>> normalizedAnchorFromValues(NSArray<NSValue *> *values) {
@@ -2354,7 +1848,7 @@ constexpr int kDeshadowDrSize = 1024;
 constexpr float kDeshadowGainEps = 8.0f;
 constexpr double kDeshadowGainBlurSigma = 2.0;
 
-MLModel *bundledMLModel(NSString *name, MLComputeUnits computeUnits, NSString *logPrefix) {
+MLModel *deshadowModel(NSString *name, MLComputeUnits computeUnits) {
     NSURL *url = [[NSBundle mainBundle] URLForResource:name withExtension:@"mlmodelc"];
     if (url == nil) {
         return nil;
@@ -2364,13 +1858,9 @@ MLModel *bundledMLModel(NSString *name, MLComputeUnits computeUnits, NSString *l
     NSError *error = nil;
     MLModel *model = [MLModel modelWithContentsOfURL:url configuration:config error:&error];
     if (model == nil) {
-        NSLog(@"%@: failed to load %@: %@", logPrefix, name, error);
+        NSLog(@"deshadow: failed to load %@: %@", name, error);
     }
     return model;
-}
-
-MLModel *deshadowModel(NSString *name, MLComputeUnits computeUnits) {
-    return bundledMLModel(name, computeUnits, @"deshadow");
 }
 
 MLModel *deshadowGcnetModel(void) {
@@ -2421,120 +1911,43 @@ Mat deshadowMatFromChw(const float *src, int height, int width) {
     return merged;
 }
 
-size_t multiArrayElementCount(NSArray<NSNumber *> *shape) {
-    size_t count = 1;
-    for (NSNumber *dimension in shape) {
-        const NSInteger value = dimension.integerValue;
-        if (value <= 0) {
-            return 0;
-        }
-        count *= static_cast<size_t>(value);
-    }
-    return count;
-}
-
-bool multiArrayShapeMatches(MLMultiArray *array, NSArray<NSNumber *> *expectedShape) {
-    if (expectedShape == nil || array.shape.count != expectedShape.count) {
-        return false;
-    }
-    for (NSUInteger index = 0; index < expectedShape.count; index++) {
-        if (array.shape[index].integerValue != expectedShape[index].integerValue) {
-            return false;
-        }
-    }
-    return true;
-}
-
-bool multiArrayHasContiguousElementStrides(MLMultiArray *array) {
-    if (array.shape.count != array.strides.count || array.count <= 0) {
-        return false;
-    }
-
-    NSInteger expectedStride = 1;
-    for (NSInteger index = static_cast<NSInteger>(array.shape.count) - 1; index >= 0; index--) {
-        const NSInteger dimension = std::max<NSInteger>(1, array.shape[static_cast<NSUInteger>(index)].integerValue);
-        const NSInteger stride = array.strides[static_cast<NSUInteger>(index)].integerValue;
-        if (dimension > 1 && stride != expectedStride) {
-            return false;
-        }
-        expectedStride *= dimension;
-    }
-    return expectedStride == array.count;
-}
-
-/// Run a Core ML model on a CHW float input. Returns false on failure.
-bool runMLModel(MLModel *model,
-                NSString *inputFeatureName,
-                NSString *outputFeatureName,
-                const float *input,
-                NSArray<NSNumber *> *shape,
-                size_t inputCount,
-                std::vector<float>& output,
-                NSString *logPrefix,
-                NSArray<NSNumber *> *expectedOutputShape) {
-    NSError *error = nil;
-    MLMultiArray *inputArray = [[MLMultiArray alloc] initWithShape:shape
-                                                          dataType:MLMultiArrayDataTypeFloat32
-                                                             error:&error];
-    if (inputArray == nil) {
-        NSLog(@"%@: failed to allocate input array: %@", logPrefix, error);
-        return false;
-    }
-    std::memcpy(inputArray.dataPointer, input, inputCount * sizeof(float));
-
-    MLDictionaryFeatureProvider *provider = [[MLDictionaryFeatureProvider alloc]
-        initWithDictionary:@{inputFeatureName : [MLFeatureValue featureValueWithMultiArray:inputArray]}
-                     error:&error];
-    if (provider == nil) {
-        NSLog(@"%@: failed to build feature provider: %@", logPrefix, error);
-        return false;
-    }
-
-    id<MLFeatureProvider> result = [model predictionFromFeatures:provider error:&error];
-    if (result == nil) {
-        NSLog(@"%@: prediction failed: %@", logPrefix, error);
-        return false;
-    }
-    MLMultiArray *outputArray = [result featureValueForName:outputFeatureName].multiArrayValue;
-    if (outputArray == nil) {
-        NSLog(@"%@: missing output feature %@", logPrefix, outputFeatureName);
-        return false;
-    }
-    if (outputArray.dataType != MLMultiArrayDataTypeFloat32) {
-        NSLog(@"%@: unsupported output data type %ld", logPrefix, static_cast<long>(outputArray.dataType));
-        return false;
-    }
-    if (expectedOutputShape != nil) {
-        const size_t expectedCount = multiArrayElementCount(expectedOutputShape);
-        const bool exactShape = multiArrayShapeMatches(outputArray, expectedOutputShape);
-        const bool contiguous = multiArrayHasContiguousElementStrides(outputArray);
-        const bool compatibleByCount = expectedCount > 0
-            && static_cast<size_t>(outputArray.count) == expectedCount
-            && contiguous;
-        if (!contiguous || (!exactShape && !compatibleByCount)) {
-            NSLog(
-                @"%@: unexpected output layout for %@ shape=%@ strides=%@ expected=%@ count=%ld",
-                logPrefix,
-                outputFeatureName,
-                outputArray.shape,
-                outputArray.strides,
-                expectedOutputShape,
-                static_cast<long>(outputArray.count));
-            return false;
-        }
-    }
-    output.resize(static_cast<size_t>(outputArray.count));
-    std::memcpy(output.data(), outputArray.dataPointer, output.size() * sizeof(float));
-    return true;
-}
-
 /// Run a deshadow model on a CHW float input. Returns false on failure.
 bool deshadowRunModel(MLModel *model,
                       const float *input,
                       NSArray<NSNumber *> *shape,
                       size_t inputCount,
                       std::vector<float>& output) {
-    return runMLModel(model, @"input", @"output", input, shape, inputCount, output, @"deshadow", nil);
+    NSError *error = nil;
+    MLMultiArray *inputArray = [[MLMultiArray alloc] initWithShape:shape
+                                                          dataType:MLMultiArrayDataTypeFloat32
+                                                             error:&error];
+    if (inputArray == nil) {
+        NSLog(@"deshadow: failed to allocate input array: %@", error);
+        return false;
+    }
+    std::memcpy(inputArray.dataPointer, input, inputCount * sizeof(float));
+
+    MLDictionaryFeatureProvider *provider = [[MLDictionaryFeatureProvider alloc]
+        initWithDictionary:@{@"input" : [MLFeatureValue featureValueWithMultiArray:inputArray]}
+                     error:&error];
+    if (provider == nil) {
+        NSLog(@"deshadow: failed to build feature provider: %@", error);
+        return false;
+    }
+
+    id<MLFeatureProvider> result = [model predictionFromFeatures:provider error:&error];
+    if (result == nil) {
+        NSLog(@"deshadow: prediction failed: %@", error);
+        return false;
+    }
+    MLMultiArray *outputArray = [result featureValueForName:@"output"].multiArrayValue;
+    if (outputArray == nil) {
+        NSLog(@"deshadow: missing output feature");
+        return false;
+    }
+    output.resize(static_cast<size_t>(outputArray.count));
+    std::memcpy(output.data(), outputArray.dataPointer, output.size() * sizeof(float));
+    return true;
 }
 
 Mat applyDeshadowFilter(const Mat& sourceRgb) {
@@ -2932,11 +2345,11 @@ Mat applyWhiteboardFilter(const Mat& sourceRgb) {
         return nil;
     }
 
-    DocumentDetectionResult result = detectDocumentCornerCandidate(
+    DocumentCornerCandidate candidate = detectDocumentCornerCandidate(
         sourceRgb,
         false,
         normalizedAnchorFromValues(anchorCorners));
-    return cornerValuesFromCandidate(result.selected);
+    return cornerValuesFromCandidate(candidate);
 }
 
 + (nullable NSArray<NSValue *> *)detectPreviewDocumentCornersInImage:(UIImage *)image {
@@ -2945,33 +2358,18 @@ Mat applyWhiteboardFilter(const Mat& sourceRgb) {
         return nil;
     }
 
-    DocumentDetectionResult result = detectDocumentCornerCandidate(
+    DocumentCornerCandidate candidate = detectDocumentCornerCandidate(
         sourceRgb,
         true,
         std::nullopt);
-    return cornerValuesFromCandidate(result.selected);
+    return cornerValuesFromCandidate(candidate);
 }
 
 + (NSDictionary<NSString *, UIImage *> *)documentDetectionDebugImagesInImage:(UIImage *)image {
-    NSDictionary<NSString *, id> *info = [self documentDetectionDebugInfoInImage:image anchorCorners:nil];
-    id images = info[@"debugImages"];
-    if ([images isKindOfClass:NSDictionary.class]) {
-        return images;
-    }
-    return @{};
-}
-
-+ (NSDictionary<NSString *, id> *)documentDetectionDebugInfoInImage:(UIImage *)image
-                                                      anchorCorners:(nullable NSArray<NSValue *> *)anchorCorners {
     Mat sourceRgb = rgbMatFromUIImage(image);
     if (sourceRgb.empty()) {
         return @{};
     }
-
-    DocumentDetectionResult result = detectDocumentCornerCandidate(
-        sourceRgb,
-        false,
-        normalizedAnchorFromValues(anchorCorners));
 
     Mat resized = sourceRgb;
     const int maxSide = std::max(sourceRgb.cols, sourceRgb.rows);
@@ -2995,23 +2393,6 @@ Mat applyWhiteboardFilter(const Mat& sourceRgb) {
     addImage(@"grayscale", gray, false);
     Mat edgeSupportMap = buildEdgeSupportMap(gray);
     addImage(@"edge_support", edgeSupportMap, false);
-
-    if (!result.model.probability.empty()) {
-        Mat probability8;
-        result.model.probability.convertTo(probability8, CV_8U, 255.0);
-        Mat probabilityResized;
-        cv::resize(probability8, probabilityResized, resized.size(), 0.0, 0.0, cv::INTER_LINEAR);
-        addImage(@"model_prob", probabilityResized, false);
-    }
-    if (!result.model.mask.empty()) {
-        Mat modelMaskResized;
-        cv::resize(result.model.mask, modelMaskResized, resized.size(), 0.0, 0.0, cv::INTER_NEAREST);
-        addImage(@"model_mask", modelMaskResized, false);
-    }
-    if (result.model.modelAvailable) {
-        Mat modelOverlay = quadOverlay(resized, result.model.normalizedQuad, Scalar(0.0, 255.0, 0.0));
-        addImage(@"model_quad_overlay", modelOverlay, true);
-    }
 
     Mat blurred;
     cv::GaussianBlur(gray, blurred, cv::Size(5, 5), 0.0);
@@ -3074,32 +2455,7 @@ Mat applyWhiteboardFilter(const Mat& sourceRgb) {
         addImage([strategy.label stringByAppendingString:@"_contours_overlay"], overlay, true);
     }
 
-    NSMutableDictionary<NSString *, id> *info = [NSMutableDictionary dictionary];
-    NSArray<NSValue *> *corners = cornerValuesFromCandidate(result.selected);
-    if (corners != nil) {
-        info[@"corners"] = corners;
-    }
-    info[@"source"] = result.selected.valid ? [NSString stringWithUTF8String:result.selected.source.c_str()] : @"none";
-    info[@"score"] = @(result.selected.score);
-    info[@"opencvEdgeSupportAverage"] = @(result.selected.edgeSupportAverage);
-    info[@"opencvEdgeSupportMinimum"] = @(result.selected.edgeSupportMinimum);
-    info[@"modelAvailable"] = @(result.model.modelAvailable);
-    info[@"modelInferenceSucceeded"] = @(result.model.inferenceSucceeded);
-    info[@"modelInferenceDurationMs"] = @(result.model.inferenceDurationMs);
-    info[@"modelQuadFound"] = @(result.model.quadFound);
-    info[@"modelCandidate"] = @(result.model.candidateAccepted);
-    info[@"modelAnchorMatched"] = @(result.model.anchorMatched);
-    info[@"modelEdgeTouched"] = @(result.model.edgeTouched);
-    info[@"modelEdgeTouchAllowed"] = @(result.model.edgeTouchAllowed);
-    info[@"modelMaskAreaRatio"] = @(result.model.maskAreaRatio);
-    info[@"modelComponentMeanProbability"] = @(result.model.componentMeanProbability);
-    info[@"modelScore"] = @(result.model.score);
-    info[@"modelEdgeSupportAverage"] = @(result.model.edgeSupportAverage);
-    info[@"modelEdgeSupportMinimum"] = @(result.model.edgeSupportMinimum);
-    info[@"modelAgreementIoU"] = @(result.model.agreementIoU);
-    info[@"modelFallbackExpansion"] = @(result.model.fallbackExpansion);
-    info[@"debugImages"] = images;
-    return info;
+    return images;
 }
 
 @end

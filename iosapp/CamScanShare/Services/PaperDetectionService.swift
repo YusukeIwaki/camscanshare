@@ -47,15 +47,9 @@ enum PaperDetectionService {
         debugSink.writeImage(session, label: "input", image: image)
         let uprightImage = image.normalizedOrientation()
 
-        var debugInfo: [String: Any]?
         if session?.isEnabled == true {
             let artifactStartedAt = debugSink.now()
-            let info = OpenCVDocumentFilterBridge.documentDetectionDebugInfo(
-                in: uprightImage,
-                anchorCorners: anchorValues(from: anchorRectangle)
-            )
-            debugInfo = info as? [String: Any]
-            let debugImages = debugInfo?["debugImages"] as? [String: UIImage] ?? [:]
+            let debugImages = OpenCVDocumentFilterBridge.documentDetectionDebugImages(in: uprightImage)
             for key in debugImages.keys.sorted() {
                 debugSink.writeImage(session, label: key, image: debugImages[key])
             }
@@ -65,37 +59,14 @@ enum PaperDetectionService {
                 startedAt: artifactStartedAt,
                 metadata: ["imageCount": "\(debugImages.count)"]
             )
-            if let duration = doubleValue(debugInfo?["modelInferenceDurationMs"]), duration >= 0 {
-                debugSink.recordTiming(
-                    session,
-                    stage: "paper_detection.model_inference",
-                    durationMs: duration,
-                    metadata: [
-                        "modelAvailable": boolValueString(debugInfo?["modelAvailable"]) ?? "false",
-                        "modelInferenceSucceeded": boolValueString(debugInfo?["modelInferenceSucceeded"]) ?? "false",
-                        "modelCandidate": boolValueString(debugInfo?["modelCandidate"]) ?? "false"
-                    ]
-                )
-            }
         }
 
-        let openCVRectangle: DetectedRectangle?
-        let detectionSource: String
-        let detectionScore: Double?
-        if let debugInfo {
-            openCVRectangle = rectangle(from: debugInfo["corners"] as? [NSValue])
-            detectionSource = stringValue(debugInfo["source"]) ?? (openCVRectangle == nil ? "none" : "opencv")
-            detectionScore = doubleValue(debugInfo["score"])
-        } else {
-            openCVRectangle = rectangleFromOpenCV(in: uprightImage, anchorRectangle: anchorRectangle)
-            detectionSource = openCVRectangle == nil ? "none" : "opencv"
-            detectionScore = nil
-        }
+        let openCVRectangle = rectangleFromOpenCV(in: uprightImage, anchorRectangle: anchorRectangle)
         let rectangle: DetectedRectangle?
         let source: String
         if let openCVRectangle {
             rectangle = openCVRectangle
-            source = detectionSource == "none" ? "opencv" : detectionSource
+            source = "opencv"
         } else if let anchorRectangle {
             rectangle = anchorRectangle
             source = "preview_anchor"
@@ -103,37 +74,17 @@ enum PaperDetectionService {
             rectangle = nil
             source = "none"
         }
-        updateDetectionMetadata(
-            session: session,
-            debugInfo: debugInfo,
-            source: source,
-            score: detectionScore,
-            debugSink: debugSink
-        )
         debugSink.writeText(session, fileName: "selected_quad.json", text: rectangleJson(rectangle))
         debugSink.writeImage(session, label: "selected_quad_overlay", image: drawRectangleOverlay(image: uprightImage, rectangle: rectangle))
-        var totalMetadata = [
-            "result": rectangle == nil ? "none" : "quad",
-            "source": source,
-            "anchor": "\(anchorRectangle != nil)"
-        ]
-        if let score = detectionScore, score >= 0 {
-            totalMetadata["score"] = String(format: "%.4f", score)
-        }
-        if let modelCandidate = boolValueString(debugInfo?["modelCandidate"]) {
-            totalMetadata["modelCandidate"] = modelCandidate
-        }
-        if let modelScore = doubleValue(debugInfo?["modelScore"]), modelScore >= 0 {
-            totalMetadata["modelScore"] = String(format: "%.4f", modelScore)
-        }
-        if let modelAgreementIoU = doubleValue(debugInfo?["modelAgreementIoU"]), modelAgreementIoU >= 0 {
-            totalMetadata["modelAgreementIoU"] = String(format: "%.4f", modelAgreementIoU)
-        }
         debugSink.recordTimingSince(
             session,
             stage: "paper_detection.total",
             startedAt: startedAt,
-            metadata: totalMetadata
+            metadata: [
+                "result": rectangle == nil ? "none" : "quad",
+                "source": source,
+                "anchor": "\(anchorRectangle != nil)"
+            ]
         )
         return rectangle
     }
@@ -331,10 +282,6 @@ enum PaperDetectionService {
         [rectangle.topLeft, rectangle.topRight, rectangle.bottomRight, rectangle.bottomLeft]
     }
 
-    private static func anchorValues(from rectangle: DetectedRectangle?) -> [NSValue]? {
-        rectangle.map { orderedPoints($0).map { NSValue(cgPoint: $0) } }
-    }
-
     static func detectPreviewRectangle(in image: UIImage) -> DetectedRectangle? {
         rectangle(from: OpenCVDocumentFilterBridge.detectPreviewDocumentCorners(in: image))
     }
@@ -345,10 +292,8 @@ enum PaperDetectionService {
     ) -> DetectedRectangle? {
         let values: [NSValue]?
         if let anchorRectangle {
-            values = OpenCVDocumentFilterBridge.detectDocumentCorners(
-                in: image,
-                anchorCorners: orderedPoints(anchorRectangle).map { NSValue(cgPoint: $0) }
-            )
+            let anchorValues = orderedPoints(anchorRectangle).map { NSValue(cgPoint: $0) }
+            values = OpenCVDocumentFilterBridge.detectDocumentCorners(in: image, anchorCorners: anchorValues)
         } else {
             values = OpenCVDocumentFilterBridge.detectDocumentCorners(in: image)
         }
@@ -378,82 +323,6 @@ enum PaperDetectionService {
             "{\"x\":\(point.x),\"y\":\(point.y)}"
         }.joined(separator: ",")
         return "{\"corners\":[\(pointJson)]}"
-    }
-
-    private static func updateDetectionMetadata(
-        session: ImageProcessingDebugSession?,
-        debugInfo: [String: Any]?,
-        source: String,
-        score: Double?,
-        debugSink: ImageProcessingDebugSink
-    ) {
-        var metadata: [String: String] = ["source": source]
-        if let score, score >= 0 {
-            metadata["score"] = String(format: "%.4f", score)
-        }
-        for key in [
-            "modelAvailable",
-            "modelInferenceSucceeded",
-            "modelQuadFound",
-            "modelCandidate",
-            "modelAnchorMatched",
-            "modelEdgeTouched",
-            "modelEdgeTouchAllowed"
-        ] {
-            if let value = boolValueString(debugInfo?[key]) {
-                metadata[key] = value
-            }
-        }
-        for key in [
-            "opencvEdgeSupportAverage",
-            "opencvEdgeSupportMinimum",
-            "modelInferenceDurationMs",
-            "modelMaskAreaRatio",
-            "modelScore",
-            "modelEdgeSupportAverage",
-            "modelEdgeSupportMinimum",
-            "modelAgreementIoU",
-            "modelFallbackExpansion"
-        ] {
-            if let value = doubleValue(debugInfo?[key]) {
-                if key == "modelScore", value < 0 {
-                    continue
-                }
-                if key == "modelAgreementIoU", value < 0 {
-                    continue
-                }
-                if key == "modelInferenceDurationMs", value < 0 {
-                    continue
-                }
-                metadata[key] = String(format: "%.4f", value)
-            }
-        }
-        debugSink.updateMetadata(session, metadata: metadata)
-    }
-
-    private static func stringValue(_ value: Any?) -> String? {
-        if let string = value as? String {
-            return string
-        }
-        if let number = value as? NSNumber {
-            return number.stringValue
-        }
-        return nil
-    }
-
-    private static func boolValueString(_ value: Any?) -> String? {
-        guard let number = value as? NSNumber else { return nil }
-        return number.boolValue ? "true" : "false"
-    }
-
-    private static func doubleValue(_ value: Any?) -> Double? {
-        if let number = value as? NSNumber {
-            return number.doubleValue
-        }
-        if let string = value as? String {
-            return Double(string)
-        }
-        return nil
     }
 
     private static func drawRectangleOverlay(image: UIImage, rectangle: DetectedRectangle?) -> UIImage? {

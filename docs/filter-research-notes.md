@@ -1,6 +1,8 @@
 # Filter Research Notes
 
-## 2026-07-11: PageSegNet neural paper segmentation adopted for iOS detection fusion
+## 2026-07-11: PageSegNet neural paper segmentation evaluated for iOS detection fusion
+
+> Note (2026-07-14): the iOS integration described in this and the following two entries was ultimately rolled back. See the "2026-07-14: PageSegNet iOS fusion rolled back" entry below for the outcome. The entries are kept as a record of the attempt and its measurements.
 
 Input:
 
@@ -93,6 +95,40 @@ Adopted:
 - Keep PageSeg plus `2%` expansion for all other cases. On all 2,577 SmartDoc holdout frames, this added gate changed zero production selections and preserved mean IoU `0.8543`, p05 `0.7580`, and IoU >= 0.80 rate `0.8397`.
 
 Across the four reports, weakest-side edge support improved from `0.116→0.234`, `0.123→0.608`, `0.045→0.620`, and `0.025→0.388`. Reproduce the comparison with `.venv/bin/python -m scripts.document_detection.evaluate_report_regressions`; local output goes to `tmp/docdet-v5/report-regressions/`.
+
+## 2026-07-14: PageSegNet iOS fusion rolled back — kept as research only
+
+Outcome of the 2026-07-11 → 2026-07-14 PageSegNet arc above.
+
+- On the SmartDoc background05 holdout the fusion numbers looked strong (mean IoU up from an OpenCV-baseline `0.34` to `0.85`), but that baseline is a stripped app-equivalent OpenCV path, not the full production detector with its scoring, anchor validation, and multi-strategy Canny set.
+- Against real device improvement reports and the existing docs sample set, the fused detector did not consistently beat the current OpenCV-only detection. Each report-driven failure required another hand-tuned gate (`opencv_edge_supported`, edge-support thresholds, near-full-frame area gate), and every gate that fixed a report either did nothing on the holdout or risked regressions elsewhere. The remaining hard cases (very low-contrast near-full-frame paper, inner frames/cards competing with the true page) stayed unsolved.
+- Decision: roll back the iOS implementation. The bundled `PageSegNet.mlpackage` and the iOS integration in `OpenCVDocumentFilterBridge`, `PaperDetectionService`, and `ImageProcessingDebugSink` are reverted to the OpenCV-only state. iOS and Android both stay OpenCV-only.
+- Kept as research record: the training/evaluation/export/calibration pipeline under `scripts/document_detection/` (SmartDoc 2015 Challenge 1 + synthetic data, MobileNetV3-Small encoder + lightweight U-Net decoder), the `filter_asset_pipeline.py` `score_document_quad` helper that mirrors the iOS geometry score for offline evaluation, and these notes. Re-adopting would require a real-world win over the production OpenCV detector, not just a holdout-IoU win.
+
+### Background survey: public datasets and models for mobile paper detection
+
+Condensed from a survey compiled while scoping this work (originally a standalone `紙検出の改善.md`, now folded in here). General takeaway: large, fully-open datasets for detecting plain A4 paper from a phone preview are scarce — ID-document datasets dominate — so combining several sources is the realistic path.
+
+| Research / dataset | Method / annotation | Real-time fit | License note |
+| --- | --- | --- | --- |
+| HU-PageScan + Extended Smartdoc | Lightweight U-Net-style FCN, 512² grayscale → binary page mask; code + weights public | Strong first baseline; good for weak paper/background contrast and broken outlines | Extended Smartdoc is synthetic-heavy; needs real shadow/occlusion/warp fine-tuning; license unclear for product use |
+| LDRNet | Lightweight CNN regressing 4 corners + edges + doc class directly | Fast if paper is flat and single | MIT code, but mostly model code — bring your own data (convert SmartDoc/RWMD/MIDV) |
+| RDLNet + RWMD (ACM MM 2024) | Real phone images with mask + instance class + main-doc corners; 2,009 images, 8 phones, 9 categories | Best fine-tuning data for real-world adaptation | Non-commercial research use only |
+| SmartDoc 2015 Challenge 1 | Phone video, per-frame quadrilateral coords | Best for frame-to-frame stability / tracking eval | CC BY 4.0 (used to train the PageSegNet arc above) |
+| MIDV-500 / MIDV-2020 | ID/passport videos with per-frame doc quads | Learns tilt, perspective, blur, glare, occlusion (not A4 aspect) | MIDV-2020 ~124 GB, form-gated license |
+| IWPOD document corners (2025) | Number-plate IWPOD-Net repurposed for doc corners | Recent lightweight candidate, but ID-doc-leaning | MIT code, research-reproduction quality |
+
+Suggested composition if this is ever revisited: initial training on Extended Smartdoc → add SmartDoc 2015 real frames → fine-tune on RWMD → add 500–2,000 own-app captures; prefer a lightweight segmentation model (MobileNetV3 + small U-Net / DeepLabV3+) → largest connected component → polygon approximation → map corners back to full-res → temporal smoothing, over direct 4-corner regression, because segmentation degrades more gracefully when corners are occluded, paper is curled, or the paper/background boundary is weak.
+
+References:
+
+- HU-PageScan: https://ietresearch.onlinelibrary.wiley.com/doi/10.1049/iet-ipr.2020.0532
+- Extended Smartdoc Dataset: https://github.com/ricardobnjunior/Extended-Smartdoc-Dataset
+- LDRNet paper: https://arxiv.org/abs/2206.02136 — code: https://github.com/niuwagege/LDRNet
+- RWMD dataset: https://github.com/ScholarlyShare/RWMD_dataset
+- SmartDoc 2015 Challenge 1: https://smartdoc.univ-lr.fr/smartdoc-2015-challenge-1/ — easy version: https://github.com/jchazalon/smartdoc15-ch1-dataset
+- MIDV-500: https://arxiv.org/abs/1807.05786 — MIDV-2020: https://l3i-share.univ-lr.fr/MIDV2020/midv2020.html
+- IWPOD doc corners: https://arxiv.org/abs/2509.06246 — code: https://github.com/BOVIFOCR/iwpod-doc-corners
 
 ## 2026-06-15: LDRNet-style document corner detector evaluated, mobile integration rolled back
 
