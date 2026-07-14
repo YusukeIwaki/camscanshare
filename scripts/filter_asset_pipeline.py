@@ -310,6 +310,64 @@ def count_touched_sides(image: np.ndarray, points: np.ndarray) -> int:
     )
 
 
+def _angle_degrees(a: np.ndarray, b: np.ndarray, c: np.ndarray) -> float:
+    ba = a - b
+    bc = c - b
+    mag_ba = float(np.linalg.norm(ba))
+    mag_bc = float(np.linalg.norm(bc))
+    if mag_ba <= 0.0 or mag_bc <= 0.0:
+        return 0.0
+    cosine = float(np.clip(np.dot(ba, bc) / (mag_ba * mag_bc), -1.0, 1.0))
+    return float(np.degrees(np.arccos(cosine)))
+
+
+def score_document_quad(
+    points: np.ndarray,
+    area: float | None = None,
+    image_area: float | None = None,
+    image_width: int | None = None,
+    image_height: int | None = None,
+) -> float:
+    """Mirror the iOS scoreDocumentQuad geometry score for evaluation.
+
+    This intentionally does not replace the older docs pipeline score used by
+    find_document_candidate(); callers opt in when they need iOS-style fused
+    candidate selection.
+    """
+    quad = order_points(np.asarray(points, dtype=np.float32).reshape(4, 2))
+    if image_width is None:
+        image_width = max(1, int(np.ceil(float(quad[:, 0].max(initial=1.0)))))
+    if image_height is None:
+        image_height = max(1, int(np.ceil(float(quad[:, 1].max(initial=1.0)))))
+    if area is None:
+        area = float(abs(cv2.contourArea(quad)))
+    if image_area is None:
+        image_area = float(max(1, image_width) * max(1, image_height))
+
+    area_ratio = float(area) / max(1.0, float(image_area))
+    angle_score = 0.0
+    for index in range(4):
+        angle = _angle_degrees(quad[index], quad[(index + 1) % 4], quad[(index + 2) % 4])
+        angle_score += 1.0 - min(1.0, abs(angle - 90.0) / 30.0)
+    angle_score /= 4.0
+
+    width_top = float(np.linalg.norm(quad[1] - quad[0]))
+    width_bottom = float(np.linalg.norm(quad[2] - quad[3]))
+    height_left = float(np.linalg.norm(quad[3] - quad[0]))
+    height_right = float(np.linalg.norm(quad[2] - quad[1]))
+    width_ratio = min(width_top, width_bottom) / max(1.0, max(width_top, width_bottom))
+    height_ratio = min(height_left, height_right) / max(1.0, max(height_left, height_right))
+    parallel_score = (width_ratio + height_ratio) / 2.0
+
+    center = quad.mean(axis=0)
+    normalized_dx = (float(center[0]) / max(1.0, float(image_width))) - 0.5
+    normalized_dy = (float(center[1]) / max(1.0, float(image_height))) - 0.5
+    center_distance = float(np.hypot(normalized_dx, normalized_dy))
+    center_score = max(0.0, 1.0 - center_distance / 0.50)
+
+    return angle_score * 0.45 + parallel_score * 0.35 + area_ratio * 0.10 + center_score * 0.10
+
+
 def compute_chroma(a_channel: np.ndarray, b_channel: np.ndarray) -> np.ndarray:
     a32 = a_channel.astype(np.float32) - 128.0
     b32 = b_channel.astype(np.float32) - 128.0

@@ -321,11 +321,11 @@ import Layout from '../layouts/Layout.astro';
           <ul class="spec-list">
             <li>
               <span class="spec-element">紙検出アルゴリズム</span>
-              <span class="spec-detail">ファインダー中は、紙の四隅を見つけるための軽量なリアルタイム検出のみを行う。低解像度フレームを対象に、ぼかし → エッジ抽出 → 膨張 → 輪郭検出 → 四角形近似 → スコアリング選択を複数条件で試し、もっとも文書らしい四角形をオーバーレイ表示する。ここでの目的は保存用画像を作ることではなく、ユーザーに「今どこが紙として認識されているか」を安定して見せることにある。</span>
+              <span class="spec-detail">ファインダー中は、紙の四隅を見つけるための軽量なリアルタイム検出のみを行う。低解像度フレームを対象に、ぼかし → エッジ抽出 → 膨張 → 輪郭検出 → 四角形近似 → スコアリング選択を複数条件で試し、もっとも文書らしい四角形をオーバーレイ表示する。iOS ではこれに加えて、学習済みニューラルネットワークによる紙領域推定を OpenCV 候補の妥当性確認とフォールバックに使う。モデル候補を作れない場合は従来の検出だけで動作し、Android は現時点では従来の検出のみを使う。ここでの目的は保存用画像を作ることではなく、ユーザーに「今どこが紙として認識されているか」を安定して見せることにある。</span>
             </li>
             <li>
               <span class="spec-element">四角形のスコアリング</span>
-              <span class="spec-detail">検出された四角形の「文書らしさ」を、長方形度（各内角の90°からの偏差）・対辺の平行度・面積比率・ファインダー中央への近さの加重スコアで評価する。面積が最大でも歪んだ四角形（床のコーナー等）や、前面の紙より外側・背面にある四角形より、小さくても長方形に近く中央にある紙を優先する。</span>
+              <span class="spec-detail">検出された四角形の「文書らしさ」を、長方形度（各内角の90°からの偏差）・対辺の平行度・面積比率・ファインダー中央への近さの加重スコアで評価する。iOS では最良の OpenCV 候補とニューラルネットワーク由来の四角形の IoU が 0.85 以上なら、同じ紙を見ているとみなして OpenCV 候補を採用する。一致する OpenCV 候補がない場合だけモデル候補へフォールバックし、境界収縮を補うため重心から外向きに 2% 拡張する。面積が最大でも歪んだ四角形（床のコーナー等）や、前面の紙より外側・背面にある四角形より、小さくても長方形に近く中央にある紙を優先する。</span>
             </li>
             <li>
               <span class="spec-element">リアルタイム検出の安定化</span>
@@ -333,7 +333,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">保存時の Step 0 生成</span>
-              <span class="spec-detail">シャッター押下後は、保存対象となる高解像度画像に対してあらためて紙検出を実行し、その四角形を使って射影変換を行う。これがページ画像の基準となる Step 0 であり、「台形補正済み・正面化済みの元画像」として保存される。撮影直前にファインダーへ表示していた安定化済み四角形は capture 再検出のアンカーとして保持し、高精度候補がアンカーから大きく外れる場合は採用しない。候補が複数ある場合は中央に近い候補を少し優先し、前面の紙ではなく背面の紙や周辺の四角形を採用しにくくする。一致候補がない場合はプレビューの四角形で補正し、ユーザーが見ていた対象と保存結果が別物になることを防ぐ。報告用撮影の場合だけ、この検出・補正の中間画像と処理時間ログをデバッグ成果物として保存する。</span>
+              <span class="spec-detail">シャッター押下後は、保存対象となる高解像度画像に対してあらためて紙検出を実行し、その四角形を使って射影変換を行う。これがページ画像の基準となる Step 0 であり、「台形補正済み・正面化済みの元画像」として保存される。iOS では保存時の再検出でもニューラルネットワークを領域の事前情報として使い、OpenCV 候補と agreement する場合は OpenCV の境界を優先する。撮影直前にファインダーへ表示していた安定化済み四角形は capture 再検出のアンカーとして保持し、候補がアンカーから大きく外れる場合は採用しない。一致候補がない場合はプレビューの四角形で補正し、ユーザーが見ていた対象と保存結果が別物になることを防ぐ。報告用撮影の場合だけ、この検出・補正の中間画像と処理時間ログをデバッグ成果物として保存する。</span>
             </li>
             <li>
               <span class="spec-element">Step 1 以降との関係</span>
@@ -684,7 +684,7 @@ import Layout from '../layouts/Layout.astro';
             </li>
             <li>
               <span class="spec-element">保存形式</span>
-              <span class="spec-detail">セッションディレクトリ内に metadata.json、番号付き PNG、timings.jsonl を保存する。紙検出セッションには input、analysis_rgba、grayscale、edge_support、colored_paper_mask、paper_mask、各 Canny 戦略の blurred / edges / dilated_edges / contours_overlay、selected_quad_overlay、selected_quad.json を含める。台形補正セッションには input、input_corners.json、warped_rgba、output を含める。metadata と timings には platform、anchor の有無、採用元（opencv / preview_anchor 等）、解析サイズ、スコア、処理時間を入れ、Android / iOS のレポートを同じ観点で比較できるようにする。Android は app-specific external files の image-processing-debug 配下、iOS は Application Support/ImageProcessingDebug 配下に保存する。</span>
+              <span class="spec-detail">セッションディレクトリ内に metadata.json、番号付き PNG、timings.jsonl を保存する。紙検出セッションには input、analysis_rgba、grayscale、edge_support、colored_paper_mask、paper_mask、各 Canny 戦略の blurred / edges / dilated_edges / contours_overlay、selected_quad_overlay、selected_quad.json を含める。iOS のモデル有効時は model_prob、model_mask、model_quad_overlay も含める。台形補正セッションには input、input_corners.json、warped_rgba、output を含める。metadata と timings には platform、anchor の有無、採用元（opencv / model / opencv_model_agreed / preview_anchor 等）、解析サイズ、スコア、モデル候補の有無・マスク面積比・平均確率・アンカー一致・OpenCV との agreement IoU、モデル推論を含む処理時間を入れ、Android / iOS のレポートを同じ観点で比較できるようにする。Android は app-specific external files の image-processing-debug 配下、iOS は Application Support/ImageProcessingDebug 配下に保存する。</span>
             </li>
             <li>
               <span class="spec-element">取り扱い</span>

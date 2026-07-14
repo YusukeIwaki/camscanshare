@@ -1,5 +1,99 @@
 # Filter Research Notes
 
+## 2026-07-11: PageSegNet neural paper segmentation adopted for iOS detection fusion
+
+Input:
+
+- Follow-up to the 2026-06-15 LDRNet-style corner-regression attempt, which improved mean overlap but remained too rough for mobile adoption and was rolled back.
+- SmartDoc 2015 Challenge 1 frames release under `tmp/smartdoc15` and the repository's synthetic document-detection generation set.
+- Target integration scope: iOS paper detection only. Android remains OpenCV-only for this iteration, with an fp16 ONNX export available for future Android work.
+
+Execution:
+
+- Replaced the previous corner-regression direction with PageSegNet: a MobileNetV3-Small ImageNet-pretrained encoder plus a lightweight U-Net decoder. The model takes 320x320 RGB input and outputs a 1-channel paper-region probability map.
+- Trained on SmartDoc 2015 Challenge 1 real frames, 22,312 images, plus custom synthetic coverage for hard negatives, multiple papers, near-full-frame pages, edge-touching pages, white paper on white backgrounds, shadows, and occlusion. SmartDoc is CC BY 4.0; the synthetic set is generated locally.
+- Centralized the Python source of truth under `scripts/document_detection/`: `dataset.py`, `train.py`, `evaluate.py`, `export.py`, `calibrate_fusion.py`, and `sanity_check.py`.
+- Exported `iosapp/CamScanShare/MLModels/PageSegNet.mlpackage` as a Core ML fp16 mlprogram, about 2.4 MB with 1.08M parameters.
+- Integrated the model as an additional candidate source rather than a replacement: run model inference, threshold the mask at `0.48`, keep the largest connected component, reject components with mean probability below `0.55`, approximate a quadrilateral, and add that candidate to the existing OpenCV candidate set.
+- Calibrated fusion on the full SmartDoc background05 holdout. The selected model-candidate score bonus is `+0.25`, chosen to maximize mean IoU while keeping regressions to 50 frames or fewer out of 2,577.
+- Added gating for near-full-frame candidates: if a model candidate touches the image boundary at 3 or more corners, accept it only when the mask area ratio is at least `0.68`. Capture-time anchor validation still applies to model candidates.
+- Added debug artifacts for paper-detection sessions: `model_prob`, `model_mask`, and `model_quad_overlay` PNGs; `paper_detection.model_inference` timing; metadata for model candidate presence, score, selected source, mask area ratio, mean probability, and anchor agreement.
+
+Reproduction commands:
+
+```bash
+.venv/bin/python -m scripts.document_detection.train --frames-dir tmp/smartdoc15/frames --models-dir tmp/smartdoc15/models --out-dir tmp/docdet-v3 --epochs 30 --steps-per-epoch 400 --batch-size 32
+.venv/bin/python -m scripts.document_detection.evaluate --checkpoint tmp/docdet-v3/best.pt --limit 0 --stride 1
+.venv/bin/python -m scripts.document_detection.calibrate_fusion --checkpoint tmp/docdet-v3/best.pt
+.venv/bin/python -m scripts.document_detection.export --checkpoint tmp/docdet-v3/best.pt --ios-models-dir iosapp/CamScanShare/MLModels
+```
+
+Result:
+
+- Best checkpoint: epoch 26.
+- SmartDoc background05 holdout, `n=2577`:
+  - PageSegNet model alone: mean IoU `0.8498`, p05 `0.7508`, IoU >= 0.80 pass rate `82.85%`, IoU >= 0.90 pass rate `18.82%`.
+  - App-equivalent OpenCV baseline: mean IoU `0.3419`, IoU >= 0.80 pass rate `11.18%`.
+  - Fused app-style candidate selection: mean IoU `0.8398`, IoU >= 0.80 pass rate `82.27%`, improved `2268` frames vs baseline and regressed `50`.
+- This materially exceeds the reverted LDRNet-style implementation from `a83d3e8`, which had about mean IoU `0.60` and only about `1%` IoU >= 0.90.
+- Failure behavior is acceptable for this integration shape: if model loading or inference fails, preview and capture fall back completely to the existing OpenCV-only behavior.
+- Known weaknesses remain: very low-contrast near-full-frame paper can still fail for both the model and OpenCV, and close inner frames/cards can compete with the true page. The fusion score, edge-touch gating, and capture anchor are intended to suppress those cases rather than solve them completely.
+
+Decision:
+
+- Adopt PageSegNet fusion for iOS preview and capture paper detection.
+- Keep the implementation as candidate fusion, not model-only replacement, because the OpenCV path provides a complete fallback and still covers some model edge cases.
+- Keep `scripts/document_detection/` as the single source for training, evaluation, export, and calibration. Do not edit mobile thresholds or fusion constants without rerunning the holdout evaluation and calibration.
+- Do not claim Android support yet. The fp16 ONNX export can be used as the starting point for a later Android integration.
+
+## 2026-07-12: PageSegNet/OpenCV fusion changed to agreement-first boundary selection
+
+Input:
+
+- Two iOS improvement reports exposed a boundary-precision failure on white flyers on a wood floor:
+  - `report_server/reports/report-2026-07-12_17-51-57/`
+  - `report_server/reports/report-2026-07-12_17-54-30/`
+- In both debug sessions the selected source was `model`. The model mask area ratio was about `0.15`, the paper edges were clear, and `model_prob` visibly decayed at the paper boundary. Thresholding at `0.48` made the model quadrilateral cut inside the true page, trimming top and bottom content.
+- The OpenCV debug overlays showed usable edge-derived candidates: `adaptive_contours_overlay` for `17-51-57`, and `strategy_2_canny_b7_l75_h200_d3_contours_overlay` for `17-54-30`.
+
+Execution:
+
+- Reframed PageSegNet as a region prior rather than an equal boundary candidate. The detector now first chooses the best OpenCV candidate. If the raw model quadrilateral and that OpenCV candidate have IoU at least `T`, the OpenCV candidate is selected and reported as `opencv_model_agreed`.
+- The model quadrilateral is used as a fallback only when no OpenCV candidate agrees. In that fallback path the model quad is expanded from its centroid by `e` to compensate for systematic shrinkage from the 320x320 probability mask.
+- Extended `scripts/document_detection/calibrate_fusion.py` to sweep `T in {0.5, 0.6, 0.7, 0.8, 0.85, 0.9}` and `e in {0, 0.01, 0.02, 0.03, 0.04}` using the existing `tmp/docdet-v3/fusion-calibration-cache.json`.
+- Updated Python and iOS constants to `T=0.85`, `e=0.02`. The iOS metadata source values now distinguish `opencv`, `model`, and `opencv_model_agreed`, and metadata includes agreement IoU.
+
+Calibration result:
+
+- SmartDoc background05 holdout, `n=2577`:
+  - Old `+0.25` score-bonus fusion: mean `0.8398`, p05 `0.7424`, IoU >= 0.80 `82.27%`, IoU >= 0.90 `18.78%`, improved `2268`, worsened `50`.
+  - Selected agreement fusion (`T=0.85`, `e=0.02`): mean `0.8543`, p05 `0.7580`, IoU >= 0.80 `83.97%`, IoU >= 0.90 `19.56%`, improved `2295`, worsened `36`, model fallback `2403`, OpenCV/model agreement `174`.
+  - `T=0.90`, `e=0.02` had slightly higher mean `0.8546` but worsened `53`, exceeding the regression budget and failing to catch the `17-51-57` report because its agreement IoU was `0.875`.
+
+Decision:
+
+- Replace the `+0.25` model score bonus with agreement-first fusion: use OpenCV when model and OpenCV agree at IoU `>=0.85`; otherwise use the model only as a fallback after `2%` outward expansion.
+- Keep the PageSegNet thresholding, mean-probability gate, near-full-frame edge-touch gate, capture anchor validation, and complete OpenCV fallback unchanged.
+- The two 2026-07-12 reports now reproduce as `opencv_model_agreed`, selecting the edge-derived OpenCV quadrilateral instead of the shrunken model quadrilateral.
+
+## 2026-07-14: PageSeg/OpenCV boundary fusion re-evaluation
+
+Inputs were the raw `debug/**/02_input.png` files from `report-2026-07-12_17-51-57`, `report-2026-07-12_17-54-30`, `report-2026-07-14_08-58-09`, and `report-2026-07-14_08-59-11`. Do not use `source.jpg` for paper-detection evaluation because it is already perspective-corrected.
+
+Tested but rejected:
+
+- Always using PageSeg plus a fixed `2%` expansion when model/OpenCV IoU is below `0.85`. In both July 14 reports, PageSeg extended onto the desk and its average/weakest side edge support was much lower than OpenCV's.
+- Always using OpenCV when all four sides have strong edges. Five catastrophic SmartDoc holdout frames selected a strong rectangular background object, so edge evidence alone is unsafe.
+- Moving PageSeg's four sides over a wide local search range to maximize edge support. Some sides snapped to desk seams or headings inside the page, so local optimization does not identify the target boundary by itself.
+
+Adopted:
+
+- Keep the existing OpenCV selection when IoU is at least `0.85`.
+- For IoU from `0.35` to `0.85`, use `opencv_edge_supported` only when OpenCV average edge support is at least `0.44`, its weakest side is at least `0.20`, and those values beat PageSeg by at least `0.06` and `0.20`, respectively.
+- Keep PageSeg plus `2%` expansion for all other cases. On all 2,577 SmartDoc holdout frames, this added gate changed zero production selections and preserved mean IoU `0.8543`, p05 `0.7580`, and IoU >= 0.80 rate `0.8397`.
+
+Across the four reports, weakest-side edge support improved from `0.116→0.234`, `0.123→0.608`, `0.045→0.620`, and `0.025→0.388`. Reproduce the comparison with `.venv/bin/python -m scripts.document_detection.evaluate_report_regressions`; local output goes to `tmp/docdet-v5/report-regressions/`.
+
 ## 2026-06-15: LDRNet-style document corner detector evaluated, mobile integration rolled back
 
 Input:

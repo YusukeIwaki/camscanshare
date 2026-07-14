@@ -1,6 +1,8 @@
 .DS_Store
 tmp/
 .envrc
+__pycache__/
+*.pyc
 /.codex
 /ios_debug_build.sh
 /ios_adhoc_build.sh
