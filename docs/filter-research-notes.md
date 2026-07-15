@@ -130,6 +130,50 @@ References:
 - MIDV-500: https://arxiv.org/abs/1807.05786 — MIDV-2020: https://l3i-share.univ-lr.fr/MIDV2020/midv2020.html
 - IWPOD doc corners: https://arxiv.org/abs/2509.06246 — code: https://github.com/BOVIFOCR/iwpod-doc-corners
 
+## 2026-07-15: RDLNet paper package evaluated; RWMD mask+corner reproduction rolled back
+
+Input and reproduction boundary:
+
+- Inspected the RDLNet paper, its four-page supplementary PDF, and the complete RWMD release supplied by the user (`2,009` images plus LabelMe JSON annotations).
+- The supplementary archive contains only a PDF. It gives the missing light-SAM student settings (ViT embedding `384`, depth `12`, heads `8`, global attention at `[2, 8]`) and RDLNet settings (input `1024`, encoder layers `6`, hidden dimension `256`, feature levels `4`, object queries `5`, classes `3`), but no code or checkpoint. Its code section says only that code would be published after camera-ready; no later official implementation or weights were found.
+- An exact reproduction would require rebuilding and distilling the 20.55M-parameter, 100.26-GFLOP light-SAM/deformable-attention model and repeating the paper's `160k`-step A800 training. That is not a practical local M2/16 GB experiment. The implementation below is explicitly **RDLNet-inspired**, not RDLNet: it tests the paper's mask+point joint-supervision idea in the existing mobile PageSegNet architecture.
+
+Implementation:
+
+- Added `rwmd_dataset.py`, which converts the RWMD release into a compact `320x320` cache without expanding the 12 GiB archive. It preserves EXIF/LabelMe orientation, uses the maximum numeric instance label as the primary-document mask, and converts the variable-length `foreground_doc` boundary (`4-9` points on curved/occluded samples) to a quadrilateral through convex-hull polygon approximation. Four malformed receipt annotations are skipped, leaving `1,502` train and `503` category-stratified validation samples.
+- Added `PageSegCornerNet` in `rwmd_joint_model.py`: the existing MobileNetV3-Small/U-Net mask model plus four spatial corner heatmaps, initialized from `tmp/docdet-v3/best.pt`. The research model has `1,076,909` parameters and jointly optimizes boundary-weighted BCE+Dice mask loss and spatial corner classification/distance loss.
+- Trained for 12 epochs on Apple MPS with `.venv/bin/python -m scripts.document_detection.train_rwmd_joint --rwmd-zip /Users/yusuke-iwaki/Downloads/RWMD_Dataset.zip --device mps`. Best/final checkpoint: `tmp/rdlnet-inspired/run/best.pt`.
+- Evaluated with `.venv/bin/python -m scripts.document_detection.evaluate_rwmd_joint --device mps`. Generated artifacts were written under `tmp/rdlnet-inspired/eval/` during the experiment and removed afterward.
+
+RWMD validation results (`n=503`, quadrilateral IoU):
+
+| Candidate | Mean | Median | p05 | IoU >= 0.80 | IoU >= 0.90 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| OpenCV capture detector | `0.4979` | `0.4801` | `0.0509` | `25.45%` | `15.90%` |
+| Previous PageSegNet | `0.6815` | `0.7919` | `0.0021` | `48.11%` | `27.24%` |
+| RWMD joint mask branch | `0.8282` | `0.8941` | `0.4967` | `73.56%` | `46.92%` |
+| RWMD joint corner branch | `0.5692` | `0.5726` | `0.2024` | `15.11%` | `0.80%` |
+| Mask/corner agreement average | `0.8164` | `0.8761` | `0.4967` | `72.96%` | `35.79%` |
+
+- RWMD fine-tuning is a real domain-adaptation win for the segmentation branch: compared with OpenCV it improves by at least `0.05` on `375/503` samples and worsens by at least `0.05` on `15/503`; compared with the old PageSeg checkpoint it improves `243` and worsens `42`.
+- The point branch is not precise enough and averaging it with the mask makes the result worse. This reproduces the earlier lesson from the LDRNet-style experiment: a lightweight direct corner output does not provide reliable high-precision boundaries.
+- The joint model's warm MPS forward time is about `7.0 ms` at `320x320`; this is a Mac measurement, not a mobile latency claim.
+
+Target report results:
+
+| Report | Joint mask vs OpenCV IoU | Weakest edge OpenCV | Weakest edge joint mask |
+| --- | ---: | ---: | ---: |
+| `report-2026-07-12_17-51-57` | `0.9188` | `0.2340` | `0.0962` |
+| `report-2026-07-12_17-54-30` | `0.9676` | `0.6076` | `0.2351` |
+| `report-2026-07-14_08-58-09` | `0.9665` | `0.6203` | `0.2441` |
+| `report-2026-07-14_08-59-11` | `0.7438` | `0.3880` | `0.0380` |
+
+Decision:
+
+- Do not integrate this model into Android or iOS. Despite its strong RWMD holdout improvement, it does not beat the production OpenCV boundary on any of the four motivating reports: weakest-side edge evidence is lower in all four, and the final July 14 sample visibly expands onto the desk.
+- Remove the temporary RWMD cache/training/evaluation scripts, checkpoints, cache, and generated overlays. Keep only this note as the experiment record. The result establishes that RWMD data is valuable, but also that semantic mask accuracy alone does not solve precise scan-boundary placement.
+- If this direction is revisited, use the semantic model only to select the target document, retain the high-resolution OpenCV/Vision boundary when it has stronger edge evidence, and collect manually labeled raw app captures before changing production behavior.
+
 ## 2026-06-15: LDRNet-style document corner detector evaluated, mobile integration rolled back
 
 Input:
