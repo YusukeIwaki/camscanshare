@@ -2,6 +2,7 @@ package io.github.yusukeiwaki.camscanshare.ui.camerascan
 
 import android.Manifest
 import android.content.res.Configuration
+import android.graphics.Bitmap
 import android.graphics.PointF
 import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -92,6 +93,47 @@ import java.util.concurrent.Executors
 private const val CAMERA_PREVIEW_PORTRAIT_ASPECT_RATIO = 3f / 4f
 private const val CAMERA_PREVIEW_LANDSCAPE_ASPECT_RATIO = 4f / 3f
 
+private data class FinderFrameSnapshot(
+    val bitmap: Bitmap,
+    val corners: List<PointF>?,
+)
+
+private class FinderFrameSnapshotStore {
+    private val lock = Any()
+    private var latest: FinderFrameSnapshot? = null
+
+    fun update(bitmap: Bitmap, corners: List<PointF>?, retain: Boolean) {
+        synchronized(lock) {
+            latest?.bitmap?.recycle()
+            latest = if (retain) {
+                FinderFrameSnapshot(
+                    bitmap = bitmap,
+                    corners = corners?.map { PointF(it.x, it.y) },
+                )
+            } else {
+                bitmap.recycle()
+                null
+            }
+        }
+    }
+
+    fun copyLatest(): FinderFrameSnapshot? = synchronized(lock) {
+        val snapshot = latest ?: return@synchronized null
+        if (snapshot.bitmap.isRecycled) return@synchronized null
+        FinderFrameSnapshot(
+            bitmap = snapshot.bitmap.copy(Bitmap.Config.ARGB_8888, false),
+            corners = snapshot.corners?.map { PointF(it.x, it.y) },
+        )
+    }
+
+    fun clear() {
+        synchronized(lock) {
+            latest?.bitmap?.recycle()
+            latest = null
+        }
+    }
+}
+
 @Composable
 fun CameraScanScreen(
     documentId: Long,
@@ -154,6 +196,7 @@ fun CameraScanScreen(
     var analysisImageAspectRatio by remember { mutableStateOf(3f / 4f) } // width/height of rotated analysis image
     var showReportChip by remember { mutableStateOf(false) }
     var reportCaptureArmed by remember { mutableStateOf(false) }
+    val finderFrameSnapshotStore = remember { FinderFrameSnapshotStore() }
 
     LaunchedEffect(cameraPermissionGranted) {
         showReportChip = false
@@ -165,7 +208,10 @@ fun CameraScanScreen(
     }
 
     DisposableEffect(Unit) {
-        onDispose { cameraExecutor.shutdown() }
+        onDispose {
+            finderFrameSnapshotStore.clear()
+            cameraExecutor.shutdown()
+        }
     }
 
     val bottomControlMode = if (uiState.retakePageId != 0L) {
@@ -182,6 +228,7 @@ fun CameraScanScreen(
             null
         }
         val previewCornersAtCapture = detectedCorners?.map { PointF(it.x, it.y) }
+        val finderFrameAtCapture = if (captureForReport) finderFrameSnapshotStore.copyLatest() else null
         reportCaptureArmed = false
         imageCapture.takePicture(
             cameraExecutor,
@@ -209,6 +256,13 @@ fun CameraScanScreen(
                     } else {
                         paperDetector.value
                     }
+                    finderFrameAtCapture?.let { snapshot ->
+                        try {
+                            capturePaperDetector.recordFinderFrame(snapshot.bitmap, snapshot.corners)
+                        } finally {
+                            snapshot.bitmap.recycle()
+                        }
+                    }
                     var bitmap = captureImageProcessor.toBitmapWithCorrectRotation(image)
                     image.close()
                     Log.d("CameraScan", "Captured image size: ${bitmap.width}x${bitmap.height}")
@@ -228,6 +282,7 @@ fun CameraScanScreen(
                 }
 
                 override fun onError(exception: ImageCaptureException) {
+                    finderFrameAtCapture?.bitmap?.recycle()
                     Log.e("CameraScan", "Capture failed", exception)
                 }
             },
@@ -283,7 +338,11 @@ fun CameraScanScreen(
                                                     analysisImageAspectRatio = bitmap.width.toFloat() / bitmap.height.toFloat()
                                                     val corners = paperDetector.value.detectStabilized(bitmap)
                                                     detectedCorners = corners
-                                                    bitmap.recycle()
+                                                    finderFrameSnapshotStore.update(
+                                                        bitmap = bitmap,
+                                                        corners = corners,
+                                                        retain = reportCaptureArmed,
+                                                    )
                                                 } catch (e: Exception) {
                                                     Log.e("CameraScan", "Detection failed", e)
                                                 } finally {

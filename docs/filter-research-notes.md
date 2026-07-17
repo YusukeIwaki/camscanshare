@@ -1,5 +1,234 @@
 # Filter Research Notes
 
+## 2026-07-17: Document-boundary improvement brief archived
+
+The standalone `IMPROVEMENT.md` planning brief was summarized here and removed. It defined the long-term research contract below; measured experiments and their accept/reject decisions remain in the dated entries that follow.
+
+Scope and product goal:
+
+- Detect one primary flat rectangular document, return four original-image corners, distinguish no-document and partially visible states, and remain fast enough for mobile preview. Curved-book correction is a separate later phase.
+- Improve final perspective-corrected crop quality rather than model-only accuracy. Preserve successful production OpenCV results through confidence-based rejection or fallback instead of replacing the current detector unconditionally.
+- Independently evaluate published ideas including LDRNet, RDLNet, HU/OctHU-PageScan, and coarse-to-fine localization; do not copy proprietary CamScanner models or binaries.
+
+Model research priorities:
+
+- Compare lightweight MobileNetV3 + LR-ASPP or a small U-Net decoder first, with Fast-SCNN and BiSeNet V2 as alternatives. Treat SegFormer-B0 as an accuracy ceiling until mobile latency and memory are known.
+- Prefer spatial multi-task outputs: document-interior mask, boundary map, optional four corner heatmaps with sub-pixel offsets, and document-present/fully-visible classification. Direct coordinate regression is only a comparison candidate.
+- Initial ablations should cover input size (`256` through `512`), RGB versus luminance-heavy inputs, fixed versus document-relative boundary width, mask/boundary/corner/classification losses, and float/FP16/INT8 deployment.
+
+Data and validation requirements:
+
+- SmartDoc 2015, MIDV-500, and MIDV-2019 are candidate video/document sources. RWMD and Extended SmartDoc require explicit current license and provenance checks; data that is not cleared for the product must remain research-only.
+- Public datasets are insufficient for a shipping decision. Maintain an explicit app evaluation set containing consented or anonymized finder frames, current OpenCV output, corrected corners, failure category, capture/session metadata, and latency. When images cannot be retained, use a privacy-preserving substitute.
+- Split train, validation, and test by session, video, physical document, background, device, and photographer. Adjacent frames or the same document/background must never cross splits.
+- Report results by failure category, including low-contrast paper/background, shadows, glare, blur, strong background lines, partial or occluded pages, small or highly perspective-distorted documents, multiple pages, internal border confusion, no-document scenes, and non-target rectangular objects.
+
+Hybrid refinement and runtime behavior:
+
+- Use a learned mask/boundary only as a spatial prior. Search a bounded band on the original image, compare LSD, Hough, contours, and image gradients, fit four sides robustly, intersect adjacent sides, and reject non-convex or implausibly out-of-bounds geometry.
+- Score candidates using mask coverage, per-side boundary and gradient support, corner confidence, area/convexity, temporal consistency, primary-document likelihood, and outside/occlusion penalties. A weak single side must not be hidden by a strong average.
+- Define explicit high-confidence, low-confidence, partially-visible, multiple-candidate, no-document, and unstable outcomes. Compare model refinement, simple mask contours, existing OpenCV, and no-detection with the same scoring rules.
+- Evaluate raw and stabilized preview results separately. Candidate stabilizers include EMA, Kalman, One Euro, and previous-frame local search; measure jitter, tracking delay, recovery, exposure/blur suitability, and auto-capture behavior without using smoothing to conceal bad detections.
+
+Acceptance and deployment gates:
+
+- Geometry metrics include polygon IoU, normalized mean/max corner error, side error, IoU `0.80/0.90/0.95` pass rates, and tail percentiles. Detection metrics include recall, no-document false-positive rate, partial-page classification, and primary-document selection.
+- Product metrics include OCR impact, manual corner-correction rate, recapture rate, clipped text, and excessive retained background. Performance must be measured on real devices with p50/p95 preprocessing, inference, refinement, total latency, memory, model/app size, initialization, FPS, heat, and battery impact.
+- Keep per-image overlays and JSON for the mask, boundary, candidates, selected sides/corners, scores, fallback, rejection reason, and stage latency. Tune thresholds on validation data, change one experimental factor at a time, and never claim unreproduced paper numbers.
+- The current shipping policy is OpenCV-only. Neural boundary work remains offline until at least 30 labeled real finder frames from 10 or more sessions include successes, failures, partial pages, and no-document cases and show no catastrophic regression against current successful captures.
+
+## 2026-07-16: Finder-frame ground-truth collection and evaluation foundation
+
+Goal:
+
+- Complete the highest-priority prerequisite before another LDRNet experiment: evaluate on manually labeled images from the app's real finder pipeline, rather than deciding from SmartDoc or high-resolution capture images alone.
+- Keep this as a data/evaluation step. No LDRNet model or mobile runtime was added in this iteration.
+
+Execution:
+
+- Android and iOS report captures now retain the last finder-analysis frame and write a separate `paper-detection_finder` debug session. The session contains the finder input, the quadrilateral shown to the user, and an overlay; iOS also writes the unstabilized raw preview rectangle.
+- Added `docs/document-detection-eval.json`, with normalized top-left coordinates and four manually labeled public bootstrap images. App-report labels belong in the ignored `docs/document-detection-eval.local.json`, because report images may contain private document content.
+- Added a local annotation UI that creates the local manifest when needed and discovers `paper-detection_finder/01_input.png` files from improvement reports.
+- Added an evaluator for the production-equivalent OpenCV preview detector. It writes per-image overlays, a contact sheet, JSON rows, recall/false-positive metrics, IoU thresholds, and corner error normalized by the image diagonal.
+
+Reproduction commands:
+
+```bash
+.venv/bin/python -m scripts.document_detection.annotate_finder_eval \
+  --manifest docs/document-detection-eval.local.json \
+  --discover-report-finders
+
+.venv/bin/python -m scripts.document_detection.finder_eval \
+  --manifest docs/document-detection-eval.json \
+  --manifest docs/document-detection-eval.local.json \
+  --out-dir tmp/document-detection-eval/opencv-preview
+```
+
+Bootstrap result:
+
+- Four fully visible public samples: OpenCV preview recall `4/4`, mean IoU `0.9968`, p05 IoU `0.9924`, mean corner error `0.00048` of image diagonal, p95 mean corner error `0.00101`.
+- These are easy, previously curated examples. They prove the evaluator and annotations agree visually, but they are not evidence that the current detector is already good enough and must not be used to accept or reject LDRNet.
+- Android `testDebugUnitTest assembleDebug`, iOS simulator build after XcodeGen regeneration, docs build, and the Python evaluator tests all passed.
+
+Decision / next gate:
+
+- Keep the finder-frame capture and evaluation foundation.
+- Before the next LDRNet training or integration step, collect and label at least 30 app finder frames across at least 10 capture sessions/backgrounds, including known detector failures and partially visible or no-document cases. Split by session/document/background rather than individual frame.
+- Once that gate is met, compare the existing OpenCV finder baseline and the next LDRNet candidate on exactly this fixed app set. The following implementation priority is model-based target selection followed by high-resolution line refinement, not direct model corners as the final crop boundary.
+
+## 2026-07-16: LDRNet-style finder point and line-refinement retry rejected
+
+> Cleanup note: the experimental model, training/evaluation scripts, line refiner, tests, and generated checkpoints were removed after this evaluation. This entry is the retained record of the low accuracy and rejected implementation.
+
+Goal:
+
+- Retry LDRNet as a finder detector without repeating the previous eight-coordinate-only experiment.
+- Treat the learned output as a target prior and test whether original-image edge evidence can recover precise paper sides.
+- Keep the experiment offline. Do not add a model or runtime to Android/iOS until the fixed evaluation passes.
+
+Implementation:
+
+- Added `LDRFinderNet`, a `1,083,458`-parameter MobileNetV3-Small model with a `320x320` RGB input.
+- The point head emits four corners plus three independently predicted points on each side (`16` points total). Four side lines are fitted from those points and intersected to obtain the raw quadrilateral.
+- The state head emits independent document-present and fully-visible logits. Geometry loss is applied only to fully visible samples; partial samples and hard negatives still train the state head.
+- Added a high-resolution line refiner. For each predicted side it samples normal-direction gradients over a bounded parallel search band, requires continuous coverage and a score gain, and intersects the accepted shifted sides. The learned quadrilateral remains the target prior; the refiner cannot introduce a distant candidate.
+- Added evaluation for OpenCV preview, raw LDR points, state-gated LDR points, and line-refined output. Metrics include recall, IoU 0.80/0.90/0.95, normalized corner-error percentiles, per-sample JSON, overlays, and desktop-only latency diagnostics.
+
+Training:
+
+- SmartDoc backgrounds 01-04 plus the existing synthetic positives, partial views, distractors, and hard negatives were used for training; `background05` remained the fixed holdout.
+- An initial 200-step epoch exposed a state-domain calibration problem: raw geometry mean IoU was `0.5280`, but fully-visible recall was only `3.4%`.
+- A 400-sample target audit found `88.75%` document-present and `45.25%` fully-visible samples, so the full-positive state loss was weighted by `2.0` and training resumed from the point weights.
+- The balanced run used 7 further epochs of 160 steps with batch size 48. The selected checkpoint was epoch 6 by subset mean IoU (`0.6004`); its subset p05 was only `0.4432`, and the final epoch was not selected.
+
+Historical reproduction commands (the referenced experimental scripts and checkpoints were intentionally removed):
+
+```bash
+.venv/bin/python -m scripts.document_detection.train_ldrnet \
+  --out-dir tmp/ldrnet-finder-v2-balanced \
+  --resume tmp/ldrnet-finder-v2/best.pt \
+  --epochs 7 --steps-per-epoch 160 --batch-size 48 \
+  --full-positive-weight 2.0
+
+.venv/bin/python -m scripts.document_detection.evaluate_ldrnet \
+  --checkpoint tmp/ldrnet-finder-v2-balanced/best.pt \
+  --out-dir tmp/ldrnet-finder-v2-balanced/eval-full-r02 \
+  --limit 0 --stride 1 --search-radius-ratio 0.02
+
+.venv/bin/python -m scripts.document_detection.evaluate_ldrnet \
+  --checkpoint tmp/ldrnet-finder-v2-balanced/best.pt \
+  --manifest docs/document-detection-eval.json \
+  --out-dir tmp/ldrnet-finder-v2-balanced/eval-finder-bootstrap \
+  --limit 0 --stride 1 --search-radius-ratio 0.02
+```
+
+SmartDoc `background05`, all 2,577 frames:
+
+| Candidate | Recall | Mean IoU | p05 IoU | IoU >= 0.80 | IoU >= 0.90 | Mean corner error p95 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| OpenCV preview | `100%` | `0.3232` | `0.1429` | `8.34%` | `2.06%` | `0.3634` |
+| LDR points, ungated | `100%` | `0.5995` | `0.4268` | `0%` | `0%` | `0.0836` |
+| LDR points, state-gated | `96.39%` | `0.5835` | `0.3743` | `0%` | `0%` | `0.0923` |
+| LDR + 2% line search, ungated | `100%` | `0.5984` | `0.4274` | `0%` | `0%` | `0.0839` |
+
+- Desktop MPS model latency was p50 `6.59 ms`, p95 `6.71 ms`. The 2% line refiner added p50 `11.02 ms`, p95 `11.85 ms`. These are diagnostics, not mobile performance claims.
+- On the four manually labeled public bootstrap finder images, OpenCV mean IoU was `0.9975`, LDR was `0.7762`, and LDR plus line refinement was `0.7787`. LDR reached IoU 0.80 on only one of four; OpenCV passed all four at IoU 0.95.
+
+Line-search ablation on the same 645-frame stride-4 subset:
+
+| Search band | Raw mean | Refined mean | Improved >= 0.01 | Worsened >= 0.01 | Worsened >= 0.05 |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| `2%` | `0.5991` | `0.5977` | `24` | `68` | `0` |
+| `4%` | `0.5991` | `0.5940` | `40` | `139` | `10` |
+| `6%` | `0.5991` | `0.5881` | `57` | `200` | `74` |
+
+Result:
+
+- Extra edge points and longer training raised mean overlap above the earlier simple corner-regression experiment, but they did not produce precise boundaries. No holdout frame reached IoU 0.80.
+- Failure overlays show regression toward a central average quadrilateral when the document position and scale vary. This is the expected limitation of regressing spatial coordinates from a globally pooled feature vector.
+- Parallel line search does not repair a coarse target prior. At 2% the true side is often outside the band; wider bands increasingly snap to desk seams, cables, shadows, or internal paper content. Every tested band reduced aggregate accuracy.
+- The state head also needs a real partial/no-document validation set. Weighting repaired full-document recall on SmartDoc but cannot establish false-positive or partial-classification quality.
+
+Decision:
+
+- Do not export or integrate this LDRNet-style model into Android or iOS. Keep production finder detection unchanged.
+- Reject the tested parallel line-search refiner and remove its implementation and generated artifacts. Keep the measurements here so the same ablation is not repeated.
+- Preserve the LDR-style point result only as evidence in this note: global coordinate regression can identify the rough target but is not a final crop boundary.
+- The next model priority is a spatial boundary or corner heatmap + offset head, preserving feature-map location instead of global pooling. High-resolution refinement should be retried only after the coarse side is already demonstrably inside a safe search band, and final decisions must wait for the 30-frame real finder ground-truth gate.
+
+## 2026-07-16: Spatial boundary head improves PageSeg, held offline for real finder validation
+
+Goal:
+
+- Test the next priority after rejecting global coordinate regression: preserve spatial location by predicting a page-boundary probability map at the same resolution as the PageSeg mask.
+- Use the existing segmentation quadrilateral only as a narrow search prior, fit one line to each nearby boundary-map band, and keep the mobile implementations unchanged until real finder data passes.
+
+Implementation:
+
+- Added a `1,076,892`-parameter `PageBoundaryNet`, initialized from the existing `tmp/docdet-v3/best.pt` PageSeg checkpoint. It retains the mask output and adds a full-resolution boundary head plus document-present and fully-visible state logits.
+- Boundary targets are a fixed-width morphological band around the segmentation mask. At inference, weighted robust line fits use boundary probabilities within `3%` of each coarse mask side, intersect the four accepted lines, and reject excessive movement, non-convex geometry, implausible area, or out-of-bounds corners.
+- Added training, evaluation, and geometry tests. The evaluator compares OpenCV preview, the original PageSeg mask, the jointly trained mask, the spatial boundary result, the state-gated result, and an agreement/edge-evidence fusion with OpenCV.
+
+Training:
+
+- SmartDoc backgrounds 01-04 plus the existing synthetic positives, partial views, distractors, and hard negatives were used for training; `background05` remained the fixed holdout.
+- The boundary and state heads trained for two frozen-base epochs, 180 steps per epoch, batch size 32. Epoch 2 was selected: validation boundary mean IoU `0.8593`, p05 `0.7716`, and IoU >= 0.80 `91.64%` on the stride-8 subset.
+- Unfreezing the PageSeg base in epoch 3 degraded validation boundary mean IoU to `0.8539`, p05 to `0.7634`, IoU >= 0.90 to `9.29%`, and state recall. Training was stopped and the epoch-2 checkpoint retained. The original mask weights therefore remain unchanged in the selected checkpoint.
+
+Reproduction commands:
+
+```bash
+.venv/bin/python -m scripts.document_detection.train_boundary_head \
+  --out-dir tmp/docdet-boundary-v1 \
+  --epochs 8 --steps-per-epoch 180 --batch-size 32 \
+  --freeze-base-epochs 2 --search-band-ratio 0.03
+
+.venv/bin/python -m scripts.document_detection.evaluate_boundary_head \
+  --checkpoint tmp/docdet-boundary-v1/best.pt \
+  --out-dir tmp/docdet-boundary-v1/eval-full-r03-fused \
+  --limit 0 --stride 1 --search-band-ratio 0.03
+
+.venv/bin/python -m scripts.document_detection.evaluate_boundary_head \
+  --checkpoint tmp/docdet-boundary-v1/best.pt \
+  --manifest docs/document-detection-eval.json \
+  --out-dir tmp/docdet-boundary-v1/eval-finder-bootstrap-r03-fused \
+  --limit 0 --stride 1 --search-band-ratio 0.03
+```
+
+SmartDoc `background05`, all 2,577 frames:
+
+| Candidate | Recall | Mean IoU | p05 IoU | IoU >= 0.80 | IoU >= 0.90 | Mean corner error p95 |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| OpenCV preview | `100%` | `0.3232` | `0.1429` | `8.34%` | `2.06%` | `0.3634` |
+| Original PageSeg mask | `100%` | `0.8498` | `0.7508` | `82.85%` | `18.82%` | `0.0447` |
+| Selected checkpoint mask | `100%` | `0.8502` | `0.7547` | `82.65%` | `19.05%` | `0.0441` |
+| Spatial boundary, `3%` band | `100%` | `0.8621` | `0.7705` | `89.64%` | `22.16%` | `0.0407` |
+| Boundary + state gate | `99.69%` | `0.8597` | `0.7668` | `89.41%` | `22.16%` | `0.0410` |
+| Boundary/OpenCV fusion | `100%` | `0.8614` | `0.7700` | `89.45%` | `21.42%` | `0.0410` |
+
+- Against the selected-checkpoint mask, the spatial fit improved mean IoU by `0.0119`: 1% or greater improvement on `1,404` frames, 1% or greater regression on `123`, 5% or greater improvement on `26`, and no 5% or greater regression. All four side fits were accepted on this fully visible holdout.
+- Boundary fitting added desktop p50 `4.79 ms`, p95 `5.14 ms`. This is a Python/OpenCV diagnostic, not a mobile performance claim.
+- Search-band sweeps on the same 645-frame stride-4 subset selected `3%`. A `5%` band caused five regressions of at least 5%; `7%` caused 88, confirming that a spatial prediction is only safe as a narrow local prior.
+- The conservative fusion selected the boundary result on `2,432` frames and the agreeing OpenCV result on `145`. Relative to the boundary-only result it changed mean IoU by `-0.0007`; it improved 39 and worsened 76 frames by at least 1%, including 25 regressions of at least 5%.
+
+Four manually labeled public bootstrap finder images:
+
+| Candidate | Mean IoU | p05 IoU | IoU >= 0.90 |
+| --- | ---: | ---: | ---: |
+| OpenCV preview | `0.9975` | `0.9942` | `100%` |
+| Original PageSeg mask | `0.9044` | `0.7214` | `75%` |
+| Selected checkpoint mask | `0.9147` | `0.7563` | `75%` |
+| Spatial boundary | `0.9042` | `0.7476` | `75%` |
+| Boundary + state gate | `0.4808` | `0.0000` | `50%` |
+| Boundary/OpenCV fusion | `0.9975` | `0.9942` | `100%` |
+
+Result and decision:
+
+- The spatial boundary representation succeeds where global coordinate regression failed: it produces a measurable full-holdout gain, improves the p05 tail and corner error, and has no 5%-or-greater regression against its own mask prior at a `3%` search band.
+- The boundary head alone is not safe to ship. It regressed one strong public sample by `0.0363`, the current state head rejected two of four public fully visible images, and the OpenCV fusion introduced material SmartDoc regressions despite preserving all four public successes. The state head and current fusion policy are evaluation outputs, not selected runtime gates.
+- Keep the offline boundary-head prototype and selected checkpoint for the next real-data gate, but do not export or integrate it into Android or iOS yet. Production finder detection remains unchanged.
+- The next decision requires the already specified 30 labeled real app finder frames, including failures, partial pages, and no-document cases. Evaluate boundary-only and OpenCV fusion per capture session; only then tune the selector or choose a mobile export path.
+
 ## 2026-07-11: PageSegNet neural paper segmentation evaluated for iOS detection fusion
 
 > Note (2026-07-14): the iOS integration described in this and the following two entries was ultimately rolled back. See the "2026-07-14: PageSegNet iOS fusion rolled back" entry below for the outcome. The entries are kept as a record of the attempt and its measurements.
@@ -142,7 +371,7 @@ Implementation:
 
 - Added `rwmd_dataset.py`, which converts the RWMD release into a compact `320x320` cache without expanding the 12 GiB archive. It preserves EXIF/LabelMe orientation, uses the maximum numeric instance label as the primary-document mask, and converts the variable-length `foreground_doc` boundary (`4-9` points on curved/occluded samples) to a quadrilateral through convex-hull polygon approximation. Four malformed receipt annotations are skipped, leaving `1,502` train and `503` category-stratified validation samples.
 - Added `PageSegCornerNet` in `rwmd_joint_model.py`: the existing MobileNetV3-Small/U-Net mask model plus four spatial corner heatmaps, initialized from `tmp/docdet-v3/best.pt`. The research model has `1,076,909` parameters and jointly optimizes boundary-weighted BCE+Dice mask loss and spatial corner classification/distance loss.
-- Trained for 12 epochs on Apple MPS with `.venv/bin/python -m scripts.document_detection.train_rwmd_joint --rwmd-zip /Users/yusuke-iwaki/Downloads/RWMD_Dataset.zip --device mps`. Best/final checkpoint: `tmp/rdlnet-inspired/run/best.pt`.
+- Trained for 12 epochs on Apple MPS with `.venv/bin/python -m scripts.document_detection.train_rwmd_joint --rwmd-zip <path-to>/RWMD_Dataset.zip --device mps`. Best/final checkpoint: `tmp/rdlnet-inspired/run/best.pt`.
 - Evaluated with `.venv/bin/python -m scripts.document_detection.evaluate_rwmd_joint --device mps`. Generated artifacts were written under `tmp/rdlnet-inspired/eval/` during the experiment and removed afterward.
 
 RWMD validation results (`n=503`, quadrilateral IoU):

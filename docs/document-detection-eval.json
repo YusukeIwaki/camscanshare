@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "coordinate_space": "normalized_top_left",
+  "samples": [
+    {
+      "id": "docs-angled",
+      "image": "docs/public/algorithm/test.jpg",
+      "source": "public_docs_sample",
+      "split": "test",
+      "session_id": "docs-angled",
+      "document_id": "docs-angled",
+      "background_id": "dark-desk",
+      "document_state": "fully_visible",
+      "corners": [
+        [0.355682, 0.127273],
+        [0.730682, 0.153030],
+        [0.735227, 0.892424],
+        [0.178409, 0.800000]
+      ],
+      "annotation_method": "manual_visual",
+      "annotation_version": 1,
+      "failure_tags": ["strong_perspective", "dark_background"]
+    },
+    {
+      "id": "docs-flat",
+      "image": "docs/public/algorithm/test2.png",
+      "source": "public_docs_sample",
+      "split": "test",
+      "session_id": "docs-flat",
+      "document_id": "docs-flat",
+      "background_id": "wood-desk",
+      "document_state": "fully_visible",
+      "corners": [
+        [0.168333, 0.110625],
+        [0.807500, 0.120625],
+        [0.955000, 0.851250],
+        [0.042500, 0.861875]
+      ],
+      "annotation_method": "manual_visual",
+      "annotation_version": 1,
+      "failure_tags": ["warm_lighting", "background_lines"]
+    },
+    {
+      "id": "docs-chart",
+      "image": "docs/public/algorithm/opencv-samples/chart.JPG",
+      "source": "public_docs_sample",
+      "split": "test",
+      "session_id": "docs-chart",
+      "document_id": "docs-chart",
+      "background_id": "black-backing",
+      "document_state": "fully_visible",
+      "corners": [
+        [0.095895, 0.090686],
+        [0.898284, 0.104167],
+        [0.935968, 0.954248],
+        [0.060049, 0.965278]
+      ],
+      "annotation_method": "manual_visual",
+      "annotation_version": 1,
+      "failure_tags": ["glare", "shadow"]
+    },
+    {
+      "id": "docs-desk",
+      "image": "docs/public/algorithm/opencv-samples/desk.JPG",
+      "source": "public_docs_sample",
+      "split": "test",
+      "session_id": "docs-desk",
+      "document_id": "docs-desk",
+      "background_id": "warm-desk",
+      "document_state": "fully_visible",
+      "corners": [
+        [0.029412, 0.196078],
+        [0.634804, 0.117953],
+        [0.965278, 0.647978],
+        [0.325163, 0.858150]
+      ],
+      "annotation_method": "manual_visual",
+      "annotation_version": 1,
+      "failure_tags": ["strong_perspective", "warm_lighting"]
+    }
+  ]
+}

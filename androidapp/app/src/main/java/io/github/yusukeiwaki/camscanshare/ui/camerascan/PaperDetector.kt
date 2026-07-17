@@ -118,6 +118,43 @@ class PaperDetector(
         return detectForCapture(bitmap)
     }
 
+    /**
+     * Persist the finder frame that was visible immediately before a report capture.
+     * This is intentionally separate from capture-time detection so finder models can
+     * be evaluated on their real 4:3 preview input instead of a high-resolution still.
+     */
+    fun recordFinderFrame(bitmap: Bitmap, displayedCorners: List<PointF>?) {
+        val started = SystemClock.elapsedRealtimeNanos()
+        val session = debugSink.startSession(
+            category = "paper-detection",
+            label = "finder",
+            metadata = mapOf(
+                "inputWidth" to bitmap.width.toString(),
+                "inputHeight" to bitmap.height.toString(),
+                "platform" to "android",
+                "mode" to "preview",
+                "coordinateOrigin" to "top_left",
+                "selectionSource" to "stabilized_preview",
+            ),
+        )
+        debugSink.writeBitmap(session, "input", bitmap)
+        debugSink.writeText(session, "selected_quad.json", cornersJson(displayedCorners, score = null))
+        if (displayedCorners?.size == 4) {
+            val mat = Mat()
+            Utils.bitmapToMat(bitmap, mat)
+            val overlay = drawQuadOverlay(mat, displayedCorners)
+            debugSink.writeMat(session, "selected_quad_overlay", overlay, DebugMatColor.RGBA)
+            overlay.release()
+            mat.release()
+        }
+        debugSink.recordTimingSince(
+            session,
+            "paper_detection.finder_snapshot",
+            started,
+            mapOf("result" to if (displayedCorners?.size == 4) "quad" else "none"),
+        )
+    }
+
     fun detectForCapture(bitmap: Bitmap, anchorCorners: List<PointF>? = null): List<PointF>? {
         val session = debugSink.startSession(
             category = "paper-detection",

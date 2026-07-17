@@ -229,6 +229,7 @@ struct CameraScanView: View {
 
     private func capture() async {
         let captureForReport = reportCaptureArmed
+        let finderFrameAtCapture = captureForReport ? viewModel.latestFinderFrameSnapshot() : nil
         reportCaptureArmed = false
 
         // Flash effect
@@ -241,7 +242,8 @@ struct CameraScanView: View {
         viewModel.processAndStoreCapturedImage(
             image,
             isDebugCapture: captureForReport,
-            anchorRectangle: previewRectangleAtCapture
+            anchorRectangle: previewRectangleAtCapture,
+            finderFrame: finderFrameAtCapture
         )
 
         if retakePageId != nil {

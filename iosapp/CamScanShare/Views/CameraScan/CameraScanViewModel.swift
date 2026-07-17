@@ -9,6 +9,11 @@ struct CapturedPage {
     let debugCaptureId: String?
 }
 
+struct FinderFrameSnapshot: @unchecked Sendable {
+    let image: UIImage
+    let rawRectangle: DetectedRectangle?
+}
+
 private final class CaptureSessionBox: @unchecked Sendable {
     let session = AVCaptureSession()
 }
@@ -131,12 +136,21 @@ final class CameraScanViewModel {
     func processAndStoreCapturedImage(
         _ image: UIImage,
         isDebugCapture: Bool = false,
-        anchorRectangle: DetectedRectangle? = nil
+        anchorRectangle: DetectedRectangle? = nil,
+        finderFrame: FinderFrameSnapshot? = nil
     ) {
         let debugCaptureId = isDebugCapture ? Self.makeDebugCaptureID() : nil
         let debugSink: ImageProcessingDebugSink = isDebugCapture
             ? .writingEnabled(debugCaptureId: debugCaptureId)
             : .shared
+        if let finderFrame {
+            PaperDetectionService.recordFinderFrame(
+                image: finderFrame.image,
+                rawRectangle: finderFrame.rawRectangle,
+                displayedRectangle: anchorRectangle,
+                debugSink: debugSink
+            )
+        }
         let correctedImage = PaperDetectionService.correctDocumentGeometry(
             image: image,
             debugSink: debugSink,
@@ -150,6 +164,10 @@ final class CameraScanViewModel {
             )
         )
         latestThumbnail = correctedImage.preparingThumbnail(of: CGSize(width: 104, height: 104))
+    }
+
+    func latestFinderFrameSnapshot() -> FinderFrameSnapshot? {
+        cameraDelegate.latestFinderFrameSnapshot()
     }
 
     private static func makeDebugCaptureID() -> String {
@@ -244,6 +262,8 @@ final class CameraDelegate: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
     var onPreviewAspectRatioChanged: (@Sendable (CGFloat) -> Void)?
     var photoContinuation: CheckedContinuation<UIImage?, Never>?
     private let ciContext = CIContext()
+    private let finderFrameLock = NSLock()
+    private var finderFrameSnapshot: FinderFrameSnapshot?
 
     func captureOutput(
         _ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
@@ -259,7 +279,17 @@ final class CameraDelegate: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
             onRectangleDetected?(nil)
             return
         }
-        onRectangleDetected?(PaperDetectionService.detectPreviewRectangle(in: previewImage))
+        let rectangle = PaperDetectionService.detectPreviewRectangle(in: previewImage)
+        finderFrameLock.lock()
+        finderFrameSnapshot = FinderFrameSnapshot(image: previewImage, rawRectangle: rectangle)
+        finderFrameLock.unlock()
+        onRectangleDetected?(rectangle)
+    }
+
+    func latestFinderFrameSnapshot() -> FinderFrameSnapshot? {
+        finderFrameLock.lock()
+        defer { finderFrameLock.unlock() }
+        return finderFrameSnapshot
     }
 
     private func previewImage(from pixelBuffer: CVPixelBuffer) -> UIImage? {

@@ -19,6 +19,46 @@ enum PaperDetectionService {
     private static let a4Landscape = 297.0 / 210.0
     private static let a4Tolerance = 0.20
 
+    static func recordFinderFrame(
+        image: UIImage,
+        rawRectangle: DetectedRectangle?,
+        displayedRectangle: DetectedRectangle?,
+        debugSink: ImageProcessingDebugSink
+    ) {
+        let session = debugSink.startSession(
+            category: "paper-detection",
+            label: "finder",
+            metadata: [
+                "inputWidth": "\(Int(image.size.width))",
+                "inputHeight": "\(Int(image.size.height))",
+                "platform": "ios",
+                "mode": "preview",
+                "coordinateOrigin": "bottom_left",
+                "selectionSource": "stabilized_preview"
+            ]
+        )
+        let startedAt = debugSink.now()
+        let selectedRectangle = displayedRectangle ?? rawRectangle
+        debugSink.writeImage(session, label: "input", image: image)
+        debugSink.writeText(session, fileName: "raw_quad.json", text: rectangleJson(rawRectangle))
+        debugSink.writeText(
+            session,
+            fileName: "selected_quad.json",
+            text: rectangleJson(selectedRectangle)
+        )
+        debugSink.writeImage(
+            session,
+            label: "selected_quad_overlay",
+            image: drawRectangleOverlay(image: image, rectangle: selectedRectangle)
+        )
+        debugSink.recordTimingSince(
+            session,
+            stage: "paper_detection.finder_snapshot",
+            startedAt: startedAt,
+            metadata: ["result": selectedRectangle == nil ? "none" : "quad"]
+        )
+    }
+
     static func detectRectangle(
         in image: UIImage,
         debugSink: ImageProcessingDebugSink = .shared,

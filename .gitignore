@@ -13,6 +13,7 @@ __pycache__/
 
 # Private local evaluation sample from report_server/reports/report-2026-05-16_10-08-44.
 /docs/filter-samples.local.json
+/docs/document-detection-eval.local.json
 /docs/public/algorithm/report-samples/report-overlapping-papers-source.jpg
 /docs/public/algorithm/steps/report-samples/report-overlapping-papers-step0.png
 /docs/public/algorithm/steps/report-samples/report-overlapping-papers-step1.png
