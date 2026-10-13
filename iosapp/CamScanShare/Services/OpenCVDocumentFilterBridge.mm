@@ -1917,37 +1917,39 @@ bool deshadowRunModel(MLModel *model,
                       NSArray<NSNumber *> *shape,
                       size_t inputCount,
                       std::vector<float>& output) {
-    NSError *error = nil;
-    MLMultiArray *inputArray = [[MLMultiArray alloc] initWithShape:shape
-                                                          dataType:MLMultiArrayDataTypeFloat32
-                                                             error:&error];
-    if (inputArray == nil) {
-        NSLog(@"deshadow: failed to allocate input array: %@", error);
-        return false;
-    }
-    std::memcpy(inputArray.dataPointer, input, inputCount * sizeof(float));
+    @autoreleasepool {
+        NSError *error = nil;
+        MLMultiArray *inputArray = [[MLMultiArray alloc] initWithShape:shape
+                                                              dataType:MLMultiArrayDataTypeFloat32
+                                                                 error:&error];
+        if (inputArray == nil) {
+            NSLog(@"deshadow: failed to allocate input array: %@", error);
+            return false;
+        }
+        std::memcpy(inputArray.dataPointer, input, inputCount * sizeof(float));
 
-    MLDictionaryFeatureProvider *provider = [[MLDictionaryFeatureProvider alloc]
-        initWithDictionary:@{@"input" : [MLFeatureValue featureValueWithMultiArray:inputArray]}
-                     error:&error];
-    if (provider == nil) {
-        NSLog(@"deshadow: failed to build feature provider: %@", error);
-        return false;
-    }
+        MLDictionaryFeatureProvider *provider = [[MLDictionaryFeatureProvider alloc]
+            initWithDictionary:@{@"input" : [MLFeatureValue featureValueWithMultiArray:inputArray]}
+                         error:&error];
+        if (provider == nil) {
+            NSLog(@"deshadow: failed to build feature provider: %@", error);
+            return false;
+        }
 
-    id<MLFeatureProvider> result = [model predictionFromFeatures:provider error:&error];
-    if (result == nil) {
-        NSLog(@"deshadow: prediction failed: %@", error);
-        return false;
+        id<MLFeatureProvider> result = [model predictionFromFeatures:provider error:&error];
+        if (result == nil) {
+            NSLog(@"deshadow: prediction failed: %@", error);
+            return false;
+        }
+        MLMultiArray *outputArray = [result featureValueForName:@"output"].multiArrayValue;
+        if (outputArray == nil) {
+            NSLog(@"deshadow: missing output feature");
+            return false;
+        }
+        output.resize(static_cast<size_t>(outputArray.count));
+        std::memcpy(output.data(), outputArray.dataPointer, output.size() * sizeof(float));
+        return true;
     }
-    MLMultiArray *outputArray = [result featureValueForName:@"output"].multiArrayValue;
-    if (outputArray == nil) {
-        NSLog(@"deshadow: missing output feature");
-        return false;
-    }
-    output.resize(static_cast<size_t>(outputArray.count));
-    std::memcpy(output.data(), outputArray.dataPointer, output.size() * sizeof(float));
-    return true;
 }
 
 Mat applyDeshadowFilter(const Mat& sourceRgb) {

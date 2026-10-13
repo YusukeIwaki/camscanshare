@@ -107,59 +107,62 @@ enum PDFService {
 
         var pdfPages: [JPEGPDFPage] = []
         for (index, page) in pages.enumerated() {
-            let pageStartedAt = debugSink.now()
-            progressHandler(
-                PDFGenerationProgress(
-                    phase: .renderingPage,
-                    currentPage: index + 1,
-                    totalPages: pages.count,
-                    currentPageData: page
+            // Swift ARC alone does not drain Objective-C/Core ML temporaries in this loop.
+            autoreleasepool {
+                let pageStartedAt = debugSink.now()
+                progressHandler(
+                    PDFGenerationProgress(
+                        phase: .renderingPage,
+                        currentPage: index + 1,
+                        totalPages: pages.count,
+                        currentPageData: page
+                    )
                 )
-            )
 
-            guard let originalImage = ImageStorageService.loadImage(fileName: page.imageFileName)
-            else { continue }
-            debugSink.writeImage(session, label: "page_\(index + 1)_input", image: originalImage)
+                guard let originalImage = ImageStorageService.loadImage(fileName: page.imageFileName)
+                else { return }
+                debugSink.writeImage(session, label: "page_\(index + 1)_input", image: originalImage)
 
-            guard let filteredImage = ImageFilterService.applyFilter(
-                page.filterPreset,
-                to: originalImage,
-                rotation: page.rotationDegrees,
-                intent: .export
-            )
-            else { continue }
-            debugSink.writeImage(session, label: "page_\(index + 1)_filtered", image: filteredImage)
-
-            guard let cgImage = filteredImage.cgImage,
-                  let jpegData = filteredImage.jpegData(compressionQuality: JPEGPDFWriter.jpegCompressionQuality)
-            else { continue }
-
-            let imageSize = CGSize(width: cgImage.width, height: cgImage.height)
-            let pageRect = pageRect(for: imageSize)
-            pdfPages.append(
-                JPEGPDFPage(
-                    jpegData: jpegData,
-                    imageWidth: cgImage.width,
-                    imageHeight: cgImage.height,
-                    pageRect: pageRect
+                guard let filteredImage = ImageFilterService.applyFilter(
+                    page.filterPreset,
+                    to: originalImage,
+                    rotation: page.rotationDegrees,
+                    intent: .export
                 )
-            )
-            debugSink.recordTimingSince(
-                session,
-                stage: "pdf.page",
-                startedAt: pageStartedAt,
-                metadata: [
-                    "pageIndex": "\(index + 1)",
-                    "filter": page.filterPreset.rawValue,
-                    "rotationDegrees": "\(page.rotationDegrees)",
-                    "pdfWidth": "\(Int(pageRect.width))",
-                    "pdfHeight": "\(Int(pageRect.height))",
-                    "imageWidth": "\(cgImage.width)",
-                    "imageHeight": "\(cgImage.height)",
-                    "jpegQuality": "\(Int(JPEGPDFWriter.jpegCompressionQuality * 100))",
-                    "jpegSizeBytes": "\(jpegData.count)"
-                ]
-            )
+                else { return }
+                debugSink.writeImage(session, label: "page_\(index + 1)_filtered", image: filteredImage)
+
+                guard let cgImage = filteredImage.cgImage,
+                      let jpegData = filteredImage.jpegData(compressionQuality: JPEGPDFWriter.jpegCompressionQuality)
+                else { return }
+
+                let imageSize = CGSize(width: cgImage.width, height: cgImage.height)
+                let pageRect = pageRect(for: imageSize)
+                pdfPages.append(
+                    JPEGPDFPage(
+                        jpegData: jpegData,
+                        imageWidth: cgImage.width,
+                        imageHeight: cgImage.height,
+                        pageRect: pageRect
+                    )
+                )
+                debugSink.recordTimingSince(
+                    session,
+                    stage: "pdf.page",
+                    startedAt: pageStartedAt,
+                    metadata: [
+                        "pageIndex": "\(index + 1)",
+                        "filter": page.filterPreset.rawValue,
+                        "rotationDegrees": "\(page.rotationDegrees)",
+                        "pdfWidth": "\(Int(pageRect.width))",
+                        "pdfHeight": "\(Int(pageRect.height))",
+                        "imageWidth": "\(cgImage.width)",
+                        "imageHeight": "\(cgImage.height)",
+                        "jpegQuality": "\(Int(JPEGPDFWriter.jpegCompressionQuality * 100))",
+                        "jpegSizeBytes": "\(jpegData.count)"
+                    ]
+                )
+            }
         }
         let data = JPEGPDFWriter.makePDFData(pages: pdfPages)
 

@@ -69,7 +69,7 @@ final class PageListViewModel {
     }
 
     func generateAndSharePDF() {
-        guard let document else { return }
+        guard let document, !isGeneratingPDF else { return }
         isGeneratingPDF = true
         showPDFErrorAlert = false
 
@@ -90,10 +90,9 @@ final class PageListViewModel {
             currentPageData: pageData.first
         )
 
-        var progressContinuation: AsyncStream<PDFGenerationProgress>.Continuation?
-        let progressStream = AsyncStream(PDFGenerationProgress.self) { continuation in
-            progressContinuation = continuation
-        }
+        let (progressStream, progressContinuation) = AsyncStream.makeStream(
+            of: PDFGenerationProgress.self, bufferingPolicy: .bufferingNewest(1)
+        )
 
         Task { [weak self, pageData, documentName] in
             let progressTask = Task { @MainActor [weak self] in
@@ -102,10 +101,7 @@ final class PageListViewModel {
                 }
             }
 
-            let generatedURL = await Task.detached(priority: .userInitiated) {
-                guard let progressContinuation else {
-                    return PDFService.generatePDF(from: pageData, fileName: documentName)
-                }
+            let generatedURL = try? await ImageProcessingWorker.shared.run {
                 return PDFService.generatePDF(
                     from: pageData,
                     fileName: documentName,
@@ -113,13 +109,11 @@ final class PageListViewModel {
                         progressContinuation.yield(progress)
                     }
                 )
-            }.value
-            guard let self else { return }
-
-            if let progressContinuation {
-                progressContinuation.finish()
             }
+
+            progressContinuation.finish()
             _ = await progressTask.result
+            guard let self else { return }
 
             pdfURL = generatedURL
             isGeneratingPDF = false

@@ -115,7 +115,9 @@ enum PaperDetectionService {
             source = "none"
         }
         debugSink.writeText(session, fileName: "selected_quad.json", text: rectangleJson(rectangle))
-        debugSink.writeImage(session, label: "selected_quad_overlay", image: drawRectangleOverlay(image: uprightImage, rectangle: rectangle))
+        if session?.isEnabled == true {
+            debugSink.writeImage(session, label: "selected_quad_overlay", image: drawRectangleOverlay(image: uprightImage, rectangle: rectangle))
+        }
         debugSink.recordTimingSince(
             session,
             stage: "paper_detection.total",

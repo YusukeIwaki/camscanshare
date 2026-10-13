@@ -3,8 +3,8 @@ import CoreImage
 import ImageIO
 import SwiftUI
 
-struct CapturedPage {
-    let image: UIImage
+struct CapturedPage: Sendable {
+    let imageFileName: String
     let isDebugCapture: Bool
     let debugCaptureId: String?
 }
@@ -34,21 +34,39 @@ final class CameraScanViewModel {
     var detectedRectangle: DetectedRectangle?
     var previewImageAspectRatio: CGFloat = 3.0 / 4.0
     var isCapturing = false
+    var isProcessingCapture = false
     var isFinalizing = false
+    var captureErrorMessage: String?
     var capturedPages: [CapturedPage] = []
     var latestThumbnail: UIImage?
 
     private let photoOutput = AVCapturePhotoOutput()
     private let videoOutput = AVCaptureVideoDataOutput()
-    private let processingQueue = DispatchQueue(label: "camera.processing", qos: .userInitiated)
+    private let processingQueue = DispatchQueue(
+        label: "camera.processing", qos: .userInitiated, autoreleaseFrequency: .workItem
+    )
     private let cameraDelegate = CameraDelegate()
     private var isConfigured = false
     private var recentDetections: [TimedDetection] = []
     private var lastValidRectangle: DetectedRectangle?
     private var lastValidTimestamp: TimeInterval = 0
+    @ObservationIgnored private var uncommittedFileNames: [String] = []
 
     var session: AVCaptureSession { sessionBox.session }
     var pageCount: Int { capturedPages.count }
+
+    deinit {
+        // Images belong to the capture session until the document takes ownership.
+        for fileName in uncommittedFileNames {
+            ImageStorageService.deleteImage(fileName: fileName)
+        }
+    }
+
+    func commitCapturedPages() {
+        uncommittedFileNames.removeAll()
+        capturedPages.removeAll()
+        latestThumbnail = nil
+    }
 
     func setupCamera() {
         guard !isConfigured else { return }
@@ -99,7 +117,7 @@ final class CameraScanViewModel {
     }
 
     func capturePhoto() async -> UIImage? {
-        guard !isCapturing else { return nil }
+        guard !isCapturing, !isProcessingCapture, !isFinalizing else { return nil }
         isCapturing = true
 
         let settings = AVCapturePhotoSettings()
@@ -112,7 +130,7 @@ final class CameraScanViewModel {
         let photoOutput = self.photoOutput
 
         let image = await withCheckedContinuation { (continuation: CheckedContinuation<UIImage?, Never>) in
-            delegate.photoContinuation = continuation
+            delegate.preparePhotoCapture(id: settings.uniqueID, continuation: continuation)
             photoOutput.capturePhoto(with: settings, delegate: delegate)
         }
 
@@ -133,37 +151,54 @@ final class CameraScanViewModel {
         }
     }
 
+    @discardableResult
     func processAndStoreCapturedImage(
         _ image: UIImage,
         isDebugCapture: Bool = false,
         anchorRectangle: DetectedRectangle? = nil,
         finderFrame: FinderFrameSnapshot? = nil
-    ) {
+    ) async -> Bool {
+        guard !isProcessingCapture else { return false }
+        isProcessingCapture = true
+        defer { isProcessingCapture = false }
         let debugCaptureId = isDebugCapture ? Self.makeDebugCaptureID() : nil
-        let debugSink: ImageProcessingDebugSink = isDebugCapture
-            ? .writingEnabled(debugCaptureId: debugCaptureId)
-            : .shared
-        if let finderFrame {
-            PaperDetectionService.recordFinderFrame(
-                image: finderFrame.image,
-                rawRectangle: finderFrame.rawRectangle,
-                displayedRectangle: anchorRectangle,
-                debugSink: debugSink
-            )
+        do {
+            let (page, thumbnail) = try await ImageProcessingWorker.shared.run {
+                let debugSink: ImageProcessingDebugSink = isDebugCapture
+                    ? .writingEnabled(debugCaptureId: debugCaptureId)
+                    : .shared
+                if let finderFrame {
+                    PaperDetectionService.recordFinderFrame(
+                        image: finderFrame.image,
+                        rawRectangle: finderFrame.rawRectangle,
+                        displayedRectangle: anchorRectangle,
+                        debugSink: debugSink
+                    )
+                }
+                let correctedImage = PaperDetectionService.correctDocumentGeometry(
+                    image: image,
+                    debugSink: debugSink,
+                    anchorRectangle: anchorRectangle
+                )
+                let fileName = ImageStorageService.saveImage(correctedImage)
+                guard ImageStorageService.imageExists(fileName: fileName) else {
+                    throw PreviewGenerationError.previewSaveFailed
+                }
+                let page = CapturedPage(
+                    imageFileName: fileName,
+                    isDebugCapture: isDebugCapture,
+                    debugCaptureId: debugCaptureId
+                )
+                return (page, correctedImage.preparingThumbnail(of: CGSize(width: 104, height: 104)))
+            }
+            capturedPages.append(page)
+            uncommittedFileNames.append(page.imageFileName)
+            latestThumbnail = thumbnail
+            return true
+        } catch {
+            captureErrorMessage = "撮影した画像を保存できませんでした。もう一度お試しください。"
+            return false
         }
-        let correctedImage = PaperDetectionService.correctDocumentGeometry(
-            image: image,
-            debugSink: debugSink,
-            anchorRectangle: anchorRectangle
-        )
-        capturedPages.append(
-            CapturedPage(
-                image: correctedImage,
-                isDebugCapture: isDebugCapture,
-                debugCaptureId: debugCaptureId
-            )
-        )
-        latestThumbnail = correctedImage.preparingThumbnail(of: CGSize(width: 104, height: 104))
     }
 
     func latestFinderFrameSnapshot() -> FinderFrameSnapshot? {
@@ -260,30 +295,50 @@ final class CameraDelegate: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
 
     var onRectangleDetected: (@Sendable (DetectedRectangle?) -> Void)?
     var onPreviewAspectRatioChanged: (@Sendable (CGFloat) -> Void)?
-    var photoContinuation: CheckedContinuation<UIImage?, Never>?
-    private let ciContext = CIContext()
+    private let photoLock = NSLock()
+    private var pendingPhoto: (id: Int64, continuation: CheckedContinuation<UIImage?, Never>)?
+    private let ciContext = CIContext(options: [.cacheIntermediates: false])
     private let finderFrameLock = NSLock()
     private var finderFrameSnapshot: FinderFrameSnapshot?
+
+    func preparePhotoCapture(id: Int64, continuation: CheckedContinuation<UIImage?, Never>) {
+        photoLock.lock()
+        pendingPhoto = (id, continuation)
+        photoLock.unlock()
+    }
+
+    private func finishPhotoCapture(id: Int64, image: UIImage?) {
+        photoLock.lock()
+        guard let pendingPhoto, pendingPhoto.id == id else {
+            photoLock.unlock()
+            return
+        }
+        self.pendingPhoto = nil
+        photoLock.unlock()
+        pendingPhoto.continuation.resume(returning: image)
+    }
 
     func captureOutput(
         _ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer,
         from connection: AVCaptureConnection
     ) {
-        guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
-        let width = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
-        let height = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
-        let portraitAspectRatio = min(width, height) / max(width, height)
-        onPreviewAspectRatioChanged?(portraitAspectRatio)
+        autoreleasepool {
+            guard let pixelBuffer = CMSampleBufferGetImageBuffer(sampleBuffer) else { return }
+            let width = CGFloat(CVPixelBufferGetWidth(pixelBuffer))
+            let height = CGFloat(CVPixelBufferGetHeight(pixelBuffer))
+            let portraitAspectRatio = min(width, height) / max(width, height)
+            onPreviewAspectRatioChanged?(portraitAspectRatio)
 
-        guard let previewImage = previewImage(from: pixelBuffer) else {
-            onRectangleDetected?(nil)
-            return
+            guard let previewImage = previewImage(from: pixelBuffer) else {
+                onRectangleDetected?(nil)
+                return
+            }
+            let rectangle = PaperDetectionService.detectPreviewRectangle(in: previewImage)
+            finderFrameLock.lock()
+            finderFrameSnapshot = FinderFrameSnapshot(image: previewImage, rawRectangle: rectangle)
+            finderFrameLock.unlock()
+            onRectangleDetected?(rectangle)
         }
-        let rectangle = PaperDetectionService.detectPreviewRectangle(in: previewImage)
-        finderFrameLock.lock()
-        finderFrameSnapshot = FinderFrameSnapshot(image: previewImage, rawRectangle: rectangle)
-        finderFrameLock.unlock()
-        onRectangleDetected?(rectangle)
     }
 
     func latestFinderFrameSnapshot() -> FinderFrameSnapshot? {
@@ -314,7 +369,15 @@ final class CameraDelegate: NSObject, AVCaptureVideoDataOutputSampleBufferDelega
         } else {
             image = nil
         }
-        photoContinuation?.resume(returning: image)
-        photoContinuation = nil
+        finishPhotoCapture(id: photo.resolvedSettings.uniqueID, image: image)
+    }
+
+    func photoOutput(
+        _ output: AVCapturePhotoOutput,
+        didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings,
+        error: Error?
+    ) {
+        // Capture may fail before didFinishProcessingPhoto is delivered.
+        finishPhotoCapture(id: resolvedSettings.uniqueID, image: nil)
     }
 }

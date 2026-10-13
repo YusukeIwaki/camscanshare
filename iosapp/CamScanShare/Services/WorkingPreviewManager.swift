@@ -8,8 +8,9 @@ final class WorkingPreviewManager {
     var supportsPersistedReuse = false
 
     private var activeRequestKey: String?
+    private var activeRequestID: UUID?
     private var activeSourceFileName: String?
-    private let imageCache = NSCache<NSString, UIImage>()
+    private let imageCache = ImageMemoryCache(byteLimit: 16 * 1024 * 1024, countLimit: 4)
     private let reusableMaxDimension: CGFloat = 1600
 
     func updatePreview(
@@ -17,6 +18,7 @@ final class WorkingPreviewManager {
         editState: PageEditState?,
         savedState: PageEditState?
     ) async {
+        guard !Task.isCancelled else { return }
         guard let page, let editState, let savedState else {
             clearPreview()
             return
@@ -32,11 +34,13 @@ final class WorkingPreviewManager {
         guard requestKey != activeRequestKey || previewImage == nil else { return }
 
         let previousSourceFileName = activeSourceFileName
+        let requestID = UUID()
+        activeRequestID = requestID
         activeRequestKey = requestKey
         activeSourceFileName = page.originalImageFileName
         let previewMaxDimension = reusableMaxDimension
 
-        if let cachedImage = imageCache.object(forKey: requestKey as NSString) {
+        if let cachedImage = imageCache.image(forKey: requestKey) {
             previewImage = cachedImage
             previewRequestKey = requestKey
             isGenerating = false
@@ -53,7 +57,7 @@ final class WorkingPreviewManager {
             let sourceFileName = page.originalImageFileName
             let filterPreset = editState.filterPreset
             let rotationDegrees = editState.rotationDegrees
-            let generatedImage = try await Task.detached(priority: .userInitiated) {
+            let generatedImage = try await ImageProcessingWorker.shared.run {
                 guard let sourceImage = ImageStorageService.loadImage(
                     fileName: sourceFileName,
                     maxDimension: previewMaxDimension
@@ -75,22 +79,22 @@ final class WorkingPreviewManager {
                     throw PreviewGenerationError.renderedImageMissing
                 }
                 return renderedImage
-            }.value
+            }
 
-            guard activeRequestKey == requestKey else {
+            guard !Task.isCancelled, activeRequestID == requestID else {
                 return
             }
 
             if let previousSourceFileName, previousSourceFileName != sourceFileName {
                 WorkingPreviewStorageService.deleteWorkingPreviews(sourceFileName: previousSourceFileName)
             }
-            imageCache.setObject(generatedImage, forKey: requestKey as NSString)
+            imageCache.insert(generatedImage, forKey: requestKey)
             previewImage = generatedImage
             previewRequestKey = requestKey
             isGenerating = false
             supportsPersistedReuse = previewMaxDimension >= reusableMaxDimension
         } catch {
-            guard activeRequestKey == requestKey else { return }
+            guard !Task.isCancelled, activeRequestID == requestID else { return }
             previewImage = nil
             previewRequestKey = nil
             isGenerating = false
@@ -107,8 +111,10 @@ final class WorkingPreviewManager {
         previewImage = nil
         previewRequestKey = nil
         activeRequestKey = nil
+        activeRequestID = nil
         activeSourceFileName = nil
         isGenerating = false
         supportsPersistedReuse = false
+        imageCache.removeAllImages()
     }
 }
