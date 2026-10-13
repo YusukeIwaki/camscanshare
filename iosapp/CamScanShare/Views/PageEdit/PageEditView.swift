@@ -135,7 +135,13 @@ struct PageEditView: View {
             TabView(selection: $viewModel.currentPageIndex) {
                 ForEach(Array(viewModel.pages.enumerated()), id: \.element.persistentModelID) {
                     index, page in
-                    pagePreviewItem(page: page, index: index)
+                    Group {
+                        if abs(index - viewModel.currentPageIndex) <= 1 {
+                            pagePreviewItem(page: page, index: index)
+                        } else {
+                            Color(.systemGray6)
+                        }
+                    }
                         .tag(index)
                 }
             }

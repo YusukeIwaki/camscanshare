@@ -31,7 +31,7 @@ enum PreviewGenerationError: Error {
 }
 
 enum PreviewStorageService {
-    private nonisolated(unsafe) static let imageCache = NSCache<NSString, UIImage>()
+    private static let imageCache = ImageMemoryCache(byteLimit: 32 * 1024 * 1024, countLimit: 64)
     private nonisolated(unsafe) static let aspectRatioCache = NSCache<NSString, NSNumber>()
 
     static func fileURL(fileName: String, kind: PreviewImageKind) -> URL {
@@ -56,7 +56,7 @@ enum PreviewStorageService {
 
     static func loadPreview(fileName: String, kind: PreviewImageKind) -> UIImage? {
         let cacheKey = cacheKey(fileName: fileName, kind: kind)
-        if let cached = imageCache.object(forKey: cacheKey as NSString) {
+        if let cached = imageCache.image(forKey: cacheKey) {
             return cached
         }
 
@@ -64,7 +64,7 @@ enum PreviewStorageService {
         guard let data = try? Data(contentsOf: url), let image = UIImage(data: data) else {
             return nil
         }
-        imageCache.setObject(image, forKey: cacheKey as NSString)
+        imageCache.insert(image, forKey: cacheKey)
         return image
     }
 
@@ -87,7 +87,7 @@ enum PreviewStorageService {
         for url in urls {
             try? FileManager.default.removeItem(at: url)
         }
-        imageCache.removeAllObjects()
+        imageCache.removeAllImages()
         aspectRatioCache.removeAllObjects()
     }
 
@@ -163,7 +163,7 @@ enum PreviewStorageService {
 
     private static func invalidateCache(fileName: String, kind: PreviewImageKind) {
         let key = cacheKey(fileName: fileName, kind: kind) as NSString
-        imageCache.removeObject(forKey: key)
+        imageCache.removeImage(forKey: key as String)
         aspectRatioCache.removeObject(forKey: key)
     }
 }
@@ -216,37 +216,41 @@ actor PreviewGenerationCoordinator {
             return try await task.value
         }
 
+        let smallMaxDimension = self.smallMaxDimension
+        let largeMaxDimension = self.largeMaxDimension
         let task = Task<PagePreviewFiles, Error> {
-            guard
-                let sourceImage = ImageStorageService.loadImage(
-                    fileName: sourceFileName,
-                    maxDimension: largeMaxDimension
-                )
-            else {
-                throw PreviewGenerationError.sourceImageMissing
-            }
-            let renderedImage: UIImage
-            if filter == .original, rotation == 0 {
-                renderedImage = sourceImage
-            } else {
-                guard let filtered = ImageFilterService.applyFilter(
-                    filter,
-                    to: sourceImage,
-                    rotation: rotation,
-                    intent: .preview,
-                    previewMaxDimension: largeMaxDimension
-                ) else {
-                    throw PreviewGenerationError.renderedImageMissing
+            try await ImageProcessingWorker.shared.run {
+                guard
+                    let sourceImage = ImageStorageService.loadImage(
+                        fileName: sourceFileName,
+                        maxDimension: largeMaxDimension
+                    )
+                else {
+                    throw PreviewGenerationError.sourceImageMissing
                 }
-                renderedImage = filtered
-            }
+                let renderedImage: UIImage
+                if filter == .original, rotation == 0 {
+                    renderedImage = sourceImage
+                } else {
+                    guard let filtered = ImageFilterService.applyFilter(
+                        filter,
+                        to: sourceImage,
+                        rotation: rotation,
+                        intent: .preview,
+                        previewMaxDimension: largeMaxDimension
+                    ) else {
+                        throw PreviewGenerationError.renderedImageMissing
+                    }
+                    renderedImage = filtered
+                }
 
-            return try PreviewStorageService.savePersistedPreviews(
-                from: renderedImage,
-                sourceFileName: sourceFileName,
-                smallMaxDimension: smallMaxDimension,
-                largeMaxDimension: largeMaxDimension
-            )
+                return try PreviewStorageService.savePersistedPreviews(
+                    from: renderedImage,
+                    sourceFileName: sourceFileName,
+                    smallMaxDimension: smallMaxDimension,
+                    largeMaxDimension: largeMaxDimension
+                )
+            }
         }
 
         persistedTasks[requestKey] = task

@@ -9,7 +9,7 @@ enum ImageStorageService {
         return dir
     }
 
-    private nonisolated(unsafe) static let thumbnailCache = NSCache<NSString, UIImage>()
+    private static let thumbnailCache = ImageMemoryCache(byteLimit: 16 * 1024 * 1024, countLimit: 32)
     private nonisolated(unsafe) static let aspectRatioCache = NSCache<NSString, NSNumber>()
 
     static func saveImage(_ image: UIImage) -> String {
@@ -18,7 +18,7 @@ enum ImageStorageService {
         if let data = image.jpegData(compressionQuality: 0.9) {
             try? data.write(to: url)
         }
-        thumbnailCache.removeAllObjects()
+        thumbnailCache.removeAllImages()
         return fileName
     }
 
@@ -33,8 +33,8 @@ enum ImageStorageService {
             return UIImage(data: data)
         }
 
-        let cacheKey = "sampled_\(fileName)_\(Int(maxDimension.rounded(.up)))" as NSString
-        if let cached = thumbnailCache.object(forKey: cacheKey) {
+        let cacheKey = "sampled_\(fileName)_\(Int(maxDimension.rounded(.up)))"
+        if let cached = thumbnailCache.image(forKey: cacheKey) {
             return cached
         }
 
@@ -51,14 +51,14 @@ enum ImageStorageService {
         }
 
         let image = UIImage(cgImage: cgImage)
-        thumbnailCache.setObject(image, forKey: cacheKey)
+        thumbnailCache.insert(image, forKey: cacheKey)
         return image
     }
 
     static func deleteImage(fileName: String) {
         let url = sourceImageURL(fileName: fileName)
         try? FileManager.default.removeItem(at: url)
-        thumbnailCache.removeAllObjects()
+        thumbnailCache.removeAllImages()
         aspectRatioCache.removeAllObjects()
     }
 
@@ -72,13 +72,13 @@ enum ImageStorageService {
     }
 
     static func thumbnail(fileName: String, size: CGSize) -> UIImage? {
-        let cacheKey = "\(fileName)_\(Int(size.width))x\(Int(size.height))" as NSString
-        if let cached = thumbnailCache.object(forKey: cacheKey) {
+        let cacheKey = "\(fileName)_\(Int(size.width))x\(Int(size.height))"
+        if let cached = thumbnailCache.image(forKey: cacheKey) {
             return cached
         }
         guard let image = loadImage(fileName: fileName) else { return nil }
         let thumb = image.preparingThumbnail(of: size) ?? image
-        thumbnailCache.setObject(thumb, forKey: cacheKey)
+        thumbnailCache.insert(thumb, forKey: cacheKey)
         return thumb
     }
 

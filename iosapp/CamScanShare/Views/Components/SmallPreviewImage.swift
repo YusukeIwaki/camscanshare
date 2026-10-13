@@ -29,6 +29,9 @@ struct SmallPreviewImage: View {
         .task(id: fileName) {
             await loadImage()
         }
+        .onDisappear {
+            image = nil
+        }
     }
 
     private func loadImage() async {
@@ -37,9 +40,13 @@ struct SmallPreviewImage: View {
             return
         }
 
+        image = nil
         let loadedImage = await Task.detached(priority: .userInitiated) {
-            PreviewStorageService.loadPreview(fileName: fileName, kind: .small)
+            autoreleasepool {
+                PreviewStorageService.loadPreview(fileName: fileName, kind: .small)
+            }
         }.value
+        guard !Task.isCancelled else { return }
         image = loadedImage
     }
 }

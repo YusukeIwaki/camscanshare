@@ -42,6 +42,9 @@ struct LargePreviewImage: View {
         .task(id: state.cacheKey) {
             await loadImage()
         }
+        .onDisappear {
+            image = nil
+        }
     }
 
     @ViewBuilder
@@ -88,16 +91,20 @@ struct LargePreviewImage: View {
             return
         }
 
+        image = nil
         let loadedImage = await Task.detached(priority: .userInitiated) {
-            switch kind {
-            case .small:
-                PreviewStorageService.loadPreview(fileName: fileName, kind: .small)
-            case .large:
-                PreviewStorageService.loadPreview(fileName: fileName, kind: .large)
-            case .working:
-                WorkingPreviewStorageService.loadWorkingPreview(fileName: fileName)
+            autoreleasepool {
+                switch kind {
+                case .small:
+                    PreviewStorageService.loadPreview(fileName: fileName, kind: .small)
+                case .large:
+                    PreviewStorageService.loadPreview(fileName: fileName, kind: .large)
+                case .working:
+                    WorkingPreviewStorageService.loadWorkingPreview(fileName: fileName)
+                }
             }
         }.value
+        guard !Task.isCancelled else { return }
         image = loadedImage
     }
 }

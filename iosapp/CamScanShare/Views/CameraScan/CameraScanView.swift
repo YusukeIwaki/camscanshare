@@ -59,6 +59,14 @@ struct CameraScanView: View {
         .onDisappear {
             viewModel.stopSession()
         }
+        .alert("撮影画像を保存できません", isPresented: Binding(
+            get: { viewModel.captureErrorMessage != nil },
+            set: { if !$0 { viewModel.captureErrorMessage = nil } }
+        )) {
+            Button("OK", role: .cancel) { viewModel.captureErrorMessage = nil }
+        } message: {
+            Text(viewModel.captureErrorMessage ?? "")
+        }
         .task {
             showReportChip = false
             reportCaptureArmed = false
@@ -87,6 +95,7 @@ struct CameraScanView: View {
                 // Left action area
                 leftAction
                     .frame(width: 52, height: 52)
+                    .disabled(viewModel.isCapturing || viewModel.isProcessingCapture || viewModel.isFinalizing)
 
                 Spacer()
 
@@ -186,7 +195,7 @@ struct CameraScanView: View {
                     .frame(width: 58, height: 58)
             }
         }
-        .disabled(viewModel.isCapturing || viewModel.isFinalizing)
+        .disabled(viewModel.isCapturing || viewModel.isProcessingCapture || viewModel.isFinalizing)
     }
 
     @ViewBuilder
@@ -214,7 +223,7 @@ struct CameraScanView: View {
                                     .stroke(.white.opacity(reportCaptureArmed ? 0.72 : 0.32), lineWidth: 1)
                             )
                     }
-                    .disabled(viewModel.isCapturing || viewModel.isFinalizing)
+                    .disabled(viewModel.isCapturing || viewModel.isProcessingCapture || viewModel.isFinalizing)
                     .padding(.trailing, 16)
                 }
                 .padding(.top, max(52, topInset + 16))
@@ -239,12 +248,12 @@ struct CameraScanView: View {
 
         let previewRectangleAtCapture = viewModel.detectedRectangle
         guard let image = await viewModel.capturePhoto() else { return }
-        viewModel.processAndStoreCapturedImage(
+        guard await viewModel.processAndStoreCapturedImage(
             image,
             isDebugCapture: captureForReport,
             anchorRectangle: previewRectangleAtCapture,
             finderFrame: finderFrameAtCapture
-        )
+        ) else { return }
 
         if retakePageId != nil {
             await finishScanning()
@@ -252,7 +261,7 @@ struct CameraScanView: View {
     }
 
     private func finishScanning() async {
-        guard !viewModel.isFinalizing else { return }
+        guard !viewModel.isCapturing, !viewModel.isProcessingCapture, !viewModel.isFinalizing else { return }
         guard !viewModel.capturedPages.isEmpty else {
             if path.count > 0 {
                 path.removeLast()
@@ -274,7 +283,7 @@ struct CameraScanView: View {
         let document = resolveDocumentForCapturedPages()
         let startOrder = document.pages.count
         for (index, capturedPage) in viewModel.capturedPages.enumerated() {
-            let fileName = ImageStorageService.saveImage(capturedPage.image)
+            let fileName = capturedPage.imageFileName
             let previewFiles = try? await PreviewGenerationCoordinator.shared.generatePersistedPreviews(
                 sourceFileName: fileName,
                 filter: .original,
@@ -294,6 +303,7 @@ struct CameraScanView: View {
 
         document.updatedAt = .now
         try? modelContext.save()
+        viewModel.commitCapturedPages()
 
         if existingDocumentId != nil {
             if path.count > 0 {
@@ -325,7 +335,7 @@ struct CameraScanView: View {
         let oldFileName = page.originalImageFileName
         let oldSmallPreviewFileName = page.smallPreviewFileName
         let oldLargePreviewFileName = page.largePreviewFileName
-        let newFileName = ImageStorageService.saveImage(replacementPage.image)
+        let newFileName = replacementPage.imageFileName
         page.originalImageFileName = newFileName
         page.isDebugCapture = replacementPage.isDebugCapture
         page.debugCaptureId = replacementPage.debugCaptureId
@@ -345,6 +355,7 @@ struct CameraScanView: View {
 
         page.document?.updatedAt = .now
         try? modelContext.save()
+        viewModel.commitCapturedPages()
         ImageStorageService.deleteImage(fileName: oldFileName)
         PreviewStorageService.deletePreview(fileName: oldSmallPreviewFileName, kind: .small)
         PreviewStorageService.deletePreview(fileName: oldLargePreviewFileName, kind: .large)
